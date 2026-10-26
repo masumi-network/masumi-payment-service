@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
+import { NODE_LOG_MAX_BYTES } from './node-log.js';
 
 /**
  * Adoption is what makes a host restart survivable: the hydra-nodes keep running
@@ -91,6 +92,26 @@ describe('NodeProcessManager adoption', () => {
 		expect(manager.isRunning('node-1')).toBe(false);
 		expect(await manager.adopt('node-1', child.pid as number, process.execPath, NODE_DIR)).toBe(true);
 		expect(manager.isRunning('node-1')).toBe(true);
+	});
+
+	it('retains a live node when its diagnostic log cannot be rotated', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-adopt-log-'));
+		const logDir = path.join(nodeDir, 'logs');
+		await fs.mkdir(logDir);
+		await fs.writeFile(path.join(logDir, 'node.log'), Buffer.alloc(NODE_LOG_MAX_BYTES + 1, 65));
+		const child = spawnIdleProcess(nodeDir);
+		const onLogError = jest.fn();
+		const manager = new NodeProcessManager(onLogError);
+		const diskError = Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+		const backupWrite = jest.spyOn(fs, 'writeFile').mockRejectedValueOnce(diskError);
+		try {
+			expect(await manager.adopt('node-1', child.pid as number, process.execPath, nodeDir)).toBe(true);
+			expect(manager.isRunning('node-1')).toBe(true);
+			expect(onLogError).toHaveBeenCalledWith('node-1', diskError);
+		} finally {
+			backupWrite.mockRestore();
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
 	});
 
 	it('refuses to adopt a pid that is not running the node binary', async () => {
@@ -213,6 +234,63 @@ describe('NodeProcessManager child environment', () => {
 				if (value === undefined) delete process.env[key];
 				else process.env[key] = value;
 			}
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('NodeProcessManager diagnostic logs', () => {
+	it('rotates an oversized persistent log and keeps the child writing to the live inode', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-log-'));
+		const logDir = path.join(nodeDir, 'logs');
+		await fs.mkdir(logDir);
+		await fs.writeFile(path.join(logDir, 'node.log'), Buffer.alloc(NODE_LOG_MAX_BYTES + 1, 65));
+		try {
+			const manager = new NodeProcessManager();
+			let resolveExit!: () => void;
+			const exited = new Promise<void>((resolve) => {
+				resolveExit = resolve;
+			});
+			await manager.start(
+				{ nodeId: 'node-1', binary: process.execPath, args: ['-e', "process.stdout.write('after-rotation')"], nodeDir },
+				() => resolveExit(),
+			);
+			await exited;
+			const active = await fs.readFile(path.join(logDir, 'node.log'), 'utf8');
+			expect(active).toBe('after-rotation');
+			expect((await fs.stat(path.join(logDir, 'node.log.1'))).size).toBe(NODE_LOG_MAX_BYTES);
+		} finally {
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
+	});
+
+	it('rotates output from a running child without restarting that child', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-live-log-'));
+		try {
+			const manager = new NodeProcessManager();
+			let resolveExit!: () => void;
+			const exited = new Promise<void>((resolve) => {
+				resolveExit = resolve;
+			});
+			const entry = await manager.start(
+				{
+					nodeId: 'node-1',
+					binary: process.execPath,
+					args: [
+						'-e',
+						`process.stdout.write('x'.repeat(${NODE_LOG_MAX_BYTES + 1})); setTimeout(() => process.stdout.write('tail'), 1800)`,
+					],
+					nodeDir,
+				},
+				() => resolveExit(),
+			);
+			await exited;
+			expect(entry.pid).toBeDefined();
+			const logDir = path.join(nodeDir, 'logs');
+			expect((await fs.stat(path.join(logDir, 'node.log'))).size).toBeLessThanOrEqual(NODE_LOG_MAX_BYTES);
+			expect((await fs.stat(path.join(logDir, 'node.log.1'))).size).toBe(NODE_LOG_MAX_BYTES);
+			expect((await fs.readFile(path.join(logDir, 'node.log'), 'utf8')).endsWith('tail')).toBe(true);
+		} finally {
 			await fs.rm(nodeDir, { recursive: true, force: true });
 		}
 	});

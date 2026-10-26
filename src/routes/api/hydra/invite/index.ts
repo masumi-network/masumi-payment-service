@@ -40,6 +40,7 @@ import {
 	type CounterpartyIdentity,
 } from '@/services/hydra-invite/counterparty-identity';
 import { isHostNodeGone } from '@/services/hydra-host/node-gone';
+import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
 
 /**
  * Registry identity for the wallet that signed an invite.
@@ -125,6 +126,7 @@ function toPublicInvite(row: InviteRow) {
 
 export const getInviteSchemaInput = z.object({
 	limit: z.coerce.number().int().min(1).max(100).default(25),
+	cursorId: z.string().min(1).optional().describe('Resume at this invite ID, inclusive'),
 	status: z.nativeEnum(HydraInviteStatus).optional(),
 	/** Same scoping as the head list: an invite becomes a head on one network. */
 	network: z.nativeEnum(Network).optional().describe('Filter by Cardano network'),
@@ -142,8 +144,9 @@ export const queryInviteGet = adminAuthenticatedEndpointFactory.build({
 				...(input.status === undefined ? {} : { status: input.status }),
 				...(input.network === undefined ? {} : { network: input.network }),
 			},
-			orderBy: { createdAt: 'desc' },
+			orderBy: newestFirstOrder,
 			take: input.limit,
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 		});
 		return { invites: rows.map(toPublicInvite) };
 	},

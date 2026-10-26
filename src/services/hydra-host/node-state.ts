@@ -15,6 +15,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { formatDriftBehind, hasNoChainPoint } from '@/utils/hydra/drift-wording';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostNodeHealth } from './client';
+import { deriveHostNodeToken } from './node-token';
 
 export type ParticipantNodeState = {
 	state: string;
@@ -62,7 +63,7 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 	try {
 		const health = await fetchHostNodeHealth(
 			participant.HydraHost.baseUrl,
-			decrypt(participant.HydraHost.encryptedUserToken),
+			deriveHostNodeToken(decrypt(participant.HydraHost.encryptedUserToken), participant.hostNodeId),
 			participant.hostNodeId,
 			{ allowInsecureHttp: participant.HydraHost.allowInsecureHttp },
 		);

@@ -15,6 +15,8 @@ import {
 } from '@/lib/hydra/hydra/snapshot-verification';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
+import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
+import { deriveHostNodeToken } from '@/services/hydra-host/node-token';
 
 export const HYDRA_PRE_INIT_STATUSES = new Set<HydraHeadStatus>([
 	HydraHeadStatus.Disconnected,
@@ -82,20 +84,28 @@ export function resolvePersistedHistoryCursor(head: {
 /**
  * The bearer token for reaching this head's node.
  *
- * A node configured by hand on loopback has nothing in front of it, so there
- * is nothing to authenticate to and this is undefined. A node placed on a
- * Hydra Host is reachable only through that Host's proxy, so its user token
- * is decrypted here — the single seam every caller reads, so the credential
- * cannot be threaded correctly in one place and forgotten in another.
+ * A local node without a Host has no bearer. A Host node needs a token derived
+ * from the Host secret and its node id. Derive it here before runtime transport
+ * receives the credential.
  */
-export function resolveNodeAuthToken(host: { encryptedUserToken: string } | null | undefined): string | undefined {
+export function resolveNodeAuthToken(
+	host: { encryptedUserToken: string } | null | undefined,
+	nodeId: string,
+): string | undefined {
 	if (host == null) {
 		return undefined;
 	}
-	return decrypt(host.encryptedUserToken);
+	const secret = decrypt(host.encryptedUserToken);
+	if (secret.trim().length === 0 || nodeId.trim().length === 0) {
+		throw new HydraProtocolError('Hydra Host runtime credential or node id is blank');
+	}
+	return deriveHostNodeToken(secret, nodeId);
 }
 
-export async function loadValidatedHeadConfiguration(hydraHeadId: string): Promise<LoadedHeadConfiguration> {
+export async function loadValidatedHeadConfiguration(
+	hydraHeadId: string,
+	options: { readOnlyContestObserver?: boolean } = {},
+): Promise<LoadedHeadConfiguration> {
 	const configuredHead = await prisma.hydraHead.findUnique({
 		where: { id: hydraHeadId },
 		include: headConfigurationInclude,
@@ -103,11 +113,18 @@ export async function loadValidatedHeadConfiguration(hydraHeadId: string): Promi
 	if (!configuredHead) {
 		throw new Error(`Hydra head ${hydraHeadId} not found`);
 	}
-	if (configuredHead.isEnabled !== true) {
+	if (configuredHead.isEnabled !== true && !options.readOnlyContestObserver) {
 		throw new Error(`Hydra head ${hydraHeadId} is disabled`);
 	}
-	if (configuredHead.initTxHash == null && !HYDRA_PRE_INIT_STATUSES.has(configuredHead.status)) {
+	if (
+		configuredHead.initTxHash == null &&
+		!HYDRA_PRE_INIT_STATUSES.has(configuredHead.status) &&
+		!options.readOnlyContestObserver
+	) {
 		throw new Error(`Hydra head ${hydraHeadId} has not passed independent InitTx verification`);
+	}
+	if (options.readOnlyContestObserver && configuredHead.headIdentifier == null) {
+		throw new Error(`Hydra head ${hydraHeadId} has no pinned identifier for contest observation`);
 	}
 	if (!configuredHead.LocalParticipant) {
 		throw new Error('No local participant provided');
@@ -164,7 +181,7 @@ export async function loadValidatedHeadConfiguration(hydraHeadId: string): Promi
 			plaintextHosts: hostTransport.allowInsecureHttp ? [persistedNodeHttpUrl.hostname] : [],
 		},
 	);
-	const nodeAuthToken = resolveNodeAuthToken(hostTransport);
+	const nodeAuthToken = resolveNodeAuthToken(hostTransport, configuredHead.LocalParticipant.hostNodeId);
 	return {
 		configuredHead: configuredHead as ConfiguredHead,
 		nodeUrls,

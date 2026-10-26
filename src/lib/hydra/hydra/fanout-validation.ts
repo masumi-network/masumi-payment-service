@@ -74,13 +74,10 @@ const DEFAULT_FANOUT_OBSERVER_TIMEOUT_MS = 15_000;
  * more than it looks: this runs inside the reconcile pass, on a timer, and is
  * retried every pass until it succeeds.
  *
- * The head's own ceiling bounds the references. The step count is bounded far
- * more tightly, because a step distributes as many outputs as fit in a 16 KB
- * transaction: even outputs carrying large datums run to tens of steps, not
- * thousands, so anything beyond this is not a chain we could have produced.
+ * The head's own ceiling bounds the references. The total observer deadline
+ * bounds chain traversal without rejecting valid fanouts with many small steps.
  */
 const MAX_FANOUT_REFERENCES = MAX_HYDRA_SNAPSHOT_OUTPUTS;
-const MAX_FANOUT_STEPS = 64;
 
 /**
  * Total observer budget for one chain, across every step.
@@ -530,8 +527,6 @@ export async function verifyHydraFanoutOnChain(options: {
 		if (group) group.push(reference);
 		else byTxHash.set(txHash, [reference]);
 	}
-	if (byTxHash.size > MAX_FANOUT_STEPS) fail('Hydra fanout spanned more L1 transactions than a head can produce');
-
 	const expectedUnits = expectedHeadUnits(headId, participantVkeys);
 	// Observation, not creation: a fanout being re-verified here may belong to a
 	// head opened under an earlier hydra-node script pin, so any known (current
@@ -686,8 +681,10 @@ export async function bindFinalizedFanoutToL1Chain(options: {
 		return Math.min(observerTimeoutMs, remaining);
 	};
 	let cursor = normalizeHex([...terminalTxHashes][0], 64, 'Hydra fanout tx hash');
-	for (let step = 0; unboundCount > 0; step += 1) {
-		if (step >= MAX_FANOUT_STEPS) fail('Hydra fanout spanned more L1 transactions than a head can produce');
+	const seen = new Set<string>();
+	while (unboundCount > 0) {
+		if (seen.has(cursor)) fail('Hydra fanout binding revisited an L1 transaction');
+		seen.add(cursor);
 		const utxos = await withObserverTimeout(options.observer.txsUtxos(cursor), remainingMs());
 		const headInput = findBoundHeadInput(utxos.inputs, headId, expectedUnits, acceptedHeadScriptHashes);
 		const previousTxHash = normalizeHex(headInput.tx_hash, 64, 'Hydra vHead input tx hash');

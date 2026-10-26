@@ -2017,16 +2017,16 @@ model HydraDecommit {
   /// Native-asset amounts it set out to remove, as { unit: quantityString }.
   requestedAssets Json
 
-  /// Lovelace that actually reached L1, as the head reported it. Null until the
-  /// withdrawal finalizes.
+  /// Lovelace that the node reported in its L1 decrement. Null until that
+  /// event arrives. Independent L1 depth is still required for Finalized.
   ///
   /// Rarely equal to the requested amount, and the difference is not a bug: a
   /// decommit removes whole outputs, so a token withdrawal carries the ADA that
   /// output held, and the L1 decrement's fee comes out of the value that travels.
   settledLovelace BigInt?
 
-  /// Native assets that actually reached L1, as { unit: quantityString }. Null
-  /// until the withdrawal finalizes.
+  /// Native assets the node reported in its L1 decrement, as
+  /// { unit: quantityString }. Null until that event arrives.
   settledAssets Json?
 
   /// Where the funds land on L1. The participant's own wallet address, recorded
@@ -2044,8 +2044,14 @@ model HydraDecommit {
   /// the value is gone from the head whatever happens next on L1.
   approvedAt DateTime?
 
-  /// When the node observed its own L1 decrement transaction, i.e. when the
-  /// funds actually became spendable on L1.
+  /// The node reported an L1 decrement. This is a retry marker, not independent
+  /// finality proof. The row stays Approved until the payout reaches L1 depth.
+  l1ObservedAt DateTime?
+
+  /// Last independent check of a Finalized payout. Orders rollback checks fairly.
+  l1CheckedAt DateTime?
+
+  /// When an independent L1 observer confirmed the payout at required depth.
   finalizedAt DateTime?
 
   /// The L1 transaction that paid the withdrawal out.
@@ -2061,6 +2067,8 @@ model HydraDecommit {
   @@index([status, updatedAt])
   @@index([hydraHeadId])
   @@index([decommitTxId])
+  @@index([status, l1ObservedAt])
+  @@index([status, l1CheckedAt])
 }
 
 /// Which side of a head offer this row represents.

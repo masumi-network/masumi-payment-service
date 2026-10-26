@@ -354,7 +354,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 		allowPrivatePeers,
 		requirePeerEgressFirewall,
-		requirePeerFirewallRefresh: strictBoolean(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', false),
+		requirePeerFirewallRefresh: strictBoolean(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', true),
 		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
 		acceptHostWideUserToken: strictBoolean(env, 'HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN', true),
 		release: readReleaseInfo(env),

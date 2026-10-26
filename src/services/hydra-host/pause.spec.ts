@@ -477,6 +477,12 @@ describe('getHydraHostPauseState', () => {
 		mockFetchHostNodeHealth.mockResolvedValueOnce({ state: 'Stopped' }).mockResolvedValueOnce({ state: 'Running' });
 
 		expect((await pause.getHydraHostPauseState('host-1')).phase).toBe('Stopping');
+		expect(mockFetchHostNodeHealth).toHaveBeenCalledWith(
+			'https://hydra1.example.com',
+			'542ccf6159729cc16ae028adab44bbaa951cb7e761f26378bac15e51923cb666',
+			'node-a',
+			{ allowInsecureHttp: false },
+		);
 
 		mockFetchHostNodeHealth.mockResolvedValue({ state: 'Stopped' });
 		expect((await pause.getHydraHostPauseState('host-1')).phase).toBe('Paused');

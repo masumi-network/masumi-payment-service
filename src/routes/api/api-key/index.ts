@@ -294,6 +294,9 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 			evmWalletIds: input.x402WalletScopeEnabled ? input.X402WalletScopeEvmWalletIds : undefined,
 		});
 		const usageLimited = resolveCreateUsageLimited({ isAdmin, requested: input.usageLimited });
+		if (usageLimited && canPay && input.UsageCredits.length === 0) {
+			throw createHttpError(400, 'Usage-limited keys with payment permission require at least one UsageCredit');
+		}
 		// Omitted means "every configured EVM chain in the key's environment", the twin
 		// of NetworkLimit defaulting to every Cardano network. An explicit [] still
 		// means none. Skipped for admins, whose networkLimit is [] and who are

@@ -196,6 +196,7 @@ export class HydraNode extends EventEmitter {
 			maxUnreconciledTransactions,
 			maxRetainedTransactionCborBytes,
 			reconciledHistoryCursor: config.reconciledHistoryCursor,
+			retainConfirmedTransactions: config.retainConfirmedTransactions,
 		});
 		this._live = new LiveFrameProcessor(this.liveFrameHost(), this);
 		this._replay = new HydraHistoryReplay(
@@ -205,7 +206,6 @@ export class HydraNode extends EventEmitter {
 		);
 		if (config.expectedHeadId) this.pinExpectedHeadId(config.expectedHeadId);
 	}
-
 	/**
 	 * The seams the two frame processors reach shared session state through.
 	 * Getters proxy live fields — both must always see the current pinned head
@@ -576,7 +576,8 @@ export class HydraNode extends EventEmitter {
 	 * Every output leaves — there is no change staying behind — so a partial
 	 * withdrawal has to split the amount off inside the head first. A 200 here
 	 * means the node accepted the request, not that the head agreed: that arrives
-	 * later as DecommitApproved, or does not, as DecommitInvalid.
+	 * later as DecommitApproved. DecommitInvalid is also broadcast for peer
+	 * submissions, so it cannot identify the outcome of this request.
 	 */
 	async decommit(transaction: HydraTransaction) {
 		assertL2TxWithinMaxSize(transaction.cborHex);

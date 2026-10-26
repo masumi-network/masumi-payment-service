@@ -591,6 +591,8 @@ export const updateHeadPatch = adminAuthenticatedEndpointFactory.build({
 
 type VerifyHeadForEnable = (headId: string) => Promise<{ headIdentifier: string; initTxHash: string }>;
 
+const CONTEST_MONITORED_HEAD_STATUSES: HydraHeadStatus[] = [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible];
+
 export async function updateHydraHeadEnabledState(
 	id: string,
 	isEnabled: boolean,
@@ -600,6 +602,9 @@ export async function updateHydraHeadEnabledState(
 	const existing = await prisma.hydraHead.findUnique({ where: { id } });
 	if (!existing) throw createHttpError(404, 'Hydra head not found');
 	if (existing.retiredAt) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
+	if (!isEnabled && CONTEST_MONITORED_HEAD_STATUSES.includes(existing.status)) {
+		throw createHttpError(409, 'Cannot disable a Hydra head while its contest must be monitored');
+	}
 	if (isEnabled && existing.isEnabled) {
 		// Already enabled: its InitTx binding still stands. Re-proving it would
 		// mean disabling first, which drops the live session and the counterparty
@@ -617,7 +622,11 @@ export async function updateHydraHeadEnabledState(
 	// Guarded on retiredAt: a retire that commits after the read above keeps
 	// the anchors its recovery needs.
 	const disabled = await prisma.hydraHead.updateMany({
-		where: { id, retiredAt: null },
+		where: {
+			id,
+			retiredAt: null,
+			...(!isEnabled ? { status: { notIn: CONTEST_MONITORED_HEAD_STATUSES } } : {}),
+		},
 		// A disabled head's prior InitTx binding is no longer an admission token.
 		// Re-enable always proves the current head/participants/configuration
 		// again. The chain-replay anchor is derived from that binding, so it is
@@ -628,7 +637,12 @@ export async function updateHydraHeadEnabledState(
 	});
 	const quarantined = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 	if (!quarantined) throw createHttpError(404, 'Hydra head not found');
-	if (disabled.count !== 1) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
+	if (disabled.count !== 1) {
+		throw createHttpError(
+			409,
+			isEnabled ? 'A retired Hydra head cannot be enabled' : 'A retired or contestable Hydra head cannot be disabled',
+		);
+	}
 	await manager.reconcileEnabledState(id);
 	if (!isEnabled) return quarantined;
 

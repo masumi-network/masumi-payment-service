@@ -3,7 +3,19 @@ import { z } from '@masumi/payment-core/zod';
 
 export const paymentSourceSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
-	cursorId: z.string().max(250).optional().describe('Used to paginate through the payment sources'),
+	cursorId: z
+		.string()
+		.max(250)
+		.optional()
+		.describe(
+			'Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter.',
+		),
+	filterNetwork: z
+		.nativeEnum(Network)
+		.optional()
+		.describe(
+			'When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request.',
+		),
 });
 
 export const adminWalletSchema = z

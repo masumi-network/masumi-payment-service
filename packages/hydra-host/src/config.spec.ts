@@ -72,8 +72,8 @@ describe('loadHostConfig', () => {
 		}
 	});
 
-	it('rejects a misspelled peer firewall refresh setting instead of disabling the gate', () => {
-		expect(loadHostConfig(env()).requirePeerFirewallRefresh).toBe(false);
+	it('holds reused peer ports by default and rejects a misspelled firewall setting', () => {
+		expect(loadHostConfig(env()).requirePeerFirewallRefresh).toBe(true);
 		expect(loadHostConfig(env({ HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH: 'true' })).requirePeerFirewallRefresh).toBe(
 			true,
 		);

@@ -9243,7 +9243,8 @@
                                                 "amount"
                                             ]
                                         },
-                                        "description": "The credits allowed to be used by the API key. Only relevant if usageLimited is true. "
+                                        "default": [],
+                                        "description": "The credits allowed to be used by the API key when usageLimited is true. Omitted defaults to an empty array (read-only keys). Pay-enabled usage-limited keys must supply at least one entry."
                                     },
                                     "NetworkLimit": {
                                         "type": "array",
@@ -9344,9 +9345,6 @@
                                         "description": "Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself."
                                     }
                                 },
-                                "required": [
-                                    "UsageCredits"
-                                ],
                                 "example": {
                                     "usageLimited": "true",
                                     "UsageCredits": [
@@ -24089,11 +24087,25 @@
                         "schema": {
                             "type": "string",
                             "maxLength": 250,
-                            "description": "Used to paginate through the payment sources"
+                            "description": "Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter."
                         },
                         "required": false,
-                        "description": "Used to paginate through the payment sources",
+                        "description": "Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter.",
                         "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request."
+                        },
+                        "required": false,
+                        "description": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request.",
+                        "name": "filterNetwork",
                         "in": "query"
                     }
                 ],
@@ -32466,6 +32478,17 @@
                     {
                         "schema": {
                             "type": "string",
+                            "minLength": 1,
+                            "description": "Resume at this invite ID, inclusive"
+                        },
+                        "required": false,
+                        "description": "Resume at this invite ID, inclusive",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "enum": [
                                 "Issued",
                                 "Redeemed",
@@ -34256,7 +34279,7 @@
             },
             "patch": {
                 "summary": "Enable or disable a Hydra head. (admin access required)",
-                "description": "Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it; disabling quarantines it (drops its InitTx admission).",
+                "description": "Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it. Disabling drops its InitTx admission. A Closed or FanoutPossible head cannot be disabled while contest monitoring is required.",
                 "tags": [
                     "hydra"
                 ],
@@ -34330,6 +34353,9 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The head is retired or requires contest monitoring"
                     },
                     "502": {
                         "description": "On-chain verification failed"

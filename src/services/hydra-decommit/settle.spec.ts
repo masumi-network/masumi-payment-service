@@ -20,7 +20,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 
 const { applyDecommitOutcome } = await import('./settle');
-const { PENDING_EXPIRED_REASON, PENDING_EXPIRED_REASONS } = await import('./stale');
+const { PENDING_EXPIRED_REASONS } = await import('./stale');
 
 const HEAD = 'head-1';
 const TX = 'a'.repeat(64);
@@ -36,12 +36,6 @@ beforeEach(() => {
 	mockUpdate.mockResolvedValue(OPEN_ROW);
 	mockResolvePayout.mockResolvedValue(undefined);
 });
-
-/** The open statuses the call was made with, whatever shape it took. */
-function statusFilter(callIndex = 0): string[] {
-	const where = mockUpdateMany.mock.calls[callIndex]![0].where;
-	return where.OR?.[0]?.status?.in ?? where.status?.in ?? [];
-}
 
 /** The finalization lookup's clauses, which are ANDed together. */
 function findClauses(callIndex = 0): any[] {
@@ -62,39 +56,35 @@ describe('applyDecommitOutcome', () => {
 		expect(call.where.decommitTxId).toBe(TX);
 	});
 
-	// The point of no return. A refusal arriving after the head has signed the
-	// removal would otherwise report money as still in the head when it is not.
-	it('never lets a late refusal undo an approval', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'invalid', reason: 'too late' });
+	// A peer can send a different witness set for the same transaction body.
+	// The body hash matches our pending row, but the peer's rejected submission
+	// says nothing about whether the locally signed one will be approved.
+	it('does not fail a local withdrawal when a same-id submission is rejected', async () => {
+		expect(
+			await applyDecommitOutcome({
+				hydraHeadId: HEAD,
+				decommitTxId: TX,
+				outcome: 'invalid',
+				reason: 'ValueNotConservedUTxO',
+			}),
+		).toBe(false);
 
-		expect(statusFilter()).toEqual(['Preparing', 'Pending']);
-		expect(statusFilter()).not.toContain('Approved');
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
+		expect(mockFindMany).not.toHaveBeenCalled();
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'approved' })).toBe(true);
+		expect(mockUpdateMany.mock.calls[0]![0].data.status).toBe('Approved');
 	});
 
-	it('keeps the head’s own wording when it refuses', async () => {
-		await applyDecommitOutcome({
-			hydraHeadId: HEAD,
-			decommitTxId: TX,
-			outcome: 'invalid',
-			reason: 'ValueNotConservedUTxO',
-		});
-
-		expect(mockUpdateMany.mock.calls[0]![0].data.failureReason).toBe('ValueNotConservedUTxO');
-	});
-
-	it('falls back to a plain reason when the node gave none', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'invalid' });
-
-		expect(mockUpdateMany.mock.calls[0]![0].data.failureReason).toContain('refused');
-	});
-
-	// A replay starting mid-history, or a restart between the two events, would
-	// otherwise leave a finalized withdrawal claiming it was never approved.
+	// A replay starting mid-history must still record the head's approval,
+	// while independent L1 proof remains outstanding.
 	it('stamps the approval when finalization is seen without it', async () => {
 		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'finalized' });
 
 		const data = mockUpdate.mock.calls[0]![0].data;
-		expect(data.status).toBe('Finalized');
+		expect(data.status).toBe('Approved');
+		expect(data.l1ObservedAt).toBeInstanceOf(Date);
+		expect(data.finalizedAt).toBeUndefined();
 		expect(data.approvedAt).toBeInstanceOf(Date);
 	});
 
@@ -108,8 +98,8 @@ describe('applyDecommitOutcome', () => {
 		expect(mockUpdate.mock.calls[0]![0].data.approvedAt).toBeUndefined();
 	});
 
-	// Finalization can arrive for a row already at Approved, which is the normal
-	// order, so Approved has to remain a status it can move away from.
+	// The node's finalization can arrive for an Approved row, so it must still
+	// accept the durable L1-observation marker.
 	it('finalizes a withdrawal that was already approved', async () => {
 		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'finalized' });
 
@@ -123,7 +113,18 @@ describe('applyDecommitOutcome', () => {
 		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT })).toBe(true);
 
 		expect(findClauses()[0].decommitTxId).toBeUndefined();
-		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Finalized');
+		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Approved');
+	});
+
+	it('does not attribute an anonymous finalization to a withdrawal that has no approval', async () => {
+		mockFindMany.mockImplementationOnce(async ({ where }: { where: { AND: Array<{ status: unknown }> } }) =>
+			where.AND[0].status === 'Approved' ? [] : [OPEN_ROW],
+		);
+
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT })).toBe(
+			false,
+		);
+		expect(mockUpdate).not.toHaveBeenCalled();
 	});
 
 	// A head replays its whole history on every reconnection, so a finalization
@@ -145,14 +146,14 @@ describe('applyDecommitOutcome', () => {
 		]);
 	});
 
-	// The row the stamping branch below was written for: approved but never
-	// recorded as approved, which is what a missed frame or a failed write leaves.
-	it('attributes a finalization to a withdrawal whose approval was never written', async () => {
+	// An expired row revived by an approval frame without a timestamp is Approved
+	// with no approvedAt. Its creation time remains a safe lower bound.
+	it('attributes a finalization to an Approved withdrawal with no approval time', async () => {
 		const observedAt = new Date('2026-08-05T22:37:49.553Z');
-		mockFindMany.mockResolvedValue([{ ...OPEN_ROW, approvedAt: null }]);
+		mockFindMany.mockResolvedValue([{ ...OPEN_ROW, status: 'Approved', approvedAt: null }]);
 
 		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt })).toBe(true);
-		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Finalized');
+		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Approved');
 		expect(mockUpdate.mock.calls[0]![0].data.approvedAt).toBeInstanceOf(Date);
 	});
 
@@ -271,31 +272,6 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 		expect(mockFindMany).toHaveBeenCalledTimes(1);
 	});
 
-	it('lets a late refusal of the same transaction record the head’s reason', async () => {
-		await applyDecommitOutcome({
-			hydraHeadId: HEAD,
-			decommitTxId: TX,
-			outcome: 'invalid',
-			reason: 'DecommitTxInvalid',
-		});
-
-		const call = mockUpdateMany.mock.calls[0]![0];
-		expect(call.where.OR).toContainEqual(EXPIRED_CLAUSE);
-		expect(call.data.failureReason).toBe('DecommitTxInvalid');
-	});
-
-	// A refusal from the node or the head is final. Only the expiry marker opens
-	// a Failed row, so a real failure can never be turned into an approval.
-	it('reopens only rows failed by expiry, never a real failure', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'invalid' });
-
-		const failedClauses = mockUpdateMany.mock.calls[0]![0].where.OR.filter((clause: any) => clause.status === 'Failed');
-		expect(failedClauses).toEqual([EXPIRED_CLAUSE]);
-		expect(PENDING_EXPIRED_REASONS).toContain(PENDING_EXPIRED_REASON);
-		// Rows expired before the node was asked carry the older wording.
-		expect(PENDING_EXPIRED_REASONS).toContain('the head never answered the withdrawal request');
-	});
-
 	it('finalizes an expired row when the finalization names it, and clears the expiry', async () => {
 		mockFindMany.mockResolvedValue([{ ...OPEN_ROW, approvedAt: null }]);
 
@@ -303,9 +279,9 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 
 		expect(findClauses()[0]).toEqual({
 			decommitTxId: TX,
-			OR: [{ status: { in: ['Preparing', 'Pending', 'Approved'] } }, EXPIRED_CLAUSE],
+			OR: [{ status: { in: ['Preparing', 'Pending', 'Approved'] }, l1ObservedAt: null }, EXPIRED_CLAUSE],
 		});
-		expect(mockUpdate.mock.calls[0]![0].data).toMatchObject({ status: 'Finalized', failureReason: null });
+		expect(mockUpdate.mock.calls[0]![0].data).toMatchObject({ status: 'Approved', failureReason: null });
 	});
 
 	// An unnamed finalization could belong to any withdrawal of the head: a
@@ -313,6 +289,6 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 	it('never attributes an unnamed finalization to an expired row', async () => {
 		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT });
 
-		expect(findClauses()[0]).toEqual({ status: { in: ['Preparing', 'Pending', 'Approved'] } });
+		expect(findClauses()[0]).toEqual({ status: 'Approved', l1ObservedAt: null });
 	});
 });
