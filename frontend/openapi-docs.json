@@ -34476,13 +34476,13 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its node reports no numeric L2 maxTxSize or one above 15000"
+                        "description": "Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its L2 ledger parameters are invalid or unsafe for fanout on current L1 (maxTxSize above 15000)"
                     },
                     "502": {
                         "description": "The Hydra node could not be reached, or the InitTx could not be verified"
                     },
                     "503": {
-                        "description": "The node is behind the chain and did not post Init, or independent L1 evidence is not available yet"
+                        "description": "The node is behind the chain and did not post Init, current L1 protocol parameters could not be read, or independent L1 evidence is not available yet"
                     },
                     "504": {
                         "description": "The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up"

@@ -14495,7 +14495,7 @@ export type PostHydraHeadInitErrors = {
      */
     404: unknown;
     /**
-     * Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its node reports no numeric L2 maxTxSize or one above 15000
+     * Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its L2 ledger parameters are invalid or unsafe for fanout on current L1 (maxTxSize above 15000)
      */
     409: unknown;
     /**
@@ -14503,7 +14503,7 @@ export type PostHydraHeadInitErrors = {
      */
     502: unknown;
     /**
-     * The node is behind the chain and did not post Init, or independent L1 evidence is not available yet
+     * The node is behind the chain and did not post Init, current L1 protocol parameters could not be read, or independent L1 evidence is not available yet
      */
     503: unknown;
     /**

@@ -35,6 +35,8 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
+# shellcheck source=test-db.sh
+source "$REPO/hydra-l2-flow/test-db.sh" || exit 1
 
 NETWORK=preprod
 export NETWORK HYDRA_FLOW_NETWORK="$NETWORK"
@@ -71,18 +73,10 @@ head_ada(){ curl -s --max-time 8 "$NODE1/snapshot/utxo" | jq '[to_entries[].valu
 cmd_db(){
   blue "[db] test Postgres on :$DB_PORT"
   if docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
-    local mapped
-    mapped=$(docker port "$DB_CONTAINER" 5432/tcp 2>/dev/null | head -1 | sed 's/.*://')
-    if [ -n "$mapped" ] && [ "$mapped" != "$DB_PORT" ]; then
-      red "  $DB_CONTAINER already exists publishing :$mapped, but DB_PORT is $DB_PORT."
-      red "  A container keeps the port it was created with. Pick one:"
-      red "    docker rm -f $DB_CONTAINER      # recreate it on :$DB_PORT"
-      red "    DB_PORT=$mapped $0 db           # keep the existing one"
-      return 1
-    fi
+    assert_test_db_loopback_binding "$DB_CONTAINER" "$DB_PORT" || return 1
     docker start "$DB_CONTAINER" >/dev/null 2>&1
   elif ! docker run -d --name "$DB_CONTAINER" -e POSTGRES_PASSWORD=testpass \
-      -e POSTGRES_DB=masumi_hydra_test -p "${DB_PORT}:5432" postgres:15 >/dev/null; then
+      -e POSTGRES_DB=masumi_hydra_test -p "127.0.0.1:${DB_PORT}:5432" postgres:15 >/dev/null; then
     red "  could not create $DB_CONTAINER on :$DB_PORT. Is the port already taken?"
     red "  Before this script used its own container name it shared"
     red "  masumi-hydra-test-db; an old one may still hold :$DB_PORT."
