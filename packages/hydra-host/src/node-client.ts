@@ -189,7 +189,10 @@ export class NodeClient {
 				resolve(value);
 			};
 
-			const socket = new WebSocket(`${this.wsUrl}?history=no`);
+			// Chain probes need sync state and slot, without the head's ledger contents.
+			const socket = new WebSocket(`${this.wsUrl}?history=no&snapshot-utxo=no`, {
+				maxPayload: MAX_NODE_RESPONSE_BYTES,
+			});
 			const timer = setTimeout(() => finish(NOT_SYNCED), timeoutMs);
 			timer.unref?.();
 
