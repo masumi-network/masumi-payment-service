@@ -9,6 +9,7 @@ type Where = {
 	decommitTxId?: string;
 	status?: Status | { in: Status[] };
 	approvedAt?: null | { lte?: Date; gt?: Date };
+	l1ObservedAt?: null;
 	createdAt?: { lte: Date };
 	failureReason?: { in: string[] };
 };
@@ -19,6 +20,7 @@ type Row = {
 	status: Status;
 	createdAt: Date;
 	approvedAt: Date | null;
+	l1ObservedAt: Date | null;
 	failureReason: string | null;
 };
 
@@ -41,6 +43,7 @@ function matches(where: Where): boolean {
 		}
 	}
 	if (where.approvedAt === null && row.approvedAt !== null) return false;
+	if (where.l1ObservedAt === null && row.l1ObservedAt !== null) return false;
 	if (where.approvedAt) {
 		if (row.approvedAt === null) return false;
 		if (where.approvedAt.lte && row.approvedAt > where.approvedAt.lte) return false;
@@ -92,6 +95,7 @@ beforeEach(() => {
 		status: HydraDecommitStatus.Pending,
 		createdAt: new Date('2026-10-22T06:00:00Z'),
 		approvedAt: null,
+		l1ObservedAt: null,
 		failureReason: null,
 	};
 });
@@ -100,10 +104,11 @@ afterEach(() => {
 });
 
 describe('withdrawal approval and finalization replay', () => {
-	it('finalizes a Pending withdrawal when both outcome frames arrive after reconnect', async () => {
+	it('keeps a replayed node finalization Approved until independent L1 depth', async () => {
 		await applyFrame('DecommitApproved', APPROVED_AT);
 		expect(await applyFrame('DecommitFinalized', FINALIZED_AT)).toBe(true);
-		expect(row.status).toBe(HydraDecommitStatus.Finalized);
+		expect(row.status).toBe(HydraDecommitStatus.Approved);
+		expect(row.l1ObservedAt).toEqual(FINALIZED_AT);
 		expect(row.approvedAt).toEqual(APPROVED_AT);
 	});
 

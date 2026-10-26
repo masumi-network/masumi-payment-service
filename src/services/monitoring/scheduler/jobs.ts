@@ -111,16 +111,14 @@ export const scheduledJobs: JobDefinition[] = [
 	},
 	{
 		initialDelayMs: 15200,
-		// Its own interval, not the shared Hydra one: each row costs a walk of
-		// address history, and nothing is waiting on the answer.
+		// Its own interval, not the shared Hydra one: each row can cost a walk of
+		// address history plus an independent confirmation-depth check.
 		intervalMs: PAYOUT_LOOKUP_INTERVAL_MS,
-		startMessage: 'Starting Hydra withdrawal payout identification',
+		startMessage: 'Starting Hydra withdrawal L1 finality reconciliation',
 		shouldRun: isHydraInUse,
-		finishMessage: 'Finished Hydra withdrawal payout identification',
-		// The head never reports which L1 transaction paid a withdrawal out, so it
-		// is observed on chain — and that observation is allowed to fail, because a
-		// settled withdrawal must not depend on a chain lookup succeeding. This is
-		// what makes the failure temporary rather than permanent.
+		finishMessage: 'Finished Hydra withdrawal L1 finality reconciliation',
+		// The head does not name the L1 payout. A failed observer read keeps the
+		// withdrawal Approved; this pass retries until L1 depth is proved.
 		run: reconcileUnidentifiedDecommitPayouts,
 	},
 	{
