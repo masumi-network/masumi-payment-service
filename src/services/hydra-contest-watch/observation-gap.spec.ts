@@ -12,10 +12,17 @@ const mockQueue = jest.fn() as AnyMock;
 type StoredGap = {
 	observationGapSince: Date | null;
 	observationGapAlertedAt: Date | null;
+	observationGapAlertedNodeSide: boolean | null;
 	observationCheckedAt: Date | null;
 };
+const none: StoredGap = {
+	observationGapSince: null,
+	observationGapAlertedAt: null,
+	observationGapAlertedNodeSide: null,
+	observationCheckedAt: null,
+};
 /** The head row as the database holds it; a failed transaction restores it. */
-let row: StoredGap = { observationGapSince: null, observationGapAlertedAt: null, observationCheckedAt: null };
+let row: StoredGap = { ...none };
 
 const database = {
 	hydraHead: { updateMany: mockUpdateMany },
@@ -50,22 +57,25 @@ beforeAll(async () => {
 
 const NOW = new Date('2026-10-27T12:00:00.000Z');
 const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
-const none: StoredGap = { observationGapSince: null, observationGapAlertedAt: null, observationCheckedAt: null };
 /** A gap that began `minutes` ago and was last checked one minute ago. */
 const since = (minutes: number): StoredGap => ({
+	...none,
 	observationGapSince: minutesAgo(minutes),
-	observationGapAlertedAt: null,
 	observationCheckedAt: minutesAgo(1),
 });
 const DOWN = { reason: 'the node has no verified live session for this head', isNodeSide: true };
+const SERVICE = { reason: "this service's replay of the node history has not finished", isNodeSide: false };
 const DAY_SECONDS = 86_400n;
 const GRACE_MS = 5 * 60_000;
+
+const comparable = (value: Date | boolean | null | undefined) =>
+	value instanceof Date ? value.getTime() : (value ?? null);
 
 /** A conditional updateMany against `row`, the way Postgres applies it. */
 function applyConditionalUpdate({ where, data }: { where: Partial<StoredGap>; data: Partial<StoredGap> }) {
 	const matches = (Object.keys(where) as (keyof StoredGap | 'id')[])
 		.filter((key): key is keyof StoredGap => key !== 'id')
-		.every((key) => (row[key]?.getTime() ?? null) === (where[key]?.getTime() ?? null));
+		.every((key) => comparable(row[key]) === comparable(where[key]));
 	if (!matches) return { count: 0 };
 	row = { ...row, ...data };
 	return { count: 1 };
@@ -186,19 +196,32 @@ describe('observationGraceMs', () => {
 
 describe('decideObservationGap', () => {
 	it.each([
-		['observed, no gap', none, true, 'unchanged'],
-		['observed again after a gap', since(10), true, 'clear'],
-		['first tick without the node', none, false, 'record'],
-		['still inside the grace period', since(4), false, 'touch'],
-		['past the grace period', since(5), false, 'alert'],
+		['observed, no gap', none, null, 'unchanged'],
+		['observed again after a gap', since(10), null, 'clear'],
+		['first tick without the node', none, DOWN, 'record'],
+		['still inside the grace period', since(4), DOWN, 'touch'],
+		['past the grace period', since(5), DOWN, 'alert'],
 		[
 			'already alerted for this gap',
 			{
 				observationGapSince: minutesAgo(30),
 				observationGapAlertedAt: minutesAgo(25),
+				observationGapAlertedNodeSide: true,
 				observationCheckedAt: minutesAgo(1),
 			},
-			false,
+			DOWN,
+			'touch',
+		],
+		[
+			"alerted as this service's fault, and now the node is down",
+			{ ...since(30), observationGapAlertedAt: minutesAgo(25), observationGapAlertedNodeSide: false },
+			DOWN,
+			'escalate',
+		],
+		[
+			"alerted as this service's fault, and still is",
+			{ ...since(30), observationGapAlertedAt: minutesAgo(25), observationGapAlertedNodeSide: false },
+			SERVICE,
 			'touch',
 		],
 		[
@@ -206,13 +229,14 @@ describe('decideObservationGap', () => {
 			{
 				observationGapSince: minutesAgo(90),
 				observationGapAlertedAt: minutesAgo(85),
+				observationGapAlertedNodeSide: true,
 				observationCheckedAt: minutesAgo(60),
 			},
-			false,
+			DOWN,
 			'record',
 		],
-	] as const)('%s', (_name, stored, isObserved, expected) => {
-		expect(gap.decideObservationGap(stored, isObserved, NOW, GRACE_MS)).toBe(expected);
+	] as const)('%s', (_name, stored, cause, expected) => {
+		expect(gap.decideObservationGap(stored, cause, NOW, GRACE_MS)).toBe(expected);
 	});
 });
 
@@ -241,11 +265,28 @@ describe('applyObservationGap', () => {
 
 	it('does not tell the operator to restore a node that this service cannot check', async () => {
 		row = since(6);
-		const cause = { reason: "this service's replay of the node history has not finished", isNodeSide: false };
-		await expect(gap.applyObservationGap(head(row), cause, NOW)).resolves.toBe('alert');
+		await expect(gap.applyObservationGap(head(row), SERVICE, NOW)).resolves.toBe('alert');
 		const { errorMessage } = (mockErrorCreate.mock.calls[0][0] as { data: { errorMessage: string } }).data;
-		expect(errorMessage).toContain('The node may still contest on its own');
+		expect(errorMessage).toContain('cannot tell whether the node still runs');
 		expect(errorMessage).not.toContain('Restore the node');
+	});
+
+	// A service-side alert cannot say whether the node runs. If the node then
+	// goes down, the deadline may pass in silence.
+	it("alerts once more when a gap alerted as this service's fault becomes a node outage", async () => {
+		row = since(6);
+		await expect(gap.applyObservationGap(head(row), SERVICE, NOW)).resolves.toBe('alert');
+		const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
+		await expect(gap.applyObservationGap(head(row), SERVICE, later(1))).resolves.toBe('touch');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(2))).resolves.toBe('escalate');
+		const staleRead = head({ ...row, observationGapAlertedNodeSide: false });
+		await expect(gap.applyObservationGap(staleRead, DOWN, later(2))).resolves.toBe('unchanged');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(3))).resolves.toBe('touch');
+
+		expect(mockQueue).toHaveBeenCalledTimes(2);
+		expect(mockQueue).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ isNodeSide: true }));
+		expect(mockErrorCreate).toHaveBeenCalledTimes(2);
+		expect(row.observationGapSince).toEqual(minutesAgo(6));
 	});
 
 	it('alerts again on the next tick when the webhook could not be queued', async () => {
@@ -277,6 +318,7 @@ describe('applyObservationGap', () => {
 		row = {
 			observationGapSince: minutesAgo(30),
 			observationGapAlertedAt: minutesAgo(25),
+			observationGapAlertedNodeSide: true,
 			observationCheckedAt: minutesAgo(1),
 		};
 		await gap.applyObservationGap(head(row), null, NOW);
@@ -292,20 +334,17 @@ describe('applyObservationGap', () => {
 		row = {
 			observationGapSince: minutesAgo(90),
 			observationGapAlertedAt: minutesAgo(85),
+			observationGapAlertedNodeSide: true,
 			observationCheckedAt: minutesAgo(60),
 		};
 		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).resolves.toBe('record');
-		expect(row).toEqual({ observationGapSince: NOW, observationGapAlertedAt: null, observationCheckedAt: NOW });
+		expect(row).toEqual({ ...none, observationGapSince: NOW, observationCheckedAt: NOW });
 		expect(mockQueue).not.toHaveBeenCalled();
 		await expect(tickEveryMinute(GRACE_MS / 60_000)).resolves.toBe('alert');
 	});
 
 	it('alerts well inside a five-minute contestation period', async () => {
-		row = {
-			observationGapSince: minutesAgo(1.5),
-			observationGapAlertedAt: null,
-			observationCheckedAt: minutesAgo(0.5),
-		};
+		row = { ...none, observationGapSince: minutesAgo(1.5), observationCheckedAt: minutesAgo(0.5) };
 		await expect(gap.applyObservationGap(head(row, 300n), DOWN, NOW)).resolves.toBe('alert');
 	});
 });

@@ -6,7 +6,8 @@
  * so it stays silent in exactly the case where no contest can happen: the node
  * is down, unreachable, has lost the head, or does not follow the chain. This
  * records when the service first could not observe the node, and alerts once
- * when that lasts the grace period.
+ * when that lasts the grace period. A gap first alerted as this service's fault
+ * is alerted once more if the node itself then goes down.
  */
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -52,7 +53,7 @@ export type ObservableNode = Pick<
 /**
  * Why this service cannot observe the head. `isNodeSide` is true when the node
  * may be down or unreachable, so no contest is guaranteed. It is false when the
- * node may still contest but this service cannot check it.
+ * fault is in this service, which then cannot tell whether the node contests.
  */
 export type UnobservedCause = { reason: string; isNodeSide: boolean };
 
@@ -91,7 +92,7 @@ export function nodeUnobservedCause(node: ObservableNode): UnobservedCause | nul
 const NODE_SIDE_ADVICE =
 	'hydra-node contests a close on an older snapshot only while it runs and follows the chain. Restore the node before any contestation deadline passes.';
 const SERVICE_SIDE_ADVICE =
-	'The node may still contest on its own, but this service cannot check a close against the newest signed snapshot. Check this service and its logs.';
+	'This service cannot check a close against the newest signed snapshot, and cannot tell whether the node still runs and contests on its own. Check this service and its logs. A node that goes down later is alerted again.';
 
 export function observationGraceMs(contestationPeriodSeconds: bigint): number {
 	const shareMs = (contestationPeriodSeconds * 1000n) / CONTESTATION_PERIOD_GRACE_DIVISOR;
@@ -101,6 +102,7 @@ export function observationGraceMs(contestationPeriodSeconds: bigint): number {
 export type StoredObservationGap = {
 	observationGapSince: Date | null;
 	observationGapAlertedAt: Date | null;
+	observationGapAlertedNodeSide: boolean | null;
 	observationCheckedAt: Date | null;
 };
 
@@ -113,21 +115,26 @@ export type ObservationGapDecision =
 	| 'touch'
 	/** The gap outlived the grace period and has not been alerted. */
 	| 'alert'
+	/** The gap was alerted as this service's fault, and now the node may be down. */
+	| 'escalate'
 	/** Nothing to write. */
 	| 'unchanged';
 
 export function decideObservationGap(
 	stored: StoredObservationGap,
-	isObserved: boolean,
+	unobservedCause: UnobservedCause | null,
 	now: Date,
 	graceMs: number,
 ): ObservationGapDecision {
-	if (isObserved) return stored.observationGapSince === null ? 'unchanged' : 'clear';
+	if (unobservedCause === null) return stored.observationGapSince === null ? 'unchanged' : 'clear';
 	const isStale =
 		stored.observationCheckedAt === null ||
 		now.getTime() - stored.observationCheckedAt.getTime() >= OBSERVATION_STALE_MS;
 	if (stored.observationGapSince === null || isStale) return 'record';
-	if (stored.observationGapAlertedAt !== null) return 'touch';
+	if (stored.observationGapAlertedAt !== null) {
+		const isNowNodeSide = stored.observationGapAlertedNodeSide === false && unobservedCause.isNodeSide;
+		return isNowNodeSide ? 'escalate' : 'touch';
+	}
 	const isGraceOver = now.getTime() - stored.observationGapSince.getTime() >= graceMs;
 	return isGraceOver ? 'alert' : 'touch';
 }
@@ -154,19 +161,19 @@ export async function applyObservationGap(
 	now: Date,
 	database: ObservationGapDatabase = prisma,
 ): Promise<ObservationGapDecision> {
-	const decision = decideObservationGap(
-		head,
-		unobservedCause === null,
-		now,
-		observationGraceMs(head.contestationPeriod),
-	);
+	const decision = decideObservationGap(head, unobservedCause, now, observationGraceMs(head.contestationPeriod));
 	const gapSince = head.observationGapSince;
 	const readState = { id: head.id, observationGapSince: gapSince };
 	switch (decision) {
 		case 'clear':
 			await database.hydraHead.updateMany({
 				where: readState,
-				data: { observationGapSince: null, observationGapAlertedAt: null, observationCheckedAt: null },
+				data: {
+					observationGapSince: null,
+					observationGapAlertedAt: null,
+					observationGapAlertedNodeSide: null,
+					observationCheckedAt: null,
+				},
 			});
 			return decision;
 		case 'record':
@@ -180,19 +187,35 @@ export async function applyObservationGap(
 			}
 			await database.hydraHead.updateMany({
 				where: readState,
-				data: { observationGapSince: now, observationGapAlertedAt: null, observationCheckedAt: now },
+				data: {
+					observationGapSince: now,
+					observationGapAlertedAt: null,
+					observationGapAlertedNodeSide: null,
+					observationCheckedAt: now,
+				},
 			});
 			return decision;
 		case 'touch':
 			await database.hydraHead.updateMany({ where: readState, data: { observationCheckedAt: now } });
 			return decision;
-		case 'alert': {
+		case 'alert':
+		case 'escalate': {
 			if (gapSince === null || unobservedCause === null) return 'unchanged';
 			const advice = unobservedCause.isNodeSide ? NODE_SIDE_ADVICE : SERVICE_SIDE_ADVICE;
+			// Each claim matches only the state this tick read, so two instances
+			// alert a gap once, and escalate it once.
+			const claimState =
+				decision === 'alert'
+					? { ...readState, observationGapAlertedAt: null }
+					: { ...readState, observationGapAlertedNodeSide: false };
 			const isAnnounced = await database.$transaction(async (tx) => {
 				const claimed = await tx.hydraHead.updateMany({
-					where: { ...readState, observationGapAlertedAt: null },
-					data: { observationGapAlertedAt: now, observationCheckedAt: now },
+					where: claimState,
+					data: {
+						observationGapAlertedAt: now,
+						observationGapAlertedNodeSide: unobservedCause.isNodeSide,
+						observationCheckedAt: now,
+					},
 				});
 				if (claimed.count !== 1) return false;
 				await tx.hydraHeadError.create({

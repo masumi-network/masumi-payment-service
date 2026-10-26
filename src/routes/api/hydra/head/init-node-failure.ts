@@ -10,8 +10,7 @@ import { getErrorMessage } from './index';
  * URL or token can fail the same way, and the cause often tells them apart.
  * The warn names the head; the endpoint's server-error log records the 502 too.
  * Some faults also arrive here as a closed session: a frame that ws rejects
- * (an oversized one), a log rotation before Greetings, and a local disconnect
- * racing Init.
+ * (an oversized one) and a local disconnect racing Init.
  */
 export function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
 	const cause = describeTransportFailure(error);

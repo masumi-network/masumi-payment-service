@@ -481,10 +481,15 @@ The error and the webhook `reason` name the cause found at the last check.
   answer for another head or party, or this service could not reach it. No
   contest is guaranteed. Check the Host and the network path, and restart the
   node if it is down.
-- `false`: the node may still contest, but this service cannot check it. Its
-  replay of the node history failed or has not finished, the node rotated its
-  event log, or a stored configuration error stopped it. Check this service
-  and its logs.
+- `false`: the fault is in this service. Its replay of the node history failed
+  or has not finished, the node rotated its event log, or a stored
+  configuration error stopped it. This service cannot tell whether the node
+  still runs and contests. Check this service and its logs.
+
+The webhook fires once per gap. One exception: a gap alerted with
+`isNodeSide: false` is alerted once more with `isNodeSide: true` when a later
+check finds a node-side cause. A rotated event log keeps this service from
+checking the node, so while it lasts a node outage is not seen.
 
 Subscribe to the webhook. Act before the contestation deadline in the webhook
 passes, or within the contestation period if the head is still open.

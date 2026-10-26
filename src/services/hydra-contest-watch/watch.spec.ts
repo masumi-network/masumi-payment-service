@@ -49,7 +49,9 @@ jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
 }));
+class MockConfigurationError extends Error {}
 jest.unstable_mockModule('./read-only-observer', () => ({
+	ContestObserverConfigurationError: MockConfigurationError,
 	readOnlyContestNode: mockReadOnlyNode,
 	releaseUnusedContestObservers: mockReleaseObservers,
 }));
@@ -77,6 +79,7 @@ const empty = {
 	contestationDeadline: null,
 	observationGapSince: null,
 	observationGapAlertedAt: null,
+	observationGapAlertedNodeSide: null,
 	observationCheckedAt: null,
 };
 /** A node whose live and history sessions are bound to the head and that follows the chain. */
@@ -349,7 +352,11 @@ describe('runHydraContestWatch', () => {
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'head-1', observationGapSince: unobservedSince, observationGapAlertedAt: null },
-			data: { observationGapAlertedAt: expect.any(Date), observationCheckedAt: expect.any(Date) },
+			data: {
+				observationGapAlertedAt: expect.any(Date),
+				observationGapAlertedNodeSide: true,
+				observationCheckedAt: expect.any(Date),
+			},
 		});
 		expect(mockUnobservedQueue).toHaveBeenCalledWith(
 			expect.anything(),
@@ -366,7 +373,13 @@ describe('runHydraContestWatch', () => {
 	// A bad stored configuration or a rotated event log is this service's to
 	// fix. A node that answers for another head may not contest this one.
 	it.each([
-		['a bad stored configuration', new Error('no pinned identifier'), 'no pinned identifier', false],
+		[
+			'a bad stored configuration',
+			new MockConfigurationError('no pinned identifier'),
+			'could not load the head configuration (no pinned identifier)',
+			false,
+		],
+		['an unknown error', new Error('surprise'), 'could not observe the node (surprise)', false],
 		[
 			'a rotated event log',
 			createUnsupportedPersistenceRotationError(),
@@ -414,6 +427,7 @@ describe('runHydraContestWatch', () => {
 			data: {
 				observationGapSince: expect.any(Date),
 				observationGapAlertedAt: null,
+				observationGapAlertedNodeSide: null,
 				observationCheckedAt: expect.any(Date),
 			},
 		});

@@ -36,11 +36,21 @@ export async function readOnlyContestNode(headId: string): Promise<HydraNode> {
  * of these are HydraProtocolErrors, such as a malformed stored key, but the
  * node was never contacted, so the fault is on this side.
  */
-export class ContestObserverConfigurationError extends Error {}
+export class ContestObserverConfigurationError extends Error {
+	readonly cause?: unknown;
+
+	constructor(message: string, options?: { cause?: unknown }) {
+		super(message);
+		this.cause = options?.cause;
+		this.name = 'ContestObserverConfigurationError';
+	}
+}
 
 async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
 	const node = await buildReadOnlyContestNode(headId).catch((error: unknown) => {
-		throw new ContestObserverConfigurationError(error instanceof Error ? error.message : 'Unknown error');
+		throw new ContestObserverConfigurationError(error instanceof Error ? error.message : 'Unknown error', {
+			cause: error,
+		});
 	});
 	try {
 		await node.connect();

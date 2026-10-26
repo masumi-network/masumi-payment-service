@@ -20,7 +20,11 @@ import { webhookEventsService } from '@/services/webhooks/events.service';
 import { HydraPersistenceRotationError, HydraProtocolError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { applyObservationGap, nodeUnobservedCause, type UnobservedCause } from './observation-gap';
-import { readOnlyContestNode, releaseUnusedContestObservers } from './read-only-observer';
+import {
+	ContestObserverConfigurationError,
+	readOnlyContestNode,
+	releaseUnusedContestObservers,
+} from './read-only-observer';
 
 /** A contest is posted and seen on chain within a few blocks. Two minutes without one is not a slow chain. */
 export const CONTEST_GRACE_MS = 2 * 60_000;
@@ -189,6 +193,9 @@ export async function applyContestGapObservation(
  * or a bad stored configuration is this service's to fix.
  */
 function connectFailureCause(error: unknown, message: string): UnobservedCause {
+	if (error instanceof ContestObserverConfigurationError) {
+		return { reason: `this service could not load the head configuration (${message})`, isNodeSide: false };
+	}
 	if (error instanceof HydraTransportError) {
 		return { reason: `this service could not reach the node (${message})`, isNodeSide: true };
 	}
@@ -217,6 +224,7 @@ export async function runHydraContestWatch(): Promise<void> {
 			contestationDeadline: true,
 			observationGapSince: true,
 			observationGapAlertedAt: true,
+			observationGapAlertedNodeSide: true,
 			observationCheckedAt: true,
 		},
 	});
