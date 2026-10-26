@@ -225,6 +225,12 @@ describe('decideObservationGap', () => {
 			'touch',
 		],
 		[
+			'alerted as a node outage, and the node is back',
+			{ ...since(30), observationGapAlertedAt: minutesAgo(25), observationGapAlertedNodeSide: true },
+			SERVICE,
+			'rearm',
+		],
+		[
 			'a gap left from an earlier outage',
 			{
 				observationGapSince: minutesAgo(90),
@@ -287,6 +293,19 @@ describe('applyObservationGap', () => {
 		expect(mockQueue).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ isNodeSide: true }));
 		expect(mockErrorCreate).toHaveBeenCalledTimes(2);
 		expect(row.observationGapSince).toEqual(minutesAgo(6));
+	});
+
+	// The node came back while this service still cannot follow it, then went down again.
+	it('alerts each node outage inside one gap, not only the first', async () => {
+		row = since(6);
+		const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
+		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).resolves.toBe('alert');
+		await expect(gap.applyObservationGap(head(row), SERVICE, later(1))).resolves.toBe('rearm');
+		await expect(gap.applyObservationGap(head(row), SERVICE, later(2))).resolves.toBe('touch');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(3))).resolves.toBe('escalate');
+
+		expect(mockQueue).toHaveBeenCalledTimes(2);
+		expect(row.observationGapAlertedNodeSide).toBe(true);
 	});
 
 	it('alerts again on the next tick when the webhook could not be queued', async () => {

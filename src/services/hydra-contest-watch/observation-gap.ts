@@ -6,8 +6,8 @@
  * so it stays silent in exactly the case where no contest can happen: the node
  * is down, unreachable, has lost the head, or does not follow the chain. This
  * records when the service first could not observe the node, and alerts once
- * when that lasts the grace period. A gap first alerted as this service's fault
- * is alerted once more if the node itself then goes down.
+ * when that lasts the grace period. A gap alerted as this service's fault is
+ * alerted again each time a later check finds the node itself down.
  */
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -53,7 +53,7 @@ export type ObservableNode = Pick<
 /**
  * Why this service cannot observe the head. `isNodeSide` is true when the node
  * may be down or unreachable, so no contest is guaranteed. It is false when the
- * fault is in this service, which then cannot tell whether the node contests.
+ * service cannot follow the node, and so cannot tell whether it contests.
  */
 export type UnobservedCause = { reason: string; isNodeSide: boolean };
 
@@ -117,6 +117,8 @@ export type ObservationGapDecision =
 	| 'alert'
 	/** The gap was alerted as this service's fault, and now the node may be down. */
 	| 'escalate'
+	/** The gap was alerted as a node outage, and the node is back: a later outage alerts again. */
+	| 'rearm'
 	/** Nothing to write. */
 	| 'unchanged';
 
@@ -132,8 +134,9 @@ export function decideObservationGap(
 		now.getTime() - stored.observationCheckedAt.getTime() >= OBSERVATION_STALE_MS;
 	if (stored.observationGapSince === null || isStale) return 'record';
 	if (stored.observationGapAlertedAt !== null) {
-		const isNowNodeSide = stored.observationGapAlertedNodeSide === false && unobservedCause.isNodeSide;
-		return isNowNodeSide ? 'escalate' : 'touch';
+		if (stored.observationGapAlertedNodeSide === false && unobservedCause.isNodeSide) return 'escalate';
+		if (stored.observationGapAlertedNodeSide === true && !unobservedCause.isNodeSide) return 'rearm';
+		return 'touch';
 	}
 	const isGraceOver = now.getTime() - stored.observationGapSince.getTime() >= graceMs;
 	return isGraceOver ? 'alert' : 'touch';
@@ -197,6 +200,12 @@ export async function applyObservationGap(
 			return decision;
 		case 'touch':
 			await database.hydraHead.updateMany({ where: readState, data: { observationCheckedAt: now } });
+			return decision;
+		case 'rearm':
+			await database.hydraHead.updateMany({
+				where: { ...readState, observationGapAlertedNodeSide: true },
+				data: { observationGapAlertedNodeSide: false, observationCheckedAt: now },
+			});
 			return decision;
 		case 'alert':
 		case 'escalate': {
