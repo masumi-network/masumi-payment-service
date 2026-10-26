@@ -17,6 +17,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import { readOnlyContestNode, releaseUnusedContestObservers } from './read-only-observer';
 
 /** A contest is posted and seen on chain within a few blocks. Two minutes without one is not a slow chain. */
 export const CONTEST_GRACE_MS = 2 * 60_000;
@@ -179,30 +180,41 @@ export async function applyContestGapObservation(
 	return decision.action;
 }
 
-/** Scheduler entry: compare chain and node on every closed head this instance holds a session for. */
+/** Compare authenticated node history even while the payment session is quarantined. */
 export async function runHydraContestWatch(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
 		where: {
-			status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
-			isEnabled: true,
+			status: { in: [HydraHeadStatus.Open, HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
+			retiredAt: null,
 			LocalParticipant: { isNot: null },
 		},
-		select: { id: true, status: true, contestGapSignature: true, contestGapSince: true, contestGapAlertedAt: true },
+		select: {
+			id: true,
+			status: true,
+			isEnabled: true,
+			contestGapSignature: true,
+			contestGapSince: true,
+			contestGapAlertedAt: true,
+		},
 	});
 	const connectionManager = getHydraConnectionManager();
+	const needsReadOnlyObserver = new Set<string>();
 	for (const head of heads) {
-		// Only the instance that owns the head's session reads it; the others skip.
-		const node = connectionManager.getNode(head.id);
-		if (!node) continue;
-		// Unknown is not "no gap": a node still replaying, or a session not yet
-		// verified, must not clear a gap it cannot see.
-		const closedSnapshotNumber = node.closedSnapshotNumber;
-		const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
-		if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) continue;
 		try {
+			let node = head.isEnabled ? connectionManager.getNode(head.id) : null;
+			if (!node) {
+				needsReadOnlyObserver.add(head.id);
+				node = await readOnlyContestNode(head.id);
+			}
+			// Durable status may still say Open after a lifecycle write failed.
+			// Use the pinned node's observed close status, never that stale row.
+			if (node.status !== HydraHeadStatus.Closed && node.status !== HydraHeadStatus.FanoutPossible) continue;
+			const closedSnapshotNumber = node.closedSnapshotNumber;
+			const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+			if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) continue;
 			await applyContestGapObservation(
 				head,
-				{ status: head.status, closedSnapshotNumber, verifiedSnapshotNumber },
+				{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
 				new Date(),
 			);
 		} catch (error) {
@@ -212,4 +224,5 @@ export async function runHydraContestWatch(): Promise<void> {
 			});
 		}
 	}
+	await releaseUnusedContestObservers(needsReadOnlyObserver);
 }
