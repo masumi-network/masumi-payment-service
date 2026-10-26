@@ -423,12 +423,13 @@ Two things follow from how Hydra works here:
 
 Set once per head, in the invite, and fixed for its life.
 
-Mainnet values are given throughout, but mainnet is not runnable yet: the Host
-refuses to boot without a reviewed ledger parameters file and
-`packages/hydra-host/params/` ships only `preprod.json`. Adding one is a
-reviewed change, not a configuration step —
-`HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET` has to be set to its hash on this
-side at the same time.
+Mainnet values are given throughout. The repository ships only a preprod
+parameters file, so the Host's default mainnet path has no file. An operator
+can supply a mainnet file through `HYDRA_HOST_LEDGER_PARAMS_FILE` and set its
+hash in `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET` on the payment service.
+The Host checks the file and the service checks the hash match. Neither check
+proves that the file was reviewed. Before deployment, review the exact file
+against the target network and record that file and its hash with the release.
 
 |                         | Preprod  | Mainnet | What it does                                                                                                                                                                                                   |
 | ----------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
