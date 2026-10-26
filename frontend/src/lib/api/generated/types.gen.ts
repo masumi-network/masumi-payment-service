@@ -4539,9 +4539,9 @@ export type PostApiKeyData = {
          */
         usageLimited?: string;
         /**
-         * The credits allowed to be used by the API key. Only relevant if usageLimited is true.
+         * The credits allowed to be used by the API key when usageLimited is true. Omitted defaults to an empty array (read-only keys). Pay-enabled usage-limited keys must supply at least one entry.
          */
-        UsageCredits: Array<{
+        UsageCredits?: Array<{
             /**
              * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); "lovelace" is accepted and stored as the empty string. For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.
              */
