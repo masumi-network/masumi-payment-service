@@ -47,7 +47,7 @@ export type SupervisorLogger = {
 };
 
 export class Supervisor {
-	private readonly processes = new NodeProcessManager();
+	private readonly processes: NodeProcessManager;
 	private readonly clients = new Map<string, NodeClient>();
 	/** Nodes currently being reconciled, so overlapping ticks cannot double-act. */
 	private readonly inFlight = new Set<string>();
@@ -62,7 +62,11 @@ export class Supervisor {
 		private readonly ports: PortAllocator,
 		private readonly slotConfig: SlotConfig,
 		private readonly logger: SupervisorLogger,
-	) {}
+	) {
+		this.processes = new NodeProcessManager((nodeId, error) =>
+			this.logger.error(`[supervisor] could not rotate diagnostic log for ${nodeId}: ${String(error)}`),
+		);
+	}
 
 	private get limits(): PlanLimits {
 		return { maxStartAttempts: MAX_START_ATTEMPTS, escrowTtlSeconds: this.config.escrowTtlSeconds };
