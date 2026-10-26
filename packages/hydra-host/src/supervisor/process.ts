@@ -17,6 +17,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { NODE_LOG_CHECK_MS, rotateNodeLog } from './node-log.js';
 
 export type SpawnRequest = {
 	nodeId: string;
@@ -248,6 +249,35 @@ async function listProcessCommands(): Promise<Array<{ pid: number; command: stri
 
 export class NodeProcessManager {
 	private readonly running = new Map<string, RunningNode>();
+	private readonly logTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+	constructor(private readonly onLogError: (nodeId: string, error: unknown) => void = () => undefined) {}
+
+	private watchLog(nodeId: string, logDir: string): void {
+		this.stopWatchingLog(nodeId);
+		let isRotating = false;
+		const timer = setInterval(() => {
+			if (!this.isRunning(nodeId)) {
+				this.stopWatchingLog(nodeId);
+				return;
+			}
+			if (isRotating) return;
+			isRotating = true;
+			void rotateNodeLog(logDir)
+				.catch((error: unknown) => this.onLogError(nodeId, error))
+				.finally(() => {
+					isRotating = false;
+				});
+		}, NODE_LOG_CHECK_MS);
+		timer.unref();
+		this.logTimers.set(nodeId, timer);
+	}
+
+	private stopWatchingLog(nodeId: string): void {
+		const timer = this.logTimers.get(nodeId);
+		if (timer !== undefined) clearInterval(timer);
+		this.logTimers.delete(nodeId);
+	}
 
 	isRunning(nodeId: string): boolean {
 		const entry = this.running.get(nodeId);
@@ -311,7 +341,10 @@ export class NodeProcessManager {
 		if (!isProcessAlive(pid) || (await inspectNodeProcess(pid, binary, nodeDir)) === 'different') {
 			return false;
 		}
+		const logDir = path.join(nodeDir, 'logs');
+		await rotateNodeLog(logDir);
 		this.running.set(nodeId, { nodeId, pid, startedAtMs: Date.now(), identity: { binary, nodeDir } });
+		this.watchLog(nodeId, logDir);
 		return true;
 	}
 
@@ -325,6 +358,7 @@ export class NodeProcessManager {
 
 		const logDir = path.join(request.nodeDir, 'logs');
 		await fs.mkdir(logDir, { recursive: true });
+		await rotateNodeLog(logDir);
 		// Logs go to a file for operator forensics only. Nothing in the supervisor
 		// parses them: drift comes from the API, not from stdout.
 		const handle = await fs.open(path.join(logDir, 'node.log'), 'a');
@@ -343,6 +377,7 @@ export class NodeProcessManager {
 			startedAtMs: Date.now(),
 		};
 		this.running.set(request.nodeId, entry);
+		this.watchLog(request.nodeId, logDir);
 
 		let completed = false;
 		const complete = (code: number | null, signal: NodeJS.Signals | null): void => {
@@ -351,6 +386,7 @@ export class NodeProcessManager {
 			}
 			completed = true;
 			this.running.delete(request.nodeId);
+			this.stopWatchingLog(request.nodeId);
 			void handle.close().catch(() => undefined);
 			onExit(request.nodeId, code, signal);
 		};
