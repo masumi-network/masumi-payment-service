@@ -5,6 +5,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { buildCompactSummary } from './compact-summary';
+import { findHydraHeadPaymentSourceId, isSourceScopedHydraEvent } from './hydra-source';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 import {
 	assertWebhookDestinationAllowed,
@@ -276,6 +277,57 @@ class WebhookSenderService {
 				},
 			});
 			return;
+		}
+
+		// Recheck older queued scoped Hydra rows before sending. They may have been
+		// persisted before source-scoped selection was enforced at enqueue time.
+		if (
+			(isSourceScopedHydraEvent(delivery.eventType) || isSourceScopedHydraEvent(delivery.payload.event_type)) &&
+			delivery.WebhookEndpoint.paymentSourceId !== null
+		) {
+			const isLowBalance = delivery.eventType === WebhookEventType.HYDRA_HEAD_LOW_BALANCE;
+			const hydraHeadId = getOwnString(delivery.payload.data, 'hydraHeadId');
+			const hydraLocalParticipantId = isLowBalance
+				? getOwnString(delivery.payload.data, 'hydraLocalParticipantId')
+				: undefined;
+			let paymentSourceId: string | null = null;
+			if (
+				delivery.eventType === delivery.payload.event_type &&
+				hydraHeadId &&
+				(!isLowBalance || hydraLocalParticipantId)
+			) {
+				try {
+					paymentSourceId = await findHydraHeadPaymentSourceId(hydraHeadId, prisma, hydraLocalParticipantId);
+				} catch (error) {
+					const isFinalAttempt = updatedDelivery.attempts >= delivery.maxAttempts;
+					await prisma.webhookDelivery.update({
+						where: { id: deliveryId },
+						data: {
+							status: isFinalAttempt ? WebhookDeliveryStatus.Failed : WebhookDeliveryStatus.Retrying,
+							errorMessage: 'Could not verify Hydra webhook source',
+							nextRetryAt: isFinalAttempt
+								? null
+								: new Date(Date.now() + this.calculateRetryDelay(updatedDelivery.attempts)),
+						},
+					});
+					logger.error('Hydra webhook source lookup failed', {
+						delivery_id: deliveryId,
+						error: error instanceof Error ? error.message : 'Unknown error',
+					});
+					return;
+				}
+			}
+			if (paymentSourceId === null || delivery.WebhookEndpoint.paymentSourceId !== paymentSourceId) {
+				await prisma.webhookDelivery.update({
+					where: { id: deliveryId },
+					data: {
+						status: WebhookDeliveryStatus.Cancelled,
+						errorMessage: 'Hydra webhook source does not match its endpoint',
+					},
+				});
+				logger.warn('Cancelled Hydra webhook delivery with unverified source', { delivery_id: deliveryId });
+				return;
+			}
 		}
 
 		const decryptedUrl = decryptWebhookUrlForDelivery(delivery.WebhookEndpoint.url);

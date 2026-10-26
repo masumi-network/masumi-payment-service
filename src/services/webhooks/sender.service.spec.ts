@@ -6,6 +6,7 @@ const mockWebhookEndpointFindUnique = jest.fn() as jest.Mock<any>;
 const mockWebhookEndpointUpdate = jest.fn() as jest.Mock<any>;
 const mockWebhookDeliveryFindUnique = jest.fn() as jest.Mock<any>;
 const mockWebhookDeliveryUpdate = jest.fn() as jest.Mock<any>;
+const mockHydraHeadFindUnique = jest.fn() as jest.Mock<any>;
 const mockAssertWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
 const loggerInfo = jest.fn() as jest.Mock<any>;
 const loggerWarn = jest.fn() as jest.Mock<any>;
@@ -21,6 +22,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockWebhookDeliveryFindUnique,
 			update: mockWebhookDeliveryUpdate,
 		},
+		hydraHead: { findUnique: mockHydraHeadFindUnique },
 	},
 }));
 
@@ -565,5 +567,177 @@ describe('webhookSenderService.processWebhookDelivery', () => {
 				consecutiveFailures: 0,
 			},
 		});
+	});
+
+	it('cancels an old Hydra delivery queued for a different source before sending it', async () => {
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+		});
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-wrong-source',
+			webhookEndpointId: 'webhook-source-2',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-2',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-2',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-2',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-wrong-source');
+
+		expect(global.fetch).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-wrong-source' },
+			data: expect.objectContaining({ status: 'Cancelled' }),
+		});
+	});
+
+	it('sends an old Hydra delivery queued for its owning source', async () => {
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+		});
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-right-source',
+			webhookEndpointId: 'webhook-source-1',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-1',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-1',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-1',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-right-source');
+
+		expect(global.fetch).toHaveBeenCalledTimes(1);
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-right-source' },
+			data: expect.objectContaining({ status: 'Success' }),
+		});
+	});
+
+	it('cancels an old scoped Hydra row with no Head id before sending it', async () => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-no-head',
+			webhookEndpointId: 'webhook-source-1',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-1',
+				data: { hydraHeadId: 42 },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-1',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-1',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-no-head');
+
+		expect(global.fetch).not.toHaveBeenCalled();
+		expect(mockHydraHeadFindUnique).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-no-head' },
+			data: expect.objectContaining({ status: 'Cancelled' }),
+		});
+	});
+
+	it('retries a scoped Hydra delivery when its source lookup fails', async () => {
+		mockHydraHeadFindUnique.mockRejectedValue(new Error('database unavailable'));
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-lookup-failed',
+			webhookEndpointId: 'webhook-source-1',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-1',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-1',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-1',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-lookup-failed');
+
+		expect(global.fetch).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-lookup-failed' },
+			data: expect.objectContaining({ status: 'Retrying', nextRetryAt: expect.any(Date) }),
+		});
+	});
+
+	it('still sends a Hydra delivery queued for a global endpoint', async () => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-global',
+			webhookEndpointId: 'webhook-global',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-global',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-global',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: null,
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-global');
+
+		expect(global.fetch).toHaveBeenCalledTimes(1);
+		expect(mockHydraHeadFindUnique).not.toHaveBeenCalled();
 	});
 });
