@@ -218,6 +218,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 			// writes (the proxy strips a same-name upstream header; raw-socket
 			// upgrade replies bypass it, but crawlers never send Upgrade).
 			response.setHeader('X-Robots-Tag', 'noindex, nofollow');
+			// Per response, so an answer pipelined behind a proxied one does not
+			// inherit its opt-out from the idle timeout.
+			response.setTimeout(server.timeout);
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
 
@@ -703,10 +706,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 		}
 
 		// Only an authenticated caller gets here, and a node may take its time.
-		// Do not restore the timeout on finish: Node arms the keep-alive timeout
-		// itself and the idle timeout on the next request, and a restore would
-		// cut off a proxied request pipelined behind this one.
-		request.socket.setTimeout(0);
+		// Per response, not per socket: a pipelined response gets the socket,
+		// and with it this timeout, only when its turn comes. After the last
+		// answer Node arms the keep-alive timeout itself.
+		response.setTimeout(0);
 		proxyHttp(request, response, record.apiPort, target.subPath, query, (message) => logger.error(`[api] ${message}`));
 	}
 

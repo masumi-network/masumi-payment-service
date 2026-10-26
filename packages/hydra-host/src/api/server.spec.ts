@@ -514,6 +514,32 @@ describe('lifecycle guards over HTTP', () => {
 		});
 	});
 
+	// The proxied answer opts out of the idle timeout. A Host answer queued
+	// behind it must not inherit that, or a caller who never reads it holds
+	// the socket open for good.
+	it('closes a slow reader of an answer pipelined behind a proxied one', async () => {
+		await withSlowNode('idem-slow-reader', {}, async (nodeId) => {
+			server.timeout = 300;
+			const hostSocketClosed = new Promise<number>((resolve) => {
+				server.once('connection', (hostSocket: Socket) => {
+					const startedAt = Date.now();
+					hostSocket.on('close', () => resolve(Date.now() - startedAt));
+				});
+			});
+			const bundle = 'GET /docs/assets/swagger-ui-bundle.js HTTP/1.1\r\nHost: x\r\n\r\n';
+			const reader = connect((server.address() as AddressInfo).port, '127.0.0.1', () => {
+				reader.pause();
+				reader.write(proxiedGet(nodeId, '/head') + bundle.repeat(20));
+			});
+			reader.on('error', () => undefined);
+			try {
+				expect(await hostSocketClosed).toBeLessThan(3_000);
+			} finally {
+				reader.destroy();
+			}
+		});
+	}, 10_000);
+
 	it('closes an idle keep-alive socket on the keep-alive timeout after a proxied answer', async () => {
 		await withSlowNode('idem-keep-alive', {}, async (nodeId) => {
 			server.keepAliveTimeout = 100;
