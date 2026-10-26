@@ -114,10 +114,20 @@ export async function resolveDecommitPayoutTx(params: {
 		return;
 	}
 
-	await prisma.hydraDecommit.updateMany({
-		where: { id: decommitId, status: HydraDecommitStatus.Approved, l1ObservedAt: { not: null }, l1TxId: row.l1TxId },
+	// A replay can repair the observed amount while this proof is in flight.
+	// Bind both writes to the value actually proved, including native assets.
+	const provenValue = { settledLovelace: distributed.lovelace, settledAssets: { equals: distributed.assets } };
+	const { count: linked } = await prisma.hydraDecommit.updateMany({
+		where: {
+			id: decommitId,
+			status: HydraDecommitStatus.Approved,
+			l1ObservedAt: { not: null },
+			l1TxId: row.l1TxId,
+			...provenValue,
+		},
 		data: { l1TxId: txId },
 	});
+	if (linked === 0) return;
 	const depth = await payoutDepth(blockfrost, txId);
 	if (depth === 'missing') {
 		await prisma.hydraDecommit.updateMany({
@@ -128,7 +138,13 @@ export async function resolveDecommitPayoutTx(params: {
 	}
 	if (depth !== 'deep') return;
 	const { count } = await prisma.hydraDecommit.updateMany({
-		where: { id: decommitId, status: HydraDecommitStatus.Approved, l1ObservedAt: { not: null }, l1TxId: txId },
+		where: {
+			id: decommitId,
+			status: HydraDecommitStatus.Approved,
+			l1ObservedAt: { not: null },
+			l1TxId: txId,
+			...provenValue,
+		},
 		data: { status: HydraDecommitStatus.Finalized, finalizedAt: new Date(), l1CheckedAt: new Date() },
 	});
 	if (count > 0) logger.info(`[HydraDecommit] withdrawal ${decommitId} reached independent L1 depth in ${txId}`);

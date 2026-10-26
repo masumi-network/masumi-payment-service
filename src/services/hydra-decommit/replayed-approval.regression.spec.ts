@@ -74,20 +74,25 @@ jest.unstable_mockModule('./payout-lookup', () => ({ resolveDecommitPayoutTx: je
 
 const { readDecommitSettled } = await import('@/lib/hydra/hydra/node-frames');
 const { applyDecommitOutcome } = await import('./settle');
+const { correlateDecommitOutcome } = await import('@/lib/hydra/hydra/decommit-resolution');
+let cursor: Parameters<typeof correlateDecommitOutcome>[0];
 
 async function applyFrame(tag: 'DecommitApproved' | 'DecommitFinalized', timestamp: Date): Promise<boolean> {
-	const outcome = readDecommitSettled(tag, {
+	const parsed = readDecommitSettled(tag, {
 		tag,
 		headId: HEAD,
 		...(tag === 'DecommitApproved' ? { decommitTxId: TX } : {}),
 		timestamp: timestamp.toISOString(),
 	});
-	if (!outcome) throw new Error('The fixture frame did not parse');
+	if (!parsed) throw new Error('The fixture frame did not parse');
+	const outcome = correlateDecommitOutcome(cursor, parsed);
+	if (!outcome) return false;
 	return applyDecommitOutcome({ hydraHeadId: HEAD, ...outcome });
 }
 
 beforeEach(() => {
 	jest.useFakeTimers({ now: REPLAYED_AT });
+	cursor = {};
 	row = {
 		id: 'withdrawal',
 		hydraHeadId: HEAD,

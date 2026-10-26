@@ -10,7 +10,7 @@
  *
  * Approved is when the value leaves the head. A node finalization only records
  * an L1 observation; an independent depth check later marks it Finalized.
- * An anonymous finalization can settle only a row whose approval was recorded.
+ * A finalization must name the withdrawal, including one correlated by replay.
  */
 
 import { Mutex } from 'async-mutex';
@@ -47,10 +47,8 @@ const outcomeLocks = new Map<string, Mutex>();
 type DecommitOutcomeParams = {
 	hydraHeadId: string;
 	/**
-	 * Absent on finalization, which the head reports without one. The row is
-	 * then matched by head, approved status and observedAt. A pending local row
-	 * may not have been sent when a peer's finalization arrives.
-	 * Without observedAt as well, the finalization is ignored.
+	 * Recovered from the preceding approval when Hydra omits it. Finalizations
+	 * without this identity are ignored: head and age can also match a peer's.
 	 */
 	decommitTxId?: string;
 	outcome: HydraDecommitOutcome;
@@ -124,8 +122,8 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
 		if (count === 0) {
 			// An expired row hears of its approval through replay. If that frame
 			// omits its time, leave the approval null rather than stamp receipt
-			// time after the historical finalization. The age guard then uses
-			// the row's creation time instead.
+			// time after the historical finalization. Exact transaction identity
+			// still lets the finalization record this withdrawal later.
 			({ count } = await prisma.hydraDecommit.updateMany({
 				where: { hydraHeadId, decommitTxId, ...EXPIRED },
 				data: {
@@ -148,10 +146,9 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
 /**
  * Record the node's claim that its L1 decrement was observed.
  *
- * Split out because it is the one transition the head reports anonymously.
- * DecommitFinalized carries no transaction id, so the row is found by head and
- * recorded Approved status. Independent payout identity and depth are checked
- * later, because the in-head decommit id is not a transaction on L1.
+ * Hydra omits the id, so each ordered socket correlates it with its preceding
+ * approval before this writer sees it. Independent payout identity and depth
+ * are still required before promoting the named row to Finalized.
  */
 async function finalizeDecommit(params: {
 	hydraHeadId: string;
@@ -162,62 +159,30 @@ async function finalizeDecommit(params: {
 }): Promise<boolean> {
 	const { hydraHeadId, decommitTxId, distributed, observedAt, now } = params;
 
-	// An anonymous finalization is attributed by head, approval, and age. Without a
-	// time the age filter has nothing to compare, so a replayed finalization
-	// from an earlier withdrawal would settle the one open today. The frame
-	// parser already turns a missing or unparseable timestamp into undefined.
-	if (decommitTxId === undefined && observedAt === undefined) {
-		logger.warn(
-			`[HydraDecommit] head ${hydraHeadId} reported a finalization with neither a withdrawal id nor a time; ignoring it`,
-		);
+	if (decommitTxId === undefined) {
+		logger.warn(`[HydraDecommit] head ${hydraHeadId} reported an uncorrelated finalization; ignoring it`);
 		return false;
 	}
 
 	const open = await prisma.hydraDecommit.findMany({
 		where: {
 			hydraHeadId,
-			AND: [
-				decommitTxId === undefined
-					? { status: HydraDecommitStatus.Approved, l1ObservedAt: null }
-					: { decommitTxId, OR: [{ status: { in: OPEN_STATUSES }, l1ObservedAt: null }, EXPIRED] },
-				// A head replays its entire history on every reconnection, so a
-				// finalization from weeks ago arrives again alongside today's pending
-				// withdrawal. Without this the old event is attributed to the new
-				// withdrawal and reports money as paid out that is still in the head.
-				//
-				// Filtered on the approval rather than on creation: a finalization
-				// cannot precede the approval it follows, so this excludes a withdrawal
-				// that was merely requested in the seconds before the replayed event.
-				//
-				// An Approved row may have a null approval time after an expired row
-				// was revived by a replayed approval with no timestamp. Its creation
-				// time still bounds the anonymous finalization in that case.
-				...(observedAt === undefined
-					? []
-					: [{ OR: [{ approvedAt: { lte: observedAt } }, { approvedAt: null, createdAt: { lte: observedAt } }] }]),
-			],
+			decommitTxId,
+			// Exact identity permits a replay to repair an earlier anonymous
+			// attribution. Finalized rows stay immutable; independent L1 proof
+			// still decides when an Approved row can become Finalized.
+			OR: [{ status: { in: OPEN_STATUSES } }, EXPIRED],
 		},
 		orderBy: { createdAt: 'desc' },
 	});
-	if (open.length === 0) return false;
-	// An anonymous finalization can only be attributed when there is exactly one
-	// candidate. Normally there is, because a participant may have only one
-	// withdrawal in flight; if that ever stops holding, refusing to guess is the
-	// only safe answer, since guessing wrong marks the wrong withdrawal paid.
-	if (decommitTxId === undefined && open.length > 1) {
-		logger.warn(
-			`[HydraDecommit] head ${hydraHeadId} reported a finalization while ${open.length} withdrawals were open; ` +
-				'leaving them alone rather than attributing it to the wrong one',
-		);
-		return false;
-	}
 	const [row] = open;
 	if (!row) return false;
 
 	// Stamp an absent approval time too. An Approved row can lack that time after
 	// an expired row was revived by a replayed approval without a timestamp.
-	await prisma.hydraDecommit.update({
-		where: { id: row.id },
+	const { count } = await prisma.hydraDecommit.updateMany({
+		// A detached payout lookup may have finalized the row since the read.
+		where: { id: row.id, OR: [{ status: { in: OPEN_STATUSES } }, EXPIRED] },
 		data: {
 			status: HydraDecommitStatus.Approved,
 			l1ObservedAt: observedAt ?? now,
@@ -232,6 +197,7 @@ async function finalizeDecommit(params: {
 				: { settledLovelace: distributed.lovelace, settledAssets: distributed.assets }),
 		},
 	});
+	if (count === 0) return false;
 	logger.info(`[HydraDecommit] withdrawal ${row.id} reported on L1; waiting for independent confirmation depth`);
 
 	// A provider outage cannot promote the row. The scheduled pass retries this
