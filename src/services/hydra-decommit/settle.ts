@@ -3,10 +3,10 @@
  *
  * The request that started a withdrawal is long gone by the time any of this
  * arrives: the head answers over its socket, minutes later, possibly after this
- * process has restarted and replayed its history. So every transition is driven
- * from the node's events rather than from the call that made the request, and
- * each one is written defensively — replay means the same event can be seen more
- * than once, and a restart means they can be seen out of order.
+ * process has restarted and replayed its history. Approval and finalization
+ * arrive through the node's events. A direct refusal of our request is handled
+ * by the caller. Each transition is written defensively because replay can
+ * repeat events, and a restart can deliver them out of order.
  *
  * Approved is when the value leaves the head, Finalized is when L1 has it.
  * An anonymous Finalized event can settle only a row whose approval was already
@@ -85,27 +85,20 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
 		return false;
 	}
 
-	// Scoped by head as well as by transaction id. The id alone is unique in
-	// practice, but a withdrawal belongs to one head and an event from another
-	// one must never move it.
-	const undecidedStatus = { status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } };
-	const undecided = { hydraHeadId, decommitTxId, OR: [undecidedStatus, EXPIRED] };
-
 	if (outcome === 'invalid') {
-		const { count } = await prisma.hydraDecommit.updateMany({
-			// A refusal cannot undo an approval: once the head has signed the
-			// removal the funds are out, and a late DecommitInvalid for the same id
-			// would otherwise report money as still in the head when it is not.
-			where: undecided,
-			data: { status: HydraDecommitStatus.Failed, failureReason: reason ?? 'the head refused the withdrawal' },
-		});
-		if (count > 0) {
-			logger.warn(`[HydraDecommit] head refused withdrawal ${decommitTxId}: ${reason ?? 'no reason given'}`);
-		}
-		return count > 0;
+		// DecommitInvalid is broadcast for any participant's submission. Its tx id
+		// hashes the body but not its witnesses, so it cannot identify our signed
+		// request. A peer's rejected submission must not fail our Pending row.
+		// The caller handles a direct rejection; ambiguous requests can expire
+		// after the node confirms it has no withdrawal in flight.
+		logger.debug(`[HydraDecommit] ignoring uncorrelated rejection for ${decommitTxId}: ${reason ?? 'no reason given'}`);
+		return false;
 	}
 
 	if (outcome === 'approved') {
+		// Scoped by head as well as by transaction id. An event from another
+		// head must never move this withdrawal.
+		const undecidedStatus = { status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } };
 		// Receipt time can follow the historical finalization replayed next.
 		// Preserve the node's event time, including when repairing a missing
 		// or replay-time stamp on this exact withdrawal's Approved row.
