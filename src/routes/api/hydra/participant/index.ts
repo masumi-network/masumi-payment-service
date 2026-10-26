@@ -611,7 +611,16 @@ export const revealParticipantKeysPost = adminAuthenticatedEndpointFactory.build
 						HydraSecretKey: { select: { hydraSK: true, cardanoSK: true } },
 					},
 				});
-				return participant;
+				// Decrypt before commit so a corrupt ciphertext or wrong encryption key
+				// rolls back the seal. The response stays inside this callback until
+				// the transaction commits successfully.
+				return {
+					id: participant.id,
+					disclosedAt: (participant.keysDisclosedAt ?? new Date()).toISOString(),
+					hydraSigningKey: decrypt(participant.HydraSecretKey.hydraSK),
+					cardanoSigningKey:
+						participant.HydraSecretKey.cardanoSK === null ? null : decrypt(participant.HydraSecretKey.cardanoSK),
+				};
 			},
 			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 10_000 },
 		);
@@ -620,13 +629,7 @@ export const revealParticipantKeysPost = adminAuthenticatedEndpointFactory.build
 		// event an operator wants to find in the log afterwards.
 		logger.warn(`Hydra node signing keys disclosed for participant ${disclosed.id}`);
 
-		return {
-			id: disclosed.id,
-			disclosedAt: (disclosed.keysDisclosedAt ?? new Date()).toISOString(),
-			hydraSigningKey: decrypt(disclosed.HydraSecretKey.hydraSK),
-			cardanoSigningKey:
-				disclosed.HydraSecretKey.cardanoSK === null ? null : decrypt(disclosed.HydraSecretKey.cardanoSK),
-		};
+		return disclosed;
 	},
 });
 

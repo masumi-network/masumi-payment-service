@@ -94,7 +94,7 @@ export async function stopNode(record: NodeRecord, reason: string, deps: StopNod
 	}
 
 	const stopResult = await processes.stop(record.nodeId, SIGKILL_GRACE_MS);
-	if (!stopResult.graceful) {
+	if (!stopResult.graceful && stopResult.signal === 'SIGKILL') {
 		logger.warn(`[supervisor] ${record.nodeId} required SIGKILL`);
 	}
 
@@ -104,7 +104,9 @@ export async function stopNode(record: NodeRecord, reason: string, deps: StopNod
 	// while the orphan kept writing to both. The pid is kept for the same
 	// reason: it is the only handle anything has on it.
 	if (!stopResult.stopped) {
-		const failureReason = `the process (pid ${String(record.pid ?? 'unknown')}) did not exit on SIGKILL, so its files and ports are still in use`;
+		const failureReason =
+			stopResult.failureReason ??
+			`the process (pid ${String(record.pid ?? 'unknown')}) could not be confirmed stopped, so its files and ports are still in use`;
 		logger.error(`[supervisor] ${record.nodeId} could not be stopped: ${failureReason}`);
 		await store.update(record.nodeId, (current) => ({
 			...current,
@@ -172,7 +174,7 @@ export async function removeNode(record: NodeRecord, reason: string, deps: Remov
 		const failureReason = stopped
 			? 'the node is still answering after a stop attempt, so its files and peer port are still in use; ' +
 				'stop the process on the machine, then remove the node again'
-			: 'the process did not exit on SIGKILL, so its files and peer port are still in use; ' +
+			: 'the process could not be confirmed stopped, so its files and peer port are still in use; ' +
 				'stop the process on the machine, then remove the node again';
 		logger.error(`[supervisor] refusing to remove ${record.nodeId}: ${failureReason}`);
 		// The intent is cleared with the failure. Left set, the plan asks for the

@@ -13,6 +13,8 @@ import { getOwnValue, isPlainObject } from './registry/json.js';
 import type { LastSeenSnapshotResponse } from './supervisor/drain.js';
 
 const LOOPBACK = '127.0.0.1';
+/** Match the payment service's Hydra HTTP limit. A bad node must not fill the Host heap with a snapshot response. */
+const MAX_NODE_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /**
  * What the node says about its chain view.
@@ -80,8 +82,28 @@ export class NodeClient {
 			}
 			let text: string;
 			try {
-				text = await response.text();
+				const declaredLength = Number(response.headers.get('content-length'));
+				if (Number.isFinite(declaredLength) && declaredLength > MAX_NODE_RESPONSE_BYTES) {
+					throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} exceeded the node response byte limit`);
+				}
+				const chunks: Buffer[] = [];
+				let totalBytes = 0;
+				if (response.body) {
+					const reader = response.body.getReader();
+					while (true) {
+						const chunk = await reader.read();
+						if (chunk.done) break;
+						totalBytes += chunk.value.byteLength;
+						if (totalBytes > MAX_NODE_RESPONSE_BYTES) {
+							void reader.cancel().catch(() => undefined);
+							throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} exceeded the node response byte limit`);
+						}
+						chunks.push(Buffer.from(chunk.value));
+					}
+				}
+				text = Buffer.concat(chunks, totalBytes).toString('utf8');
 			} catch (error) {
+				if (error instanceof NodeResponseError) throw error;
 				// A body that stalls or stops mid-stream is the node going away, not
 				// the node answering badly — drain branches on that difference.
 				throw new NodeUnreachableError(
@@ -98,6 +120,7 @@ export class NodeClient {
 			}
 		} finally {
 			clearTimeout(timer);
+			controller.abort();
 		}
 	}
 

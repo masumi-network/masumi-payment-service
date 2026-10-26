@@ -173,7 +173,7 @@ export class Supervisor {
 				// still running THIS node's process settles it.
 				if (await this.adoptProcess(record)) {
 					this.logger.info(
-						`[supervisor] ${record.nodeId} is not answering yet, but pid ${record.pid} is still running it; keeping it`,
+						`[supervisor] ${record.nodeId} is not answering yet; pid ${record.pid} remains live or unverified, so ownership is retained`,
 					);
 					// `Starting` rather than the state it had: nothing has answered, and
 					// the first successful probe promotes it. A drain the host did not
@@ -277,7 +277,9 @@ export class Supervisor {
 		if (record.pid !== undefined) {
 			const adopted = await this.processes.adopt(record.nodeId, record.pid, this.config.hydraNodeBin, nodeDir);
 			if (adopted) {
-				this.logger.info(`[supervisor] took back ${record.nodeId} (pid ${record.pid}); it can be stopped again`);
+				this.logger.info(
+					`[supervisor] tracking ${record.nodeId} (pid ${record.pid}); signals still require a verified identity`,
+				);
 				return true;
 			}
 			this.logger.warn(

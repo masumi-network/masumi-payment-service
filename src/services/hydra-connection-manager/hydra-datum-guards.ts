@@ -390,19 +390,14 @@ export function observationHasValidLineage(params: {
 		);
 	}
 
-	// A TxValid response can be followed by a DB failure before txHash is copied
-	// from the pre-submit reservation. Permit that one exact pending intended hash;
-	// the caller already bound evidence.txHash/output to txId, and the continuation
-	// check below still requires the CBOR body to consume the persisted escrow UTxO.
-	const hasExactIntendedPendingReservation =
-		currentTransaction?.status === TransactionStatus.Pending &&
-		currentTransaction.txHash == null &&
-		currentTransaction.intendedTxHash === txId;
+	// A pending local reservation may have no posted hash when a peer's signed
+	// transaction consumes the escrow first. The exact-input check below and
+	// the caller's actor/economic checks prove that continuation independently.
 	if (
 		requestLayer !== TransactionLayer.L2 ||
 		currentTransaction?.layer !== TransactionLayer.L2 ||
 		currentTransaction.hydraHeadId !== hydraHeadId ||
-		(currentTransaction.txHash == null && !hasExactIntendedPendingReservation)
+		(currentTransaction.txHash == null && currentTransaction.status !== TransactionStatus.Pending)
 	) {
 		return false;
 	}

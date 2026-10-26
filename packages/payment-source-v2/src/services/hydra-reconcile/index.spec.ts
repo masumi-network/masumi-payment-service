@@ -61,6 +61,8 @@ const mockFindNothingToApply =
 
 const FANOUT_TX_HASH = 'f'.repeat(64);
 const HEAD_IDENTIFIER = 'a'.repeat(56);
+const LOCAL_NODE_VKEY = '3'.repeat(56);
+const REMOTE_NODE_VKEY = '4'.repeat(56);
 const HYDRA_OUTPUT_TX_HASH = 'b'.repeat(64);
 const FANOUT_REFERENCE = {
 	txHash: FANOUT_TX_HASH,
@@ -68,6 +70,20 @@ const FANOUT_REFERENCE = {
 	snapshotNumber: 3,
 	serializedOutput: 'd87980',
 };
+const FANOUT_CHAIN_STEP = {
+	txHash: FANOUT_TX_HASH,
+	confirmations: 20,
+	fees: 200000n,
+	blockHeight: 123,
+	blockTime: 456,
+	outputAmount: '[]',
+	utxoCount: 1,
+	withdrawalCount: 0,
+	assetMintOrBurnCount: 3,
+	redeemerCount: 1,
+	validContract: true,
+};
+const mockConfig = { BLOCK_CONFIRMATIONS_THRESHOLD: 5, HYDRA_ESCROW_RECONCILE_INTERVAL: 60 };
 
 const transactionClient = {
 	$queryRaw: mockHeadLockQuery,
@@ -158,7 +174,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
-	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5, HYDRA_ESCROW_RECONCILE_INTERVAL: 60 },
+	CONFIG: mockConfig,
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -316,6 +332,7 @@ function settledTerminalCandidate(id: string, onChainState: OnChainState) {
 describe('Hydra live-snapshot reconciliation', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockConfig.BLOCK_CONFIRMATIONS_THRESHOLD = 5;
 		mockNode.hasVerifiedPinnedSessions = true;
 		mockNode.confirmedTransactionHistoryReady = true;
 		mockNode.status = HydraHeadStatus.Final;
@@ -323,6 +340,8 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
+				LocalParticipant: { cardanoVkey: LOCAL_NODE_VKEY },
+				RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }],
 				hydraRelationId: 'relation-1',
 				headIdentifier: HEAD_IDENTIFIER,
 				latestSnapshotNumber: 3n,
@@ -379,21 +398,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockGetVerifiedFanoutReference.mockReturnValue(FANOUT_REFERENCE);
 		// A chain, terminal last. One step here; the partial-fanout cases below
 		// cover a longer one.
-		mockVerifyHydraFanout.mockResolvedValue([
-			{
-				txHash: FANOUT_TX_HASH,
-				confirmations: 8,
-				fees: 200000n,
-				blockHeight: 123,
-				blockTime: 456,
-				outputAmount: '[]',
-				utxoCount: 1,
-				withdrawalCount: 0,
-				assetMintOrBurnCount: 3,
-				redeemerCount: 1,
-				validContract: true,
-			},
-		]);
+		mockVerifyHydraFanout.mockResolvedValue([FANOUT_CHAIN_STEP]);
 		mockFlushHeadStatus.mockResolvedValue();
 		mockFetchAddressUtxos.mockResolvedValue([]);
 		mockGetConfirmedTransaction.mockImplementation((txHash) => ({
@@ -420,6 +425,23 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockClear();
 		mockHydraHeadFindMany.mockResolvedValue([{ ...head, finalizedAt: null }]);
 	}
+
+	it.each([
+		['missing local participant', { LocalParticipant: null }],
+		['missing remote participant', { RemoteParticipants: [] }],
+		[
+			'ambiguous remote participants',
+			{ RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }, { cardanoVkey: '5'.repeat(56) }] },
+		],
+	])('keeps the head connected with %s', async (_label, participants) => {
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockResolvedValue([{ ...head, ...participants }]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockVerifyHydraFanout).not.toHaveBeenCalled();
+		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
 
 	it('selects and revalidates only enabled heads with durable init evidence', async () => {
 		await reconcileHydraHeadEscrowStates();
@@ -674,6 +696,30 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockRecordLivePass).not.toHaveBeenCalled();
 	});
 
+	it('keeps a shallow fanout connected until the handoff finality floor is met', async () => {
+		mockVerifyHydraFanout.mockImplementation(async (options) => {
+			const { requiredConfirmations } = options as { requiredConfirmations: number };
+			if (requiredConfirmations > 8) throw new Error('Fanout has only eight confirmations');
+			return [{ ...FANOUT_CHAIN_STEP, confirmations: 8 }];
+		});
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(expect.objectContaining({ requiredConfirmations: 20 }));
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ reconciliationCompletedAt: expect.any(Date) }) }),
+		);
+		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
+
+	it('honors a higher configured handoff depth', async () => {
+		mockConfig.BLOCK_CONFIRMATIONS_THRESHOLD = 25;
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(expect.objectContaining({ requiredConfirmations: 25 }));
+	});
+
 	// A fanout over several L1 steps reports partial-step outputs under in-head
 	// keys. Completing the handoff from those would record L1 references that
 	// do not exist.
@@ -697,14 +743,19 @@ describe('Hydra live-snapshot reconciliation', () => {
 			expect(mockDisconnect).not.toHaveBeenCalled();
 		});
 
-		it('completes the handoff once the binding is adopted', async () => {
+		it('completes the handoff with node token keys once the binding is adopted', async () => {
 			mockGetFanoutBindingInput.mockReturnValue(bindingInput);
 			mockBindFanout.mockResolvedValue(new Map([[`${FANOUT_TX_HASH}#1`, 'd87980']]));
 			mockAdoptFanoutBinding.mockReturnValue(true);
 
 			await reconcileHydraHeadEscrowStates();
 
-			expect(mockBindFanout).toHaveBeenCalledWith(expect.objectContaining(bindingInput));
+			expect(mockBindFanout).toHaveBeenCalledWith(
+				expect.objectContaining({ ...bindingInput, participantVkeys: [LOCAL_NODE_VKEY, REMOTE_NODE_VKEY] }),
+			);
+			expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
+				expect.objectContaining({ participantVkeys: [LOCAL_NODE_VKEY, REMOTE_NODE_VKEY] }),
+			);
 			expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 		});
 	});
@@ -727,7 +778,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		await verifyFanoutOnChain([FANOUT_REFERENCE]);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(1);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
-			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 5 }),
+			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 20 }),
 		);
 		await verifyFanoutOnChain([{ ...FANOUT_REFERENCE, outputIndex: 1 }]);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(2);
@@ -748,7 +799,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockVerifyHydraFanout.mockResolvedValue([
 			{
 				txHash: PARTIAL_TX_HASH,
-				confirmations: 8,
+				confirmations: 20,
 				fees: 100000n,
 				blockHeight: 120,
 				blockTime: 450,
@@ -761,7 +812,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 			},
 			{
 				txHash: FANOUT_TX_HASH,
-				confirmations: 8,
+				confirmations: 20,
 				fees: 200000n,
 				blockHeight: 123,
 				blockTime: 456,
@@ -817,7 +868,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 				expect.objectContaining({
 					headId: HEAD_IDENTIFIER,
 					references: [FANOUT_REFERENCE],
-					requiredConfirmations: 5,
+					requiredConfirmations: 20,
 				}),
 			);
 			expect(mockTransactionCreate).toHaveBeenCalledWith({
@@ -974,6 +1025,8 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
+				LocalParticipant: { cardanoVkey: LOCAL_NODE_VKEY },
+				RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }],
 				hydraRelationId: 'relation-1',
 				headIdentifier: HEAD_IDENTIFIER,
 				latestSnapshotNumber: 3n,
@@ -1008,6 +1061,8 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
+				LocalParticipant: { cardanoVkey: LOCAL_NODE_VKEY },
+				RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }],
 				hydraRelationId: 'relation-1',
 				headIdentifier: HEAD_IDENTIFIER,
 				latestSnapshotNumber: 3n,

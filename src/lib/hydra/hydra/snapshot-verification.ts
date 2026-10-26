@@ -200,7 +200,6 @@ export function resolveVerifiedHydraFanoutReferences(
 		if (!parsed) return null;
 		references.push(parsed);
 	}
-	if (references.length === 0) return null;
 	// A head too large to empty in one transaction is fanned out over several, so
 	// references legitimately span transactions and an output index only has to
 	// be unique within its own. Requiring one transaction here rejected every

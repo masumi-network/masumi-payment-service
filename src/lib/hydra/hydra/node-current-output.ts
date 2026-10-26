@@ -1,6 +1,18 @@
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import type { VerifiedHydraSnapshot } from './snapshot-verification';
 
+/** A live close ahead of history makes the replayed close unsafe to publish. */
+export function readCurrentClosedSnapshot(
+	verified: boolean,
+	replayedClosed: number | undefined,
+	liveClosed: number | undefined,
+): bigint | undefined {
+	if (!verified || replayedClosed === undefined || (liveClosed !== undefined && liveClosed !== replayedClosed)) {
+		return undefined;
+	}
+	return BigInt(replayedClosed);
+}
+
 export function readVerifiedCurrentOutput(
 	verified: boolean,
 	status: HydraHeadStatus,

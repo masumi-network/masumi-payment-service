@@ -147,6 +147,8 @@ export class LiveFrameProcessor {
 	 */
 	private _historyOpensAtReread = 0;
 	private _headClock: HydraHeadClock | undefined;
+	/** Last authenticated live close or contest, used to reject a lagging replay. */
+	private _lastClosedSnapshotNumber: number | undefined;
 	/**
 	 * Whether the node says it is caught up with its chain, from
 	 * `Greetings.chainSyncedStatus` and the `NodeSynced`/`NodeUnsynced`
@@ -181,6 +183,10 @@ export class LiveFrameProcessor {
 
 	get status(): HydraHeadStatus {
 		return this._status;
+	}
+
+	get lastClosedSnapshotNumber(): number | undefined {
+		return this._lastClosedSnapshotNumber;
 	}
 
 	get liveSessionHeadId(): string | undefined {
@@ -273,6 +279,7 @@ export class LiveFrameProcessor {
 		this._evidenceHeld = false;
 		this._liveSessionHeadId = undefined;
 		this._headClock = undefined;
+		this._lastClosedSnapshotNumber = undefined;
 		this.host.clearFinalizedFanout();
 		this.emitStatusChange(HydraHeadStatus.Idle, undefined);
 	}
@@ -306,6 +313,7 @@ export class LiveFrameProcessor {
 		this._livePartyIdentityVerified = false;
 		this._awaitingReplayVerdict = false;
 		this._headClock = undefined;
+		this._lastClosedSnapshotNumber = undefined;
 		this.clearPendingIncrements();
 		return { hadLiveIdentity };
 	}
@@ -318,6 +326,7 @@ export class LiveFrameProcessor {
 		this._evidenceHeld = false;
 		this._historyRereadPending = false;
 		this._headClock = undefined;
+		this._lastClosedSnapshotNumber = undefined;
 		// A closed transport says nothing about whether the node is still caught
 		// up; the next Greetings re-establishes it.
 		this._chainSynced = undefined;
@@ -427,8 +436,8 @@ export class LiveFrameProcessor {
 		let postTxFailed: PostTxFailedData | undefined;
 		/** Acted on after the status change is emitted, never before — see below. */
 		let headWasAborted = false;
-		/** Same status, newer snapshot: the fanout must match the contested one. */
-		let headWasContested = false;
+		/** A rollback may restore an older Close without changing Closed status. */
+		let headChangedOnChain = false;
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
 			this.host.assertPersistenceReplayIsSupported(message);
@@ -471,7 +480,7 @@ export class LiveFrameProcessor {
 			if (envelope.tag === 'HeadIsAborted') {
 				headWasAborted = true;
 			}
-			headWasContested = envelope.tag === 'HeadIsContested';
+			headChangedOnChain = envelope.tag === 'HeadIsClosed' || envelope.tag === 'HeadIsContested';
 			if (envelope.tag === 'HeadIsInitializing' || envelope.tag === 'HeadIsOpen') {
 				// `HeadIsOpen` is guarded on actually carrying `parties`, matching the
 				// replay pass. Unguarded, the same frame was valid on replay and threw
@@ -622,13 +631,16 @@ export class LiveFrameProcessor {
 		if (decommitSettled) this.emitter.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		if (depositRecorded) this.emitter.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
 		const changeData = extractStatusChangeData(rawMessage, this.host.expectedHeadId);
+		if (changeData?.chainEvent && changeData.snapshotNumber !== undefined) {
+			this._lastClosedSnapshotNumber = changeData.snapshotNumber;
+		}
 		if (changeData && changeData.status !== HydraHeadStatus.Final) {
 			// A history replay can contain a prior Final while the authenticated
 			// live Greetings reports a rolled-back/non-Final tip. Never carry the
 			// old fanout map into a later finalization attempt.
 			this.host.clearFinalizedFanout();
 		}
-		if (changeData && (changeData.status !== this._status || headWasContested)) {
+		if (changeData && (changeData.status !== this._status || headChangedOnChain)) {
 			this._status = changeData.status;
 			this.emitter.emit(HydraNodeEvent.StatusChange, changeData);
 		}

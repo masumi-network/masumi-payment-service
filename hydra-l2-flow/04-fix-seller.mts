@@ -6,7 +6,7 @@
  *
  * Run: DATABASE_URL=<test-db> pnpm exec tsx hydra-l2-flow/04-fix-seller.mts
  */
-import { writeFileSync } from 'node:fs';
+import { writePrivateFileSync } from './private-file.mts';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { prisma } from '@masumi/payment-core/db';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -24,9 +24,12 @@ async function main() {
 		data: { walletAddress: address, walletVkey: vkey },
 	});
 
-	writeFileSync('hydra-l2-flow/.seller.json', JSON.stringify({ mnemonic, address, vkey }, null, 2));
+	writePrivateFileSync('hydra-l2-flow/.seller.json', JSON.stringify({ mnemonic, address, vkey }, null, 2));
 	console.log('seller updated:', JSON.stringify({ remoteWalletId: relation.remoteWalletId, address, vkey }, null, 2));
 	process.exit(0);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+	console.error(e);
+	process.exit(1);
+});

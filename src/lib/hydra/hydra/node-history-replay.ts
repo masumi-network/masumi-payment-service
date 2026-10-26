@@ -389,7 +389,7 @@ export class HydraHistoryReplay {
 				this._finalizedHeadId = suppliedHeadId;
 			}
 			const closedAt = readClosedSnapshotNumber(parsedEnvelope);
-			if (closedAt !== undefined) this._closedSnapshotNumber = Math.max(this._closedSnapshotNumber ?? 0, closedAt);
+			if (closedAt !== undefined) this._closedSnapshotNumber = closedAt;
 
 			// A deposit stays pending for a deposit period or more, so a service
 			// that reconnected in between meets its CommitRecorded only here. Held

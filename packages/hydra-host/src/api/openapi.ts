@@ -113,6 +113,13 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 			'Remove a node (always drains first; ?force=true overrides the refusal to remove a node whose persistence directory may hold the only copy of the head state)',
 	},
 	{
+		path: '/v1/nodes/{nodeId}/remove-unclaimed',
+		method: 'delete',
+		kind: 'removeUnclaimedNode',
+		tier: 'admin',
+		summary: 'Remove a peerless node only while no live invite claims it',
+	},
+	{
 		path: '/v1/nodes/{nodeId}/escrow-ack',
 		method: 'post',
 		kind: 'escrowAck',

@@ -2,8 +2,16 @@ import { generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-id
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { logger } from '@masumi/payment-core/logger';
 import { serializeAddressObj } from '@meshsdk/core';
-import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { Network } from '@meshsdk/core';
+import {
+	Address,
+	BigNum,
+	Credential,
+	Ed25519KeyHash,
+	Pointer,
+	PointerAddress,
+	ScriptHash,
+} from '@emurgo/cardano-serialization-lib-nodejs';
 
 export type DecodedV1ContractDatum = {
 	blockchainIdentifier: string;
@@ -41,25 +49,85 @@ type PlutusDatum = {
 };
 type AddressObj = Parameters<typeof serializeAddressObj>[0];
 
-function serializeOptionalAddressObj(value: unknown, networkId: 0 | 1): string | null {
-	if (typeof value !== 'object' || value === null) return null;
+/** Undefined is invalid data; null is the canonical Plutus None. */
+function readPlutusOption(value: unknown): PlutusDatum | null | undefined {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
 	const datum = value as PlutusDatum;
 	const ctor = datum.constructor;
-	if (typeof ctor !== 'number' && typeof ctor !== 'bigint') return null;
-	if (datum.fields == null) return null;
+	if (!Array.isArray(datum.fields)) return undefined;
+	// Plutus Option: constructor 0 has exactly one field; constructor 1 has none.
+	if (ctor === 1 || ctor === 1n) return datum.fields.length === 0 ? null : undefined;
+	if ((ctor !== 0 && ctor !== 0n) || datum.fields.length !== 1) return undefined;
+	const inner = datum.fields[0];
+	return typeof inner === 'object' && inner !== null && !Array.isArray(inner) ? inner : undefined;
+}
 
-	// Plutus Option: ctor 0 = Some, ctor 1 = None. Treat None (and any empty
-	// Some) as a null optional address.
-	if ((ctor === 1 || ctor === 1n) && datum.fields.length === 0) {
-		return null;
+function isValidCredential(value: PlutusDatum | undefined): boolean {
+	return (
+		value != null &&
+		(value.constructor === 0 || value.constructor === 0n || value.constructor === 1 || value.constructor === 1n) &&
+		Array.isArray(value.fields) &&
+		value.fields.length === 1 &&
+		typeof value.fields[0]?.bytes === 'string' &&
+		/^[0-9a-fA-F]{56}$/.test(value.fields[0].bytes)
+	);
+}
+
+function serializeValidatedAddressObj(value: unknown, networkId: 0 | 1): string | undefined {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+	const address = value as PlutusDatum;
+	if (address.constructor !== 0 && address.constructor !== 0n) return undefined;
+	if (!Array.isArray(address.fields) || address.fields.length !== 2) return undefined;
+	const payment = address.fields[0];
+	if (!isValidCredential(payment)) return undefined;
+	const staking = readPlutusOption(address.fields[1]);
+	if (staking === undefined) return undefined;
+	if (staking !== null) {
+		if (!Array.isArray(staking.fields)) return undefined;
+		if (staking.constructor === 0 || staking.constructor === 0n) {
+			// Mesh normalizes an unknown inline credential into a key hash.
+			if (staking.fields.length !== 1 || !isValidCredential(staking.fields[0])) return undefined;
+		} else if (staking.constructor === 1 || staking.constructor === 1n) {
+			if (staking.fields.length !== 3) return undefined;
+			const components: BigNum[] = [];
+			for (const field of staking.fields) {
+				const component = field?.int;
+				if (typeof component !== 'bigint' && (typeof component !== 'number' || !Number.isSafeInteger(component))) {
+					return undefined;
+				}
+				// CSL preserves uint64 components exactly and rejects negative/overflow.
+				components.push(BigNum.from_str(String(component)));
+			}
+			const hash = payment.fields![0].bytes!;
+			const credential =
+				payment.constructor === 0 || payment.constructor === 0n
+					? Credential.from_keyhash(Ed25519KeyHash.from_hex(hash))
+					: Credential.from_scripthash(ScriptHash.from_hex(hash));
+			// Mesh rejects zero components and converts pointer indexes through Number.
+			const serialized = PointerAddress.new(
+				networkId,
+				credential,
+				Pointer.new_pointer(components[0], components[1], components[2]),
+			).to_address();
+			const bech32 = serialized.to_bech32();
+			// CSL normalizes unsupported pointers. Compare the whole address so
+			// pointer values, payment credential and network all survive decoding.
+			return Address.from_bech32(bech32).to_hex() === serialized.to_hex() ? bech32 : undefined;
+		} else {
+			return undefined;
+		}
 	}
+	return serializeAddressObj(address as AddressObj, networkId);
+}
 
-	const addressValue = datum.fields[0];
-	if (addressValue == null) {
-		return null;
-	}
+function serializeOptionalAddressObj(value: unknown, networkId: 0 | 1): string | null | undefined {
+	const address = readPlutusOption(value);
+	return address == null ? address : serializeValidatedAddressObj(address, networkId);
+}
 
-	return serializeAddressObj(addressValue as AddressObj, networkId);
+/** Participant actions require verification keys; return addresses may use scripts. */
+function resolveDatumPaymentKeyHash(address: string): string | undefined {
+	return Address.from_bech32(address).payment_cred()?.to_keyhash()?.to_hex();
 }
 
 export function decodeV1ContractDatum(
@@ -97,11 +165,15 @@ export function decodeV1ContractDatum(
 			//invalid transaction
 			return null;
 		}
-		const buyerAddress = serializeAddressObj(fields[0] as AddressObj, network == 'mainnet' ? 1 : 0);
-		const buyerVkey = resolvePaymentKeyHash(buyerAddress);
+		const buyerAddress = serializeValidatedAddressObj(fields[0], network == 'mainnet' ? 1 : 0);
+		if (buyerAddress === undefined) return null;
+		const buyerVkey = resolveDatumPaymentKeyHash(buyerAddress);
+		if (buyerVkey === undefined) return null;
 
-		const sellerAddress = serializeAddressObj(fields[1] as AddressObj, network == 'mainnet' ? 1 : 0);
-		const sellerVkey = resolvePaymentKeyHash(sellerAddress);
+		const sellerAddress = serializeValidatedAddressObj(fields[1], network == 'mainnet' ? 1 : 0);
+		if (sellerAddress === undefined) return null;
+		const sellerVkey = resolveDatumPaymentKeyHash(sellerAddress);
+		if (sellerVkey === undefined) return null;
 
 		if (fields[2] == null || fields[2].bytes == null) {
 			//invalid transaction
@@ -253,13 +325,18 @@ export function decodeV2ContractDatum(
 			return null;
 		}
 		const networkId = network == 'mainnet' ? 1 : 0;
-		const buyerAddress = serializeAddressObj(fields[0] as AddressObj, networkId);
+		const buyerAddress = serializeValidatedAddressObj(fields[0], networkId);
+		if (buyerAddress === undefined) return null;
 		const buyerReturnAddress = serializeOptionalAddressObj(fields[1], networkId);
-		const buyerVkey = resolvePaymentKeyHash(buyerAddress);
+		const buyerVkey = resolveDatumPaymentKeyHash(buyerAddress);
+		if (buyerVkey === undefined) return null;
 
-		const sellerAddress = serializeAddressObj(fields[2] as AddressObj, networkId);
+		const sellerAddress = serializeValidatedAddressObj(fields[2], networkId);
+		if (sellerAddress === undefined) return null;
 		const sellerReturnAddress = serializeOptionalAddressObj(fields[3], networkId);
-		const sellerVkey = resolvePaymentKeyHash(sellerAddress);
+		const sellerVkey = resolveDatumPaymentKeyHash(sellerAddress);
+		if (sellerVkey === undefined) return null;
+		if (buyerReturnAddress === undefined || sellerReturnAddress === undefined) return null;
 
 		// A datum whose participant or return address equals the escrow contract
 		// address bricks the on-chain payout paths: tagged payout outputs would
