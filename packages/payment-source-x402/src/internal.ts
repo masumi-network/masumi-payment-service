@@ -3,6 +3,7 @@ import { Prisma, X402CounterpartyRole, X402EvmWalletType, prisma } from '@masumi
 import { logger } from '@masumi/payment-core/logger';
 import { isPrivateIpLiteral, isPrivateOrUnresolvableHostname } from '@masumi/payment-core/ssrf-guard';
 import { defineChain, http } from 'viem';
+import { fetchPinnedRpc } from './rpc-transport';
 
 export type HexAddress = `0x${string}`;
 export type PrivateKey = `0x${string}`;
@@ -93,11 +94,10 @@ export async function assertSafeFacilitatorUrlResolved(facilitatorUrl: string): 
 	await assertSafeHttpUrlResolved(facilitatorUrl, 'x402 network facilitatorUrl', true);
 }
 
-// Build a viem HTTP transport with an SSRF check and a request timeout, so a slow or
-// hostile admin-configured RPC cannot hang a request indefinitely.
+// Check literals now. The viem deadline covers each DNS check and pinned request.
 export async function safeHttpTransport(rpcUrl: string) {
-	await assertSafeRpcUrlResolved(rpcUrl);
-	return http(rpcUrl, { timeout: RPC_REQUEST_TIMEOUT_MS });
+	assertSafeRpcUrl(rpcUrl);
+	return http(rpcUrl, { timeout: RPC_REQUEST_TIMEOUT_MS, fetchFn: fetchPinnedRpc });
 }
 
 // EVM native currencies are all 18 decimals, but the symbol differs per chain.
