@@ -14,6 +14,7 @@ import { assertSafeFacilitatorUrl, assertSafeFacilitatorUrlResolved } from './in
 // remote may have accepted it before the client aborted, but it cannot pin an HTTP connection or
 // a live request handler until the attempt becomes operator-reconcilable.
 export const REMOTE_FACILITATOR_REQUEST_TIMEOUT_MS = 120_000;
+const MAX_REMOTE_FACILITATOR_RESPONSE_BYTES = 64 * 1024;
 
 type RemoteFacilitatorOperation = 'verify' | 'settle';
 
@@ -124,6 +125,28 @@ function parseJson(text: string, operation: RemoteFacilitatorOperation): unknown
 	}
 }
 
+async function readBoundedResponse(response: Response, operation: RemoteFacilitatorOperation): Promise<string> {
+	if (response.body === null) return '';
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let totalBytes = 0;
+	try {
+		while (true) {
+			const chunk = await reader.read();
+			if (chunk.done) break;
+			totalBytes += chunk.value.byteLength;
+			if (totalBytes > MAX_REMOTE_FACILITATOR_RESPONSE_BYTES) {
+				await reader.cancel().catch(() => undefined);
+				throw new FacilitatorResponseError(`Facilitator ${operation} response exceeded the size limit`);
+			}
+			chunks.push(chunk.value);
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	return new TextDecoder().decode(Buffer.concat(chunks, totalBytes));
+}
+
 export class RemoteHTTPFacilitatorClient {
 	private readonly url: string;
 	private readonly getAuthorizationHeader?: () => string;
@@ -178,7 +201,7 @@ export class RemoteHTTPFacilitatorClient {
 					(_key: string, value: unknown): unknown => (typeof value === 'bigint' ? value.toString() : value),
 				),
 			});
-			const text = await response.text();
+			const text = await readBoundedResponse(response, operation);
 			const data = parseJson(text, operation);
 			if (!response.ok) {
 				if (operation === 'verify') {
