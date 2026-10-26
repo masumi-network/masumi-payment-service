@@ -248,11 +248,11 @@ const hydraHeadUnobservedPayloadSchema = createWebhookPayloadSchema(
 		isNodeSide: z
 			.boolean()
 			.describe(
-				'True when the node may be down or unreachable, so no contest is guaranteed. False when this service cannot follow the node, so it cannot tell whether the node contests. Within one gap, a node-side cause found after a service-side one is alerted again.',
+				'True when the node may be down or unreachable, so no contest is guaranteed. False when this service cannot follow the node, so it cannot tell whether the node contests. Within one gap, each node-side cause found after a service-side one is alerted again, at most once per grace period.',
 			),
 		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
 	}),
-	'Emitted once per gap, plus again when a node-side cause follows a service-side one (see isNodeSide), when this service could not observe the node of an open or closed Hydra head for the grace period. The node may be down, not follow the head or the chain, or this service may not have verified its history. hydra-node contests a close on an older snapshot only while it runs, so restore a node that is down before any contestation deadline passes.',
+	'Emitted once per gap, plus again each time a node-side cause follows a service-side one, at most once per grace period (see isNodeSide), when this service could not observe the node of an open or closed Hydra head for the grace period. The node may be down, not follow the head or the chain, or this service may not have verified its history. hydra-node contests a close on an older snapshot only while it runs, so restore a node that is down before any contestation deadline passes.',
 );
 
 // Union schema for all webhook payloads

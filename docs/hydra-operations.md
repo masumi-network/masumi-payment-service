@@ -469,9 +469,10 @@ counterparty closes on an older snapshot, your hydra-node contests with the
 newer one by itself, but only while it runs and follows the chain. When this
 service cannot observe a head's node for five minutes, it records a
 `HeadUnobserved` head error and sends the `HYDRA_HEAD_UNOBSERVED` webhook, once
-per outage, with the exception below. A head with a contestation period under 20 minutes gets a quarter of
-that period instead of five minutes. The watch checks about once a minute, so
-the alert can come up to a minute later than that. A restart of this service
+per outage, with the exception below. A head with a contestation period under
+20 minutes gets a quarter of that period instead of five minutes. The watch
+checks about once a minute, so the alert can come up to a minute later than
+that. A restart of this service
 that lasts more than three minutes starts a new outage, which can alert again.
 
 The error and the webhook `reason` name the cause found at the last check.
@@ -488,8 +489,8 @@ The error and the webhook `reason` name the cause found at the last check.
 
 The exception: while a gap lasts, each time a check finds a node-side cause
 after a check found a service-side one, the gap is alerted again with
-`isNodeSide: true`. So a node that goes down while this service cannot follow
-it is still alerted. On a head with a live payment session, a rotated event log
+`isNodeSide: true`, at most once per grace period. So a node that goes down
+while this service cannot follow it is still alerted. On a head with a live payment session, a rotated event log
 keeps this service from checking the node at all, so while it lasts a node
 outage is not seen.
 

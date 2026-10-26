@@ -77,8 +77,9 @@ model HydraHead {
   /// hydra-node may not contest. `since` is the first check that could not
   /// observe it; the alert time makes the webhook fire once per gap; `checkedAt`
   /// is the latest such check, so a gap left from an earlier outage starts over.
-  /// `alertedNodeSide` is the side of the last alert: a gap alerted as this
-  /// service's fault is alerted once more if the node then goes down.
+  /// `alertedNodeSide` is false when the next node-side check should alert
+  /// again: after a service-side alert, or a service-side check that followed
+  /// a node-side alert. Re-alerts wait at least one grace period.
   /// Cleared when the node is observed again.
   observationGapSince           DateTime?
   observationGapAlertedAt       DateTime?

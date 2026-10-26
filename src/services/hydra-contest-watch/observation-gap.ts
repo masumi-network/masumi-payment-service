@@ -7,7 +7,8 @@
  * is down, unreachable, has lost the head, or does not follow the chain. This
  * records when the service first could not observe the node, and alerts once
  * when that lasts the grace period. A gap alerted as this service's fault is
- * alerted again each time a later check finds the node itself down.
+ * alerted again when a later check finds the node itself down, at most once
+ * per grace period.
  */
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -117,7 +118,7 @@ export type ObservationGapDecision =
 	| 'alert'
 	/** The gap was alerted as this service's fault, and now the node may be down. */
 	| 'escalate'
-	/** The gap was alerted as a node outage, and the node is back: a later outage alerts again. */
+	/** The gap was alerted as a node outage, and the last check found a service-side cause: a later outage alerts again. */
 	| 'rearm'
 	/** Nothing to write. */
 	| 'unchanged';
@@ -134,7 +135,12 @@ export function decideObservationGap(
 		now.getTime() - stored.observationCheckedAt.getTime() >= OBSERVATION_STALE_MS;
 	if (stored.observationGapSince === null || isStale) return 'record';
 	if (stored.observationGapAlertedAt !== null) {
-		if (stored.observationGapAlertedNodeSide === false && unobservedCause.isNodeSide) return 'escalate';
+		// At most one alert per grace period, so a cause that flips every tick
+		// does not alert every tick.
+		const isRealertDue = now.getTime() - stored.observationGapAlertedAt.getTime() >= graceMs;
+		if (stored.observationGapAlertedNodeSide === false && unobservedCause.isNodeSide) {
+			return isRealertDue ? 'escalate' : 'touch';
+		}
 		if (stored.observationGapAlertedNodeSide === true && !unobservedCause.isNodeSide) return 'rearm';
 		return 'touch';
 	}
@@ -203,7 +209,11 @@ export async function applyObservationGap(
 			return decision;
 		case 'rearm':
 			await database.hydraHead.updateMany({
-				where: { ...readState, observationGapAlertedNodeSide: true },
+				where: {
+					...readState,
+					observationGapAlertedAt: head.observationGapAlertedAt,
+					observationGapAlertedNodeSide: true,
+				},
 				data: { observationGapAlertedNodeSide: false, observationCheckedAt: now },
 			});
 			return decision;
@@ -216,7 +226,11 @@ export async function applyObservationGap(
 			const claimState =
 				decision === 'alert'
 					? { ...readState, observationGapAlertedAt: null }
-					: { ...readState, observationGapAlertedNodeSide: false };
+					: {
+							...readState,
+							observationGapAlertedAt: head.observationGapAlertedAt,
+							observationGapAlertedNodeSide: false,
+						};
 			const isAnnounced = await database.$transaction(async (tx) => {
 				const claimed = await tx.hydraHead.updateMany({
 					where: claimState,

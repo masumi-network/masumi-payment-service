@@ -281,13 +281,15 @@ describe('applyObservationGap', () => {
 	// goes down, the deadline may pass in silence.
 	it("alerts once more when a gap alerted as this service's fault becomes a node outage", async () => {
 		row = since(6);
-		await expect(gap.applyObservationGap(head(row), SERVICE, NOW)).resolves.toBe('alert');
 		const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
-		await expect(gap.applyObservationGap(head(row), SERVICE, later(1))).resolves.toBe('touch');
-		await expect(gap.applyObservationGap(head(row), DOWN, later(2))).resolves.toBe('escalate');
-		const staleRead = head({ ...row, observationGapAlertedNodeSide: false });
-		await expect(gap.applyObservationGap(staleRead, DOWN, later(2))).resolves.toBe('unchanged');
-		await expect(gap.applyObservationGap(head(row), DOWN, later(3))).resolves.toBe('touch');
+		await expect(gap.applyObservationGap(head(row), SERVICE, NOW)).resolves.toBe('alert');
+		for (const minute of [1, 2, 3, 4]) {
+			await expect(gap.applyObservationGap(head(row), DOWN, later(minute))).resolves.toBe('touch');
+		}
+		await expect(gap.applyObservationGap(head(row), DOWN, later(5))).resolves.toBe('escalate');
+		const staleRead = head({ ...row, observationGapAlertedAt: NOW, observationGapAlertedNodeSide: false });
+		await expect(gap.applyObservationGap(staleRead, DOWN, later(5))).resolves.toBe('unchanged');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(6))).resolves.toBe('touch');
 
 		expect(mockQueue).toHaveBeenCalledTimes(2);
 		expect(mockQueue).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ isNodeSide: true }));
@@ -302,9 +304,33 @@ describe('applyObservationGap', () => {
 		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).resolves.toBe('alert');
 		await expect(gap.applyObservationGap(head(row), SERVICE, later(1))).resolves.toBe('rearm');
 		await expect(gap.applyObservationGap(head(row), SERVICE, later(2))).resolves.toBe('touch');
-		await expect(gap.applyObservationGap(head(row), DOWN, later(3))).resolves.toBe('escalate');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(3))).resolves.toBe('touch');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(4))).resolves.toBe('touch');
+		await expect(gap.applyObservationGap(head(row), DOWN, later(5))).resolves.toBe('escalate');
 
 		expect(mockQueue).toHaveBeenCalledTimes(2);
+		expect(row.observationGapAlertedNodeSide).toBe(true);
+	});
+
+	// A node in a crash loop, or a replay that restarts each time, flips the cause every tick.
+	it('alerts a cause that flips every tick at most once per grace period', async () => {
+		row = since(6);
+		for (let minute = 0; minute < 20; minute += 1) {
+			const cause = minute % 2 === 0 ? DOWN : SERVICE;
+			await gap.applyObservationGap(head(row), cause, new Date(NOW.getTime() + minute * 60_000));
+		}
+		// The first alert at minute 0, then at most one each five minutes.
+		expect(mockQueue.mock.calls.length).toBeLessThanOrEqual(1 + 19 / 5);
+		expect(mockQueue.mock.calls.length).toBeGreaterThan(1);
+	});
+
+	// Another instance escalated after this one read the row. Its rearm must not
+	// undo that escalation, or the same outage alerts again.
+	it('does not rearm a gap from a read older than the last alert', async () => {
+		row = { ...since(30), observationGapAlertedAt: minutesAgo(25), observationGapAlertedNodeSide: true };
+		const staleRead = head({ ...row });
+		row = { ...row, observationGapAlertedAt: minutesAgo(1), observationGapAlertedNodeSide: true };
+		await gap.applyObservationGap(staleRead, SERVICE, NOW);
 		expect(row.observationGapAlertedNodeSide).toBe(true);
 	});
 
