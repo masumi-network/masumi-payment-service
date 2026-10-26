@@ -339,7 +339,7 @@ export class HydraNode extends EventEmitter {
 			} catch (error) {
 				this._connectionsStarted = false;
 				await Promise.allSettled([this._connection.disconnect(), this._historyConnection.disconnect()]);
-				throw error;
+				throw this._unsupportedPersistenceRotationError ?? error;
 			}
 		})();
 		this._connectPromise = connectPromise.finally(() => {

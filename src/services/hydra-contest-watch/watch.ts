@@ -183,7 +183,6 @@ export async function applyContestGapObservation(
 	return decision.action;
 }
 
-/** Compare authenticated node history even while the payment session is quarantined. */
 /**
  * Why a read-only observer session failed. A node that cannot be reached, or
  * that answers for another head or party, may not contest. A rotated event log
@@ -199,6 +198,7 @@ function connectFailureCause(error: unknown, message: string): UnobservedCause {
 	return { reason: `this service could not observe the node (${message})`, isNodeSide: false };
 }
 
+/** Compare authenticated node history even while the payment session is quarantined. */
 export async function runHydraContestWatch(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
 		where: {

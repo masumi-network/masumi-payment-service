@@ -28,6 +28,7 @@ import { HydraNodeEvent, HydraTransactionType } from './types';
 import type { L2MintIncident } from './l2-mint-tally';
 import {
 	HydraCommandRefusedUnsyncedError,
+	HydraPersistenceRotationError,
 	HydraProtocolError,
 	HydraTransactionRejectedError,
 	HydraTransportAmbiguousError,
@@ -2634,7 +2635,8 @@ describe('HydraNode', () => {
 				historyConnection.emit('message', JSON.stringify({ tag: 'EventLogRotated' }));
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
 
-				await expect(connectPromise).rejects.toThrow(/did not provide a matching identity-bearing Greetings/);
+				// The rotation, not the timeout it caused, so a caller can tell the node is fine.
+				await expect(connectPromise).rejects.toBeInstanceOf(HydraPersistenceRotationError);
 			});
 
 			it('does not bind on a finalization from a pass whose Greetings failed party identity', async () => {

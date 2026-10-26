@@ -31,7 +31,29 @@ export async function readOnlyContestNode(headId: string): Promise<HydraNode> {
 	}
 }
 
+/**
+ * This service's stored head configuration could not build the observer. Some
+ * of these are HydraProtocolErrors, such as a malformed stored key, but the
+ * node was never contacted, so the fault is on this side.
+ */
+export class ContestObserverConfigurationError extends Error {}
+
 async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
+	const node = await buildReadOnlyContestNode(headId).catch((error: unknown) => {
+		throw new ContestObserverConfigurationError(error instanceof Error ? error.message : 'Unknown error');
+	});
+	try {
+		await node.connect();
+		return node;
+	} catch (error) {
+		await node.disconnect().catch((disconnectError: unknown) => {
+			logger.warn('[HydraContestWatch] could not close failed read-only observer', { headId, disconnectError });
+		});
+		throw error;
+	}
+}
+
+async function buildReadOnlyContestNode(headId: string): Promise<HydraNode> {
 	const {
 		configuredHead,
 		nodeUrls,
@@ -40,7 +62,7 @@ async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
 		remoteVerificationKeys,
 		reconciledHistoryCursor,
 	} = await loadValidatedHeadConfiguration(headId, { readOnlyContestObserver: true });
-	const node = new HydraNode({
+	return new HydraNode({
 		httpUrl: nodeUrls.httpUrl,
 		wsUrl: nodeUrls.wsUrl,
 		expectedHeadId: configuredHead.headIdentifier ?? undefined,
@@ -53,15 +75,6 @@ async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
 		guardHostDestination: true,
 		computeSnapshotAccumulator: snapshotAccumulator,
 	});
-	try {
-		await node.connect();
-		return node;
-	} catch (error) {
-		await node.disconnect().catch((disconnectError: unknown) => {
-			logger.warn('[HydraContestWatch] could not close failed read-only observer', { headId, disconnectError });
-		});
-		throw error;
-	}
 }
 
 /** Release sockets once a payment session is healthy or the head is terminal. */
