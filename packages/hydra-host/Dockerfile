@@ -46,16 +46,17 @@ ARG HYDRA_IMAGE_DIGEST=sha256:608ae9b336209a18d7f3c42f7ca2d73c51dcb1b90732e533dd
 # patch level is deliberately newer: etcd before 3.5.33 reads a peer lease
 # request body without a limit, so anyone who reaches the published peer port
 # can exhaust memory (https://etcd.io/blog/2026/july-23-patch-release/).
-# A 3.5.34 member was checked to join a 3.5.25 cluster.
+# VERIFIED: A 3.5.35 member joins a 3.5.25 cluster and retains replicated data after restart.
 #
 # Declared here (before the first FROM) rather than next to where it's
 # consumed in the `binaries` stage below: a Dockerfile ARG's default only
 # survives into a later stage's bare `ARG NAME` redeclare if the
 # default was set before the file's first FROM — set anywhere else, the
 # redeclare silently picks up an empty string instead.
-ARG ETCD_VERSION=3.5.34
-ARG ETCD_SHA256_AMD64=eb10a9f3c8d547c4a76c8c39ab6bcd56e95c8da6aec86d4136e433ef6d39977b
-ARG ETCD_SHA256_ARM64=e08e07095a6aa670b2c93774107abcc1fe113942b175cf3e40ecdf69787ced60
+# REPORTED security dependency fixes: https://etcd.io/blog/2026/oct-22-patch-release/
+ARG ETCD_VERSION=3.5.35
+ARG ETCD_SHA256_AMD64=ca9f94cdc80be66923ef571d82b128819d0f5f3aa9f01522bafd991618ee29d1
+ARG ETCD_SHA256_ARM64=3abf150511a6f4c61996a77d32dfa0b47204c5e6b26c966af26d057116770ed7
 FROM ghcr.io/cardano-scaling/hydra-node@${HYDRA_IMAGE_DIGEST} AS hydra-upstream
 
 # ---------------------------------------------------------------------------
