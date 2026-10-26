@@ -85,6 +85,14 @@ describe('validateHydraCommitDraft', () => {
 		expect(result.invalidHereafterSlot).toBe(129_100_000n);
 	});
 
+	it('rejects a real CBOR draft whose sole deposit output follows node change', () => {
+		const draft = buildDraft({ depositFirst: false });
+		const outputs = Transaction.from_hex(draft.cborHex).body().outputs();
+		expect(outputs.get(0).address().to_bech32()).toBe(NODE_CHANGE_ADDRESS);
+		expect(outputs.get(1).address().to_bech32()).toBe(DEPOSIT_ADDRESS);
+		expect(() => validate(draft)).toThrow('deposit output must be at index 0');
+	});
+
 	it('rejects an advertised id that does not hash to the body', () => {
 		const draft = { ...buildDraft(), txId: 'f'.repeat(64) };
 		expect(() => validate(draft)).toThrow('advertised transaction id does not match');
@@ -363,6 +371,7 @@ function buildDraft({
 	fee = 400_000n,
 	changeAddress = NODE_CHANGE_ADDRESS,
 	changeLovelace = 999_600_000n,
+	depositFirst = true,
 	ttl = 129_100_000,
 }: {
 	serializedOutput?: string;
@@ -375,6 +384,7 @@ function buildDraft({
 	fee?: bigint;
 	changeAddress?: string;
 	changeLovelace?: bigint;
+	depositFirst?: boolean;
 	ttl?: number;
 } = {}): HydraTransaction {
 	const inputs = TransactionInputs.new();
@@ -415,8 +425,8 @@ function buildDraft({
 		Value.new(BigNum.from_str(changeLovelace.toString())),
 	);
 	const outputs = TransactionOutputs.new();
-	outputs.add(depositOutput);
-	outputs.add(changeOutput);
+	outputs.add(depositFirst ? depositOutput : changeOutput);
+	outputs.add(depositFirst ? changeOutput : depositOutput);
 
 	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str(fee.toString()));
 	body.set_ttl(BigNum.from_str(ttl.toString()));
