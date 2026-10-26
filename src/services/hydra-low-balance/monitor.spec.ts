@@ -6,12 +6,18 @@ type AnyMock = Mock<(...args: any[]) => any>;
 const mockFindMany = jest.fn() as AnyMock;
 const mockUpdate = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
+const mockTransaction = jest.fn() as AnyMock;
 const mockGetOwnInHeadBalance = jest.fn() as AnyMock;
-const mockTriggerHydraHeadLowBalance = jest.fn() as AnyMock;
+const mockQueueHydraHeadLowBalance = jest.fn() as AnyMock;
+
+const transactionClient = {
+	hydraLowBalanceRule: { updateMany: mockUpdateMany },
+};
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraLowBalanceRule: { findMany: mockFindMany, update: mockUpdate, updateMany: mockUpdateMany },
+		$transaction: mockTransaction,
 	},
 }));
 
@@ -20,7 +26,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-head-balance
 }));
 
 jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
-	webhookEventsService: { triggerHydraHeadLowBalance: mockTriggerHydraHeadLowBalance },
+	webhookEventsService: { queueHydraHeadLowBalanceInTransaction: mockQueueHydraHeadLowBalance },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -62,6 +68,9 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	mockUpdate.mockResolvedValue({});
 	mockUpdateMany.mockResolvedValue({ count: 1 });
+	mockTransaction.mockImplementation(async (callback: (tx: typeof transactionClient) => Promise<unknown>) =>
+		callback(transactionClient),
+	);
 });
 
 describe('evaluateHydraLowBalanceRules', () => {
@@ -202,15 +211,65 @@ describe('evaluateHydraLowBalanceRules', () => {
 });
 
 describe('runHydraLowBalanceMonitoringCycle', () => {
-	it('emits a webhook for each transitioned rule', async () => {
+	it('queues a webhook for each transitioned rule', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockGetOwnInHeadBalance.mockResolvedValue(balance('10000000'));
 
 		await runHydraLowBalanceMonitoringCycle();
 
-		expect(mockTriggerHydraHeadLowBalance).toHaveBeenCalledTimes(1);
-		expect(mockTriggerHydraHeadLowBalance).toHaveBeenCalledWith(
+		expect(mockQueueHydraHeadLowBalance).toHaveBeenCalledTimes(1);
+		expect(mockQueueHydraHeadLowBalance).toHaveBeenCalledWith(
+			transactionClient,
 			expect.objectContaining({ ruleId: 'rule-1', currentAmount: '10000000', thresholdAmount: '50000000' }),
 		);
+	});
+
+	it('does not mark a low alert sent when queueing fails, so the next cycle can retry', async () => {
+		let storedStatus = 'Healthy';
+		let storedLastAlertedAt: Date | null = null;
+		let committedDeliveries = 0;
+		let stagedDeliveries = 0;
+		let queueAttempts = 0;
+		mockFindMany.mockImplementation(async () => [rule({ status: storedStatus, lastAlertedAt: storedLastAlertedAt })]);
+		mockGetOwnInHeadBalance.mockResolvedValue(balance('10000000'));
+		mockQueueHydraHeadLowBalance.mockImplementation(async () => {
+			queueAttempts += 1;
+			if (queueAttempts === 1) throw new Error('queue insert failed');
+			stagedDeliveries += 1;
+		});
+		mockUpdateMany.mockImplementation(async ({ where, data }) => {
+			const shouldAlert =
+				storedStatus !== 'Low' || storedLastAlertedAt === null || storedLastAlertedAt < where.OR[2].lastAlertedAt.lt;
+			if (!shouldAlert) return { count: 0 };
+			storedStatus = data.status;
+			storedLastAlertedAt = data.lastAlertedAt;
+			return { count: 1 };
+		});
+		mockTransaction.mockImplementation(async (callback: (tx: typeof transactionClient) => Promise<unknown>) => {
+			const previousStatus = storedStatus;
+			const previousLastAlertedAt = storedLastAlertedAt;
+			stagedDeliveries = 0;
+			try {
+				const result = await callback(transactionClient);
+				committedDeliveries += stagedDeliveries;
+				return result;
+			} catch (error) {
+				storedStatus = previousStatus;
+				storedLastAlertedAt = previousLastAlertedAt;
+				stagedDeliveries = 0;
+				throw error;
+			}
+		});
+
+		await expect(evaluateHydraLowBalanceRules()).resolves.toHaveLength(0);
+		expect(mockTransaction).toHaveBeenCalledTimes(1);
+		expect(storedStatus).toBe('Healthy');
+		expect(storedLastAlertedAt).toBeNull();
+		expect(committedDeliveries).toBe(0);
+		await expect(evaluateHydraLowBalanceRules()).resolves.toHaveLength(1);
+		expect(mockQueueHydraHeadLowBalance).toHaveBeenCalledTimes(2);
+		expect(storedStatus).toBe('Low');
+		expect(storedLastAlertedAt).toBeInstanceOf(Date);
+		expect(committedDeliveries).toBe(1);
 	});
 });

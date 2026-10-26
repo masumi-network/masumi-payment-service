@@ -44,6 +44,34 @@ jest.unstable_mockModule('@masumi/payment-core/blockchain-identifier', () => ({
 
 const { webhookEventsService } = await import('./events.service');
 
+describe('transactional Hydra low-balance alerts', () => {
+	it('propagates a failed delivery insert so the rule update can roll back', async () => {
+		jest.clearAllMocks();
+		const tx = {};
+		const payload = {
+			ruleId: 'rule-1',
+			hydraLocalParticipantId: 'participant-1',
+			hydraHeadId: 'head-1',
+			assetUnit: 'lovelace',
+			thresholdAmount: '50000000',
+			currentAmount: '10000000',
+			checkedAt: '2026-10-26T00:00:00.000Z',
+		};
+		mockQueueWebhookInTransaction.mockRejectedValueOnce(new Error('db write failed'));
+
+		await expect(webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx as never, payload)).rejects.toThrow(
+			'db write failed',
+		);
+		expect(mockQueueWebhookInTransaction).toHaveBeenCalledWith(
+			tx,
+			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
+			payload,
+			'participant-1',
+			undefined,
+		);
+	});
+});
+
 describe('transactional error webhook events', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();

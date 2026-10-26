@@ -412,6 +412,20 @@ class WebhookEventsService {
 		}
 	}
 
+	/** Keep the low-balance alert timestamp and its delivery rows in one commit. */
+	async queueHydraHeadLowBalanceInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadLowBalanceWebhookData,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
+			payload,
+			payload.hydraLocalParticipantId,
+			undefined,
+		);
+	}
+
 	async queueHydraHeadSnapshotRoundStuckInTransaction(
 		tx: Prisma.TransactionClient,
 		payload: HydraHeadSnapshotRoundStuckWebhookData,
