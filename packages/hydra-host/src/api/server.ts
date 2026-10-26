@@ -45,6 +45,11 @@ import { matchRoute } from './routes.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
+// Preserve the default 32-slot Host's budget of eight control sockets per
+// Head as operators raise its supported node capacity. A fixed cap can refuse
+// a live session for a valid Head before its peer ports are exhausted.
+const CONTROL_CONNECTIONS_PER_HEAD = 8;
+const MIN_CONTROL_CONNECTIONS = 256;
 // The supervisor checks every 15 seconds. Four missed ticks make a cached
 // chain observation too old to authorize a deposit with an on-chain deadline.
 const MAX_HEALTH_OBSERVATION_AGE_MS = 60_000;
@@ -333,6 +338,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	server.headersTimeout = 15_000;
 	server.requestTimeout = 30_000;
 	server.keepAliveTimeout = 10_000;
+	server.maxConnections = Math.max(MIN_CONTROL_CONNECTIONS, config.ports.capacity * CONTROL_CONNECTIONS_PER_HEAD);
 
 	// WebSocket upgrades never reach the request handler, so they are
 	// authenticated and authorised here on their own path.

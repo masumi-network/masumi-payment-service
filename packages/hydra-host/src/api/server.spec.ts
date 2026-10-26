@@ -5,11 +5,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadHostConfig, type EnvSource } from '../config.js';
-import { PortAllocator } from '../registry/ports.js';
+import { MAX_NODES_PER_NAMESPACE, PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
-import { createControlPlane } from './server.js';
+import { createControlPlane, type ServerDeps } from './server.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { deriveNodeToken } from './node-token.js';
 import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
@@ -43,6 +43,7 @@ let warnings: string[];
 let checkPeerTarget: ProvisionDeps['checkPeerTarget'];
 let resolvePeerHostname: PeerHostnameResolver;
 let exchangeStore: ExchangeStore;
+let serverDeps: ServerDeps;
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
@@ -65,7 +66,7 @@ beforeEach(async () => {
 	// The supervisor is only nudged by the API; its behaviour is tested elsewhere.
 	const supervisor = { tick: async () => undefined } as unknown as Supervisor;
 
-	server = createControlPlane({
+	serverDeps = {
 		config,
 		store,
 		exchange: exchangeStore,
@@ -80,7 +81,8 @@ beforeEach(async () => {
 			},
 			error: () => undefined,
 		},
-	});
+	};
+	server = createControlPlane(serverDeps);
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -226,6 +228,34 @@ describe('control plane auth', () => {
 });
 
 describe('the landing page and browser 404', () => {
+	it('sets a finite control-plane connection budget', async () => {
+		expect(server.maxConnections).toBeGreaterThan(0);
+		expect(server.maxConnections).toBeLessThanOrEqual(256);
+		expect((await fetch(`${baseUrl}/openapi.json`)).status).toBe(200);
+	});
+
+	it('leaves connection headroom at the largest supported Head capacity', () => {
+		const overrides: Record<string, string> = {
+			HYDRA_HOST_PEER_PORT_START: '10000',
+			HYDRA_HOST_API_PORT_START: '20000',
+			HYDRA_HOST_MONITORING_PORT_START: '30000',
+			HYDRA_HOST_PEER_PORT_COUNT: String(MAX_NODES_PER_NAMESPACE),
+		};
+		const config = {
+			...loadHostConfig({ get: (key) => overrides[key] ?? env.get(key) }),
+			dataDir,
+		};
+		const ports = new PortAllocator(config.ports);
+		const highCapacityServer = createControlPlane({
+			...serverDeps,
+			config,
+			ports,
+			provision: { ...serverDeps.provision, ports },
+		});
+		expect(highCapacityServer.maxConnections).toBeGreaterThan(config.ports.capacity);
+		expect(highCapacityServer.maxConnections).toBeLessThan(config.ports.capacity * 16);
+	});
+
 	it('serves an unauthenticated landing page on the root', async () => {
 		const response = await fetch(`${baseUrl}/`);
 		expect(response.status).toBe(200);
