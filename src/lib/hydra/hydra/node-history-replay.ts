@@ -41,7 +41,12 @@ import {
 	decommitRequestedMessageSchema,
 	hasFinalizedUtxoField,
 } from './schemas';
-import { rememberDecommitTransaction, resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
+import {
+	correlateDecommitOutcome,
+	rememberDecommitTransaction,
+	resolveNewlyDeclaredDecommitTransactions,
+	type DecommitOutcomeCursor,
+} from './decommit-resolution';
 import * as l2Mint from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
@@ -126,6 +131,7 @@ export class HydraHistoryReplay {
 	 * named by a snapshot's pending partition can be needed.
 	 */
 	private readonly _decommitTransactions = new Map<string, HydraTransaction>();
+	private readonly _decommitOutcomeCursor: DecommitOutcomeCursor = {};
 
 	/** Unknown snapshot fields already reported, so a replay says it once. */
 	private readonly _reportedDriftFields = new Set<string>();
@@ -242,6 +248,7 @@ export class HydraHistoryReplay {
 		this._verifiedSnapshot = undefined;
 		this._lastVerifiedFrame = undefined;
 		this._closedSnapshotNumber = undefined;
+		this._decommitOutcomeCursor.approval = undefined;
 		this._l2MintTally = { units: new Map() };
 		const rotationError = this.host.persistenceRotationError;
 		if (rotationError) {
@@ -408,8 +415,9 @@ export class HydraHistoryReplay {
 			// withdrawal for that participant refuse with "a prior withdrawal is
 			// still settling on L1". Deposits were wired through replay; withdrawals
 			// were not, though the ordering guarantee that makes it safe (held back,
-			// flushed oldest-first, timestamp-attributed) was built for both.
-			const settled = readDecommitSettled(parsedEnvelope.tag, message);
+			// correlated in-stream, flushed oldest-first) was built for both.
+			const observed = readDecommitSettled(parsedEnvelope.tag, message);
+			const settled = observed && correlateDecommitOutcome(this._decommitOutcomeCursor, observed);
 			if (settled) this.host.rememberReplayedDecommit(settled);
 
 			// Before the snapshot that reflects it, always: the head reports the

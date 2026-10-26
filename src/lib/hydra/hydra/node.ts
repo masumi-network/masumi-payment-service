@@ -231,9 +231,9 @@ export class HydraNode extends EventEmitter {
 			clearFinalizedFanout: () => this._finalizedFanout.clear(),
 			finalizedHeadProven: () => this.finalizedHeadProven(),
 			finalizedSnapshotNumber: () => this._replay.finalizedSnapshotNumber,
-			rereadHistory: () => {
+			rereadHistory: (reason = 'Live Greetings is Idle; replaying the history') => {
 				// Still failed only under the rotation latch, which ends the session.
-				if (!this._replay.isFailed) this.restartHistoryReplay('Live Greetings is Idle; replaying the history');
+				if (!this._replay.isFailed) this.restartHistoryReplay(reason);
 			},
 			historyOpenCount: () => this._historyConnection.openCount,
 			setNetworkConnected: (connected) => {

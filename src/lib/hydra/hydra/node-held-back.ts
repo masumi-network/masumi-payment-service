@@ -1,7 +1,6 @@
 /**
  * Deposit and withdrawal outcomes, and failed L1 posts, observed before the
- * live session was authenticated: held, bounded, and emitted exactly once when
- * identity lands.
+ * live session was authenticated: held, bounded, and drained when identity lands.
  *
  * A withdrawal settles on L1 minutes after it leaves the head, and a deposit
  * sits pending for a deposit period or more, so a service that reconnected in
@@ -17,13 +16,14 @@ import { DecommitSettledData, DepositRecordedData, PostTxFailedData } from './ty
 /**
  * How many replayed outcomes are worth holding.
  *
- * A head replays its entire history on every connection; only the tail can
- * still describe a settlement this service has not finished recording.
+ * A head replays its entire history on every connection. An overflow requests
+ * another pass after authentication, when outcomes can stream without buffering.
  */
 const MAX_HELD_BACK_OUTCOMES = 32;
 
 export class HeldBackEmissions {
 	private _decommits: DecommitSettledData[] = [];
+	private _needsDecommitReplay = false;
 	/**
 	 * Keyed by deposit id rather than appended, because the same deposit is
 	 * replayed on every connection and re-emitting it costs a write each time.
@@ -34,7 +34,17 @@ export class HeldBackEmissions {
 
 	rememberDecommit(data: DecommitSettledData): void {
 		this._decommits.push(data);
-		if (this._decommits.length > MAX_HELD_BACK_OUTCOMES) this._decommits.shift();
+		if (this._decommits.length > MAX_HELD_BACK_OUTCOMES) {
+			this._decommits.shift();
+			this._needsDecommitReplay = true;
+		}
+	}
+
+	/** Retry dropped evidence once identity is ready, when replay can stream it without buffering. */
+	takeDecommitReplayRequirement(): boolean {
+		const required = this._needsDecommitReplay;
+		this._needsDecommitReplay = false;
+		return required;
 	}
 
 	rememberDeposit(data: DepositRecordedData): void {
@@ -84,6 +94,7 @@ export class HeldBackEmissions {
 	 * authenticated session, outcomes this node never accepted.
 	 */
 	clear(): void {
+		this._needsDecommitReplay ||= this._decommits.length > 0;
 		this._decommits = [];
 		this._deposits.clear();
 		this._postTxFailures = [];

@@ -2,11 +2,10 @@
  * Finding the L1 transaction that paid a withdrawal out.
  *
  * The head tells its node when a withdrawal has settled, and it says what
- * landed — but not which transaction carried it. `DecommitFinalized` reports
- * `distributedUTxO` keyed by the IN-HEAD reference of the output that was
- * removed, which is a reference to a transaction that only ever existed inside
- * the head. Showing that id as the withdrawal's transaction is what made the
- * admin UI look like it linked to a chain explorer and then 404.
+ * landed, but not which transaction carried it. `DecommitFinalized`
+ * `distributedUTxO` keys come from the L1 decrement's inputs, zipped with its
+ * payout outputs (Hydra 2.4.1 observeDecrementTx). They identify neither the
+ * in-head decommit transaction nor the L1 payout transaction itself.
  *
  * So the L1 transaction has to be observed rather than read off the event. The
  * search is narrow on purpose: the decrement moves this head's state token,

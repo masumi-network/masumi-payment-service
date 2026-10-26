@@ -17,7 +17,7 @@
  * that is up and Open.
  */
 
-import type { HydraTransaction } from './types';
+import type { DecommitSettledData, HydraTransaction } from './types';
 
 /**
  * The transactions behind the decommits this transition declares for the first
@@ -90,4 +90,35 @@ export function rememberDecommitTransaction(
 		const oldest = tracked.keys().next().value;
 		if (oldest !== undefined) tracked.delete(oldest);
 	}
+}
+
+/** One ordered socket/pass owns this cursor; never share it between live and replay. */
+export type DecommitOutcomeCursor = { approval?: DecommitSettledData | null };
+
+/**
+ * Hydra 2.4.1 finalizations omit the decommit id. Their distributedUTxO keys
+ * come from the L1 decrement inputs (Hydra.Tx.Decrement.observeDecrementTx),
+ * so they cannot supply it either. Only the preceding approval in this same
+ * ordered stream identifies the withdrawal. A fresh stream starts empty.
+ */
+export function correlateDecommitOutcome(
+	cursor: DecommitOutcomeCursor,
+	data: DecommitSettledData,
+): DecommitSettledData | undefined {
+	if (data.outcome === 'approved') {
+		// Different approvals without a finalization make the stream ambiguous.
+		cursor.approval =
+			cursor.approval === undefined || cursor.approval?.decommitTxId === data.decommitTxId ? data : null;
+		return data;
+	}
+	if (data.outcome !== 'finalized') return data;
+	const approval = cursor.approval;
+	if (data.decommitTxId != null && approval != null && data.decommitTxId !== approval.decommitTxId) {
+		return undefined;
+	}
+	if (data.observedAt && approval?.observedAt && data.observedAt < approval.observedAt) return undefined;
+	const decommitTxId = data.decommitTxId ?? approval?.decommitTxId;
+	cursor.approval = undefined;
+	// An uncorrelated finalization may be the peer's. Never attribute it by age.
+	return decommitTxId == null ? undefined : { ...data, decommitTxId };
 }
