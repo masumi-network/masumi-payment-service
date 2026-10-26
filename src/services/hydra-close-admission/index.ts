@@ -20,23 +20,23 @@
  * a head that has looked stalled for an hour can still close a minute later.
  * The release therefore takes two proofs, in this order:
  *
- *   1. the command cannot still execute — the node refused it
- *      (`closeRefusedAt`, written only from its CommandFailed or
- *      PostTxOnChainFailed answer to this Close);
+ *   1. the command cannot still execute: the node refused it, or the transport
+ *      proved it was never sent (`closeRefusedAt`);
  *   2. no other Close happened — an independent L1 read of the head's state
  *      token still shows the Open datum.
  *
- * A Close with no refusal on record keeps its latch however long it waits.
+ * A Close with no nonexecution proof on record keeps its latch however long it waits.
  */
 
-import { HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { readHeadChainState } from '@/routes/api/hydra/head/chain-check';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { closeNonexecutionClientInput } from './nonexecution-evidence';
 
 /**
- * How long a refusal must stand before L1 is asked.
+ * How long nonexecution proof must stand before L1 is asked.
  *
  * Not a release timer: nothing is released without the refusal and the L1
  * read. The refusal frames carry no correlation id, so a Close sent to the same
@@ -47,22 +47,51 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 export const CLOSE_REFUSAL_SETTLE_MS = 10 * 60 * 1000;
 
 /**
- * Clear the close latch on heads whose node refused the Close and whose state
- * on L1 is still Open.
+ * Clear the close latch on heads whose Close cannot execute and whose state on
+ * L1 is still Open.
  *
  * Returns how many were released.
  */
 export async function releaseStalledCloseAdmissions(): Promise<number> {
+	const settledBefore = new Date(Date.now() - CLOSE_REFUSAL_SETTLE_MS);
 	const refused = await prisma.hydraHead.findMany({
 		where: {
 			status: HydraHeadStatus.Open,
 			isClosing: true,
 			isEnabled: true,
 			closeTxHash: null,
-			closeRefusedAt: { lt: new Date(Date.now() - CLOSE_REFUSAL_SETTLE_MS) },
+			closeRefusedAt: { lt: settledBefore },
 		},
-		select: { id: true, closeRefusedAt: true },
+		select: { id: true, closeAdmissionId: true, closeRefusedAt: true },
 	});
+	// A failed Close can outlive a failed update of its head row. The fallback
+	// error record names the exact admission, so an older refusal cannot release
+	// a later attempt after the process restarts.
+	const unmarked = await prisma.hydraHead.findMany({
+		where: {
+			status: HydraHeadStatus.Open,
+			isClosing: true,
+			isEnabled: true,
+			closeTxHash: null,
+			closeRefusedAt: null,
+			closingSince: { lt: settledBefore },
+			closeAdmissionId: { not: null },
+		},
+		select: { id: true, closeAdmissionId: true, closeRefusedAt: true },
+	});
+	for (const head of unmarked) {
+		if (head.closeAdmissionId === null) continue;
+		const marker = await prisma.hydraHeadError.findFirst({
+			where: {
+				hydraHeadId: head.id,
+				errorType: HydraErrorType.CommandFailed,
+				clientInput: closeNonexecutionClientInput(head.closeAdmissionId),
+				errorAt: { lt: settledBefore },
+			},
+			select: { id: true },
+		});
+		if (marker !== null) refused.push(head);
+	}
 	if (refused.length === 0) {
 		return 0;
 	}
@@ -112,16 +141,17 @@ export async function releaseStalledCloseAdmissions(): Promise<number> {
 				isClosing: true,
 				isEnabled: true,
 				closeTxHash: null,
+				closeAdmissionId: head.closeAdmissionId,
 				// The refusal this pass aged and checked L1 for, not merely a refusal:
 				// a new attempt refused meanwhile has not had its settle window.
 				closeRefusedAt: head.closeRefusedAt,
 			},
-			data: { isClosing: false, closingSince: null, closeRefusedAt: null },
+			data: { isClosing: false, closingSince: null, closeAdmissionId: null, closeRefusedAt: null },
 		});
 		if (cleared.count === 1) {
 			released += 1;
 			logger.warn(
-				`[HydraCloseAdmission] Released the close latch on head ${head.id}; its node refused the Close and the ` +
+				`[HydraCloseAdmission] Released the close latch on head ${head.id}; its Close cannot execute and the ` +
 					'head is still Open on L1. Close it again to retry',
 			);
 		}

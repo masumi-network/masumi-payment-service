@@ -22,6 +22,7 @@ type HeadRow = {
 	isClosing: boolean;
 	closeTxHash: string | null;
 	closingSince: Date | null;
+	closeAdmissionId: string | null;
 	closeRefusedAt: Date | null;
 	initTxHash: string | null;
 };
@@ -46,8 +47,13 @@ function matches(where: Record<string, unknown>): boolean {
 }
 
 const mockFindMany = jest.fn((args: { where: Record<string, unknown> }) =>
-	Promise.resolve(matches(args.where) ? [{ id: row.id, closeRefusedAt: row.closeRefusedAt }] : []),
+	Promise.resolve(
+		matches(args.where)
+			? [{ id: row.id, closeAdmissionId: row.closeAdmissionId, closeRefusedAt: row.closeRefusedAt }]
+			: [],
+	),
 );
+const mockHeadErrorFindFirst = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn((args: { where: Record<string, unknown>; data: Partial<HeadRow> }) => {
 	if (!matches(args.where)) return Promise.resolve({ count: 0 });
 	row = { ...row, ...args.data };
@@ -58,7 +64,10 @@ const mockFlushHeadStatus = jest.fn() as AnyMock;
 const mockReadHeadChainState = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany } },
+	prisma: {
+		hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany },
+		hydraHeadError: { findFirst: mockHeadErrorFindFirst },
+	},
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -93,12 +102,14 @@ beforeEach(() => {
 		isClosing: true,
 		closeTxHash: null,
 		closingSince: new Date(Date.now() - ELEVEN_MINUTES_MS),
+		closeAdmissionId: 'attempt-1',
 		closeRefusedAt: null,
 		initTxHash: 'a'.repeat(64),
 	};
 	mockGetHead.mockReturnValue({});
 	mockFlushHeadStatus.mockResolvedValue(undefined);
 	mockReadHeadChainState.mockResolvedValue({ state: 'open', latestTxHash: 'b'.repeat(64) });
+	mockHeadErrorFindFirst.mockResolvedValue(null);
 });
 
 /** The submission gate reads the head row under lock; hand it the current row. */
@@ -142,8 +153,37 @@ describe('releaseStalledCloseAdmissions', () => {
 		await expect(releaseStalledCloseAdmissions()).resolves.toBe(1);
 
 		expect(mockReadHeadChainState).toHaveBeenCalledWith('head-1');
-		expect(row).toMatchObject({ isClosing: false, closingSince: null, closeRefusedAt: null });
+		expect(row).toMatchObject({ isClosing: false, closingSince: null, closeAdmissionId: null, closeRefusedAt: null });
 		await expect(reserveL2()).resolves.toBeUndefined();
+	});
+
+	it('releases a Close whose head marker write failed but exact-attempt refusal was saved', async () => {
+		const closeAdmissionId = row.closeAdmissionId;
+		mockHeadErrorFindFirst.mockResolvedValue({ id: 'refusal-1' });
+
+		await expect(releaseStalledCloseAdmissions()).resolves.toBe(1);
+
+		expect(mockHeadErrorFindFirst).toHaveBeenCalledWith({
+			where: {
+				hydraHeadId: 'head-1',
+				errorType: 'CommandFailed',
+				clientInput: `CloseNonexecution:${closeAdmissionId}`,
+				errorAt: { lt: expect.any(Date) },
+			},
+			select: { id: true },
+		});
+		expect(row.isClosing).toBe(false);
+	});
+
+	it("does not use an older attempt's fallback refusal for the current latch", async () => {
+		const previousAttempt = 'previous-attempt';
+		mockHeadErrorFindFirst.mockImplementation(({ where }: { where: { clientInput: string } }) =>
+			Promise.resolve(where.clientInput === `CloseNonexecution:${previousAttempt}` ? { id: 'old-refusal' } : null),
+		);
+
+		await expect(releaseStalledCloseAdmissions()).resolves.toBe(0);
+		expect(row.isClosing).toBe(true);
+		expect(mockReadHeadChainState).not.toHaveBeenCalled();
 	});
 
 	// The refusal covers this node's Close only; the other party may have closed.
@@ -163,6 +203,17 @@ describe('releaseStalledCloseAdmissions', () => {
 		row.closeRefusedAt = new Date(Date.now() - ELEVEN_MINUTES_MS);
 		mockReadHeadChainState.mockImplementation(async () => {
 			row.closeRefusedAt = new Date();
+			return { state: 'open', latestTxHash: 'b'.repeat(64) };
+		});
+
+		await expect(releaseStalledCloseAdmissions()).resolves.toBe(0);
+		expect(row.isClosing).toBe(true);
+	});
+
+	it('does not release a replacement Close attempt after its own L1 read', async () => {
+		mockHeadErrorFindFirst.mockResolvedValue({ id: 'refusal-1' });
+		mockReadHeadChainState.mockImplementation(async () => {
+			row.closeAdmissionId = 'new-attempt';
 			return { state: 'open', latestTxHash: 'b'.repeat(64) };
 		});
 

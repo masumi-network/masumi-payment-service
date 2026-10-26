@@ -16,6 +16,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { z } from '@masumi/payment-core/zod';
+import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 
 import {
@@ -26,6 +27,7 @@ import {
 } from '@/lib/hydra';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { closeNonexecutionClientInput } from '@/services/hydra-close-admission/nonexecution-evidence';
 import { assertHydraCommitRecoveryRecorded, countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 
@@ -34,8 +36,10 @@ import { lifecycleInput, lifecycleOutput } from './lifecycle';
 
 // --- Lifecycle: POST close ---
 
-export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscrows = false): Promise<void> {
-	await withSerializableSlotRetry(
+type CloseAdmission = { closingSince: Date; closeAdmissionId: string };
+
+export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscrows = false): Promise<CloseAdmission> {
+	return await withSerializableSlotRetry(
 		() =>
 			prisma.$transaction(
 				async (tx) => {
@@ -82,6 +86,8 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 						throw createHttpError(409, describeCloseWithActiveWork(head.contestationPeriod, activeWork));
 					}
 
+					const closingSince = new Date();
+					const closeAdmissionId = createId();
 					const claimed = await tx.hydraHead.updateMany({
 						where: {
 							id: headId,
@@ -93,9 +99,10 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 						// `closeRefusedAt` reset here, not trusted to have been cleared:
 						// a refusal left over from an earlier attempt would let the reaper
 						// release this one while it may still post.
-						data: { isClosing: true, closingSince: new Date(), closeRefusedAt: null },
+						data: { isClosing: true, closingSince, closeAdmissionId, closeRefusedAt: null },
 					});
 					if (claimed.count !== 1) throw createHttpError(409, 'Hydra head close eligibility changed concurrently');
+					return { closingSince, closeAdmissionId };
 				},
 				{
 					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -107,26 +114,58 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 	);
 }
 
-async function releaseHydraHeadCloseAdmission(headId: string): Promise<void> {
+async function releaseHydraHeadCloseAdmission(headId: string, admission: CloseAdmission): Promise<void> {
 	await prisma.hydraHead.updateMany({
-		where: { id: headId, status: HydraHeadStatus.Open, isClosing: true },
-		data: { isClosing: false, closingSince: null, closeRefusedAt: null },
+		where: { id: headId, status: HydraHeadStatus.Open, isClosing: true, closeAdmissionId: admission.closeAdmissionId },
+		data: { isClosing: false, closingSince: null, closeAdmissionId: null, closeRefusedAt: null },
 	});
 }
 
 /**
- * The node answered this Close with CommandFailed or PostTxOnChainFailed.
+ * The node rejected this Close, or the transport proved it never sent it.
  *
  * The answer stays ambiguous for the caller — the head may have been closed by
  * the other party — but it does prove that this node will not post this Close.
  * Recorded so the stalled-close reaper can release the latch once L1 shows the
  * head still Open. Guarded on the latch, so it never outlives the attempt.
  */
-async function recordHydraHeadCloseRefusal(headId: string): Promise<void> {
-	await prisma.hydraHead.updateMany({
-		where: { id: headId, status: HydraHeadStatus.Open, isClosing: true },
-		data: { closeRefusedAt: new Date() },
-	});
+async function recordHydraHeadCloseNonexecution(
+	headId: string,
+	admission: CloseAdmission,
+	reason: 'node-refused' | 'not-sent',
+): Promise<void> {
+	const refusedAt = new Date();
+	try {
+		await prisma.hydraHead.updateMany({
+			where: {
+				id: headId,
+				status: HydraHeadStatus.Open,
+				isClosing: true,
+				closeAdmissionId: admission.closeAdmissionId,
+			},
+			data: { closeRefusedAt: refusedAt },
+		});
+	} catch (writeError) {
+		// A failed head update must not lose definitive nonexecution proof. This
+		// separate row survives a process restart and names the exact admission.
+		await prisma.hydraHeadError.create({
+			data: {
+				hydraHeadId: headId,
+				errorType: HydraErrorType.CommandFailed,
+				errorMessage:
+					reason === 'node-refused'
+						? 'Hydra node refused this Close; head marker update reported an error'
+						: 'Hydra Close transport failed before dispatch; head marker update reported an error',
+				headStatus: HydraHeadStatus.Open,
+				clientInput: closeNonexecutionClientInput(admission.closeAdmissionId),
+				errorAt: refusedAt,
+			},
+		});
+		logger.error('[HydraAPI] Stored Close nonexecution proof after head update reported an error', {
+			headId,
+			writeError,
+		});
+	}
 }
 
 export const closeHeadInput = lifecycleInput.extend({
@@ -163,8 +202,9 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(502, 'No active connection to Hydra head');
 		}
 
+		let admission: CloseAdmission | null = null;
 		try {
-			await beginHydraHeadClose(head.id, input.acknowledgeActiveEscrows === true);
+			admission = await beginHydraHeadClose(head.id, input.acknowledgeActiveEscrows === true);
 			await hydraHead.close();
 			await cm.flushHeadStatus(head.id);
 			const persistedHead = await prisma.hydraHead.findUnique({
@@ -176,13 +216,40 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 			logger.info(`[HydraAPI] Head ${head.id} close completed`, { status: persistedHead.status });
 			return { headId: head.id, status: persistedHead.status };
 		} catch (error) {
-			// Only a pre-send transport failure proves that neither this node nor a
-			// concurrent party could have moved the head out of Open. Any response after
-			// dispatch stays fail-closed until an authenticated status frame converges DB.
-			if (error instanceof HydraTransportError) {
-				await releaseHydraHeadCloseAdmission(head.id);
-			} else if (error instanceof HydraTransportAmbiguousError && error.cause instanceof HydraCommandRejectedError) {
-				await recordHydraHeadCloseRefusal(head.id);
+			// A pre-send transport failure proves this node did not send Close. Another
+			// party may still close the head, so the reaper checks L1 before release.
+			// Any response after dispatch stays fail-closed until an authenticated
+			// status frame converges DB.
+			if (admission !== null && error instanceof HydraTransportError) {
+				try {
+					await releaseHydraHeadCloseAdmission(head.id, admission);
+				} catch (writeError) {
+					logger.error('[HydraAPI] Could not clear unsent Close admission; storing recovery proof', {
+						headId: head.id,
+						writeError,
+					});
+					try {
+						await recordHydraHeadCloseNonexecution(head.id, admission, 'not-sent');
+					} catch (proofError) {
+						logger.error('[HydraAPI] Could not persist unsent Close proof; close latch remains held', {
+							headId: head.id,
+							proofError,
+						});
+					}
+				}
+			} else if (
+				admission !== null &&
+				error instanceof HydraTransportAmbiguousError &&
+				error.cause instanceof HydraCommandRejectedError
+			) {
+				try {
+					await recordHydraHeadCloseNonexecution(head.id, admission, 'node-refused');
+				} catch (writeError) {
+					logger.error('[HydraAPI] Could not persist Close refusal; close latch remains held', {
+						headId: head.id,
+						writeError,
+					});
+				}
 			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Close');
 			throw error;

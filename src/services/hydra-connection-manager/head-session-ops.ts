@@ -145,6 +145,7 @@ export async function persistRegressiveHeadStatus(
 					updateData.closeTxHash = null;
 					updateData.contestationDeadline = null;
 					updateData.isClosing = false;
+					updateData.closeAdmissionId = null;
 					updateData.closeRefusedAt = null;
 				} else {
 					updateData.isClosing = true;
