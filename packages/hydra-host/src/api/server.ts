@@ -703,9 +703,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 		}
 
 		// Only an authenticated caller gets here, and a node may take its time.
-		// The socket gets the idle timeout back for whatever it sends next.
+		// Do not restore the timeout on finish: Node arms the keep-alive timeout
+		// itself and the idle timeout on the next request, and a restore would
+		// cut off a proxied request pipelined behind this one.
 		request.socket.setTimeout(0);
-		response.once('finish', () => request.socket.setTimeout(server.timeout));
 		proxyHttp(request, response, record.apiPort, target.subPath, query, (message) => logger.error(`[api] ${message}`));
 	}
 
