@@ -383,8 +383,10 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		}
 
 		const inHeadUtxos = await provider.fetchAddressUTxOs(address);
+		const recoveredRefs = await provider.getRecoveredInputRefs();
 		const selection = selectDecommittableUtxos({
 			utxos: inHeadUtxos,
+			recoveredRefs,
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
 			l2MintCheck: hydraHead.mainNode.l2MintCheck,
 			drain: params.drain === true,

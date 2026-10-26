@@ -40,6 +40,8 @@ jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
 	lookupConfirmedChainTx: mockLookupConfirmedChainTx,
 }));
 const mockFindMany = jest.fn() as AnyMock;
+const testConfig = { BLOCK_CONFIRMATIONS_THRESHOLD: 0 };
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({ CONFIG: testConfig }));
 
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: () => ({ txsUtxos: mockTxsUtxos, txsCbor: mockTxsCbor }),
@@ -55,6 +57,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 const { HydraTopupStatus } = await import('@/generated/prisma/client');
 const { reconcileRecoveredHydraTopups } = await import('./recovered');
+const { assertHydraDepositSettlementsFinal } = await import('./settlement-cleanup');
 
 const HEAD_ID = 'aa'.repeat(28);
 const SPENDER_TX = 'b'.repeat(64);
@@ -86,6 +89,7 @@ function topupRow(status: (typeof HydraTopupStatus)[keyof typeof HydraTopupStatu
 	return {
 		id: 'topup-1',
 		status,
+		settlementTxHash: null as string | null,
 		depositTxHash: DEPOSIT_TX,
 		HydraHead: { headIdentifier: HEAD_ID },
 		LocalParticipant: {
@@ -137,6 +141,7 @@ function chain(
 		return { outputs: spenderPaysTo.map((address) => ({ address })) };
 	});
 	mockTxsCbor.mockImplementation(async (hash: string) => ({ cbor: hash === DEPOSIT_TX ? DEPOSIT_CBOR : spenderCbor }));
+	return spenderHash;
 }
 
 /**
@@ -169,8 +174,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		chain(SPENDER_TX, [WALLET_ADDRESS, SCRIPT_ADDRESS], { redeemer: 'd87a9f01ff' });
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { status: HydraTopupStatus.Recovered },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Recovered, settlementTxHash: expect.any(String) },
 		});
 	});
 
@@ -188,8 +193,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		chain(SPENDER_TX, [WALLET_ADDRESS], options);
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -198,8 +203,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		chain(SPENDER_TX, [WALLET_ADDRESS, SCRIPT_ADDRESS], { redeemer: 'd87a9f01ff' });
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Absorbed },
-			data: { status: HydraTopupStatus.Recovered },
+			where: { id: 'topup-1', status: HydraTopupStatus.Absorbed, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Recovered, settlementTxHash: expect.any(String) },
 		});
 	});
 
@@ -216,8 +221,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		chain(SPENDER_TX, [WALLET_ADDRESS], { redeemer: 'd87980' });
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Recovered },
-			data: { status: HydraTopupStatus.Absorbed },
+			where: { id: 'topup-1', status: HydraTopupStatus.Recovered, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Absorbed, settlementTxHash: expect.any(String) },
 		});
 	});
 
@@ -228,8 +233,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 			chain(null, []);
 			await reconcileRecoveredHydraTopups();
 			expect(mockUpdateMany).toHaveBeenCalledWith({
-				where: { id: 'topup-1', status },
-				data: { status: HydraTopupStatus.Confirmed },
+				where: { id: 'topup-1', status, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+				data: { status: HydraTopupStatus.Confirmed, settlementTxHash: null },
 			});
 		},
 	);
@@ -239,8 +244,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		mockTxsCbor.mockRejectedValueOnce(new Error('unavailable'));
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Absorbed },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Absorbed, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -251,8 +256,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		chain(SPENDER_TX, [WALLET_ADDRESS]);
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -263,8 +268,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		mockTxsCbor.mockResolvedValueOnce({ cbor: Transaction.new(differentBody, TransactionWitnessSet.new()).to_hex() });
 		await reconcileRecoveredHydraTopups();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -299,8 +304,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		await reconcileRecoveredHydraTopups();
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { status: HydraTopupStatus.Absorbed },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Absorbed, settlementTxHash: expect.any(String) },
 		});
 	});
 
@@ -372,7 +377,14 @@ describe('reconcileRecoveredHydraTopups', () => {
 		await reconcileRecoveredHydraTopups();
 
 		expect(mockUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ where: { id: 'confirmed-1', status: HydraTopupStatus.Confirmed } }),
+			expect.objectContaining({
+				where: {
+					id: 'confirmed-1',
+					status: HydraTopupStatus.Confirmed,
+					depositTxHash: DEPOSIT_TX,
+					settlementTxHash: null,
+				},
+			}),
 		);
 	});
 
@@ -383,8 +395,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		await reconcileRecoveredHydraTopups();
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { status: HydraTopupStatus.Recovered },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Recovered, settlementTxHash: expect.any(String) },
 		});
 	});
 
@@ -395,8 +407,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		await reconcileRecoveredHydraTopups();
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Confirmed },
-			data: { status: HydraTopupStatus.Absorbed },
+			where: { id: 'topup-1', status: HydraTopupStatus.Confirmed, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Absorbed, settlementTxHash: expect.any(String) },
 		});
 	});
 
@@ -412,8 +424,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -427,8 +439,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Failed },
-			data: { status: HydraTopupStatus.Confirmed },
+			where: { id: 'topup-1', status: HydraTopupStatus.Failed, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { status: HydraTopupStatus.Confirmed, settlementTxHash: null },
 		});
 	});
 
@@ -444,8 +456,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 		// Only rotated to the back of the queue, so it cannot hold others back.
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Failed },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Failed, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -461,8 +473,8 @@ describe('reconcileRecoveredHydraTopups', () => {
 
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
-			data: { updatedAt: expect.any(Date) },
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending, depositTxHash: DEPOSIT_TX, settlementTxHash: null },
+			data: { updatedAt: expect.any(Date), settlementTxHash: null },
 		});
 	});
 
@@ -474,5 +486,127 @@ describe('reconcileRecoveredHydraTopups', () => {
 		await reconcileRecoveredHydraTopups();
 
 		expect(mockUpdateMany.mock.calls[0]?.[0]?.where?.status).toBe(HydraTopupStatus.Pending);
+	});
+});
+
+describe('durable deposit settlement proof', () => {
+	it.each(['pending', 'not-found', 'confirmed-invalid', 'transient-error'])(
+		'refuses terminal promotion when the exact consumer is %s, despite a deep deposit',
+		async (consumerResult) => {
+			stageRows([topupRow(HydraTopupStatus.Pending)]);
+			const spender = chain(SPENDER_TX, [WALLET_ADDRESS]);
+			mockLookupConfirmedChainTx.mockImplementation(async ({ txHash }: { txHash: string }) =>
+				txHash === DEPOSIT_TX ? 'confirmed-valid' : consumerResult,
+			);
+			await reconcileRecoveredHydraTopups();
+			expect(mockLookupConfirmedChainTx).toHaveBeenCalledWith(
+				expect.objectContaining({
+					txHash: spender,
+					requiredConfirmations: 20,
+				}),
+			);
+			expect(mockUpdateMany.mock.calls.some(([args]) => args.data.status === HydraTopupStatus.Recovered)).toBe(false);
+		},
+	);
+
+	it.each([0, 35])('records the exact consumer atomically at max(20, configured %s)', async (threshold) => {
+		testConfig.BLOCK_CONFIRMATIONS_THRESHOLD = threshold;
+		try {
+			stageRows([topupRow(HydraTopupStatus.Recovered)]);
+			const spender = chain(SPENDER_TX, [WALLET_ADDRESS]);
+			await reconcileRecoveredHydraTopups();
+			expect(mockLookupConfirmedChainTx).toHaveBeenCalledWith(
+				expect.objectContaining({
+					txHash: spender,
+					requiredConfirmations: Math.max(20, threshold),
+				}),
+			);
+			expect(mockUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: { status: HydraTopupStatus.Recovered, settlementTxHash: spender },
+				}),
+			);
+		} finally {
+			testConfig.BLOCK_CONFIRMATIONS_THRESHOLD = 0;
+		}
+	});
+
+	it('invalidates a stored proof when the consumer is shallow after rollback', async () => {
+		const row = topupRow(HydraTopupStatus.Absorbed);
+		row.settlementTxHash = chain(SPENDER_TX, [SCRIPT_ADDRESS]);
+		stageRows([row]);
+		mockLookupConfirmedChainTx.mockResolvedValue('pending');
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ settlementTxHash: row.settlementTxHash }),
+				data: expect.objectContaining({ settlementTxHash: null }),
+			}),
+		);
+	});
+
+	it('does not publish proof when the indexed consumer changes during finality observation', async () => {
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS]);
+		mockLookupConfirmedChainTx.mockImplementation(async () => {
+			mockTxsUtxos.mockResolvedValue({
+				outputs: [{ address: depositAddress.to_bech32(), output_index: 0, consumed_by_tx: null }],
+			});
+			return 'confirmed-valid';
+		});
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany.mock.calls.some(([args]) => args.data.status === HydraTopupStatus.Recovered)).toBe(false);
+	});
+});
+
+describe('cleanup independently rechecks exact deposit proof', () => {
+	it('allows a matching deep Claim proof without changing the record', async () => {
+		const row = topupRow(HydraTopupStatus.Absorbed);
+		row.settlementTxHash = chain(SPENDER_TX, [SCRIPT_ADDRESS]);
+		stageRows([row]);
+		await expect(assertHydraDepositSettlementsFinal(['head-1'])).resolves.toBeUndefined();
+		expect(mockLookupConfirmedChainTx).toHaveBeenCalledWith(
+			expect.objectContaining({
+				txHash: row.settlementTxHash,
+				requiredConfirmations: 20,
+			}),
+		);
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it.each(['pending', 'not-found', 'confirmed-invalid', 'transient-error'])(
+		'refuses stored Recover proof with current consumer %s and clears permission by CAS',
+		async (result) => {
+			const row = topupRow(HydraTopupStatus.Recovered);
+			row.settlementTxHash = chain(SPENDER_TX, [WALLET_ADDRESS]);
+			stageRows([row]);
+			mockLookupConfirmedChainTx.mockResolvedValue(result);
+			await expect(assertHydraDepositSettlementsFinal(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
+			expect(mockUpdateMany).toHaveBeenCalledWith({
+				where: { id: row.id, status: row.status, depositTxHash: DEPOSIT_TX, settlementTxHash: row.settlementTxHash },
+				data: { settlementTxHash: null },
+			});
+		},
+	);
+
+	it('reopens a rolled-back Recover when the original exact deposit is confirmed unspent', async () => {
+		const row = topupRow(HydraTopupStatus.Recovered);
+		row.settlementTxHash = chain(SPENDER_TX, [WALLET_ADDRESS]);
+		chain(null, []);
+		stageRows([row]);
+		await expect(assertHydraDepositSettlementsFinal(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: row.id, status: row.status, depositTxHash: DEPOSIT_TX, settlementTxHash: row.settlementTxHash },
+			data: { status: HydraTopupStatus.Confirmed, settlementTxHash: null },
+		});
+	});
+
+	it('refuses a different deep consumer until reconciliation truthfully repairs its proof', async () => {
+		const row = topupRow(HydraTopupStatus.Recovered);
+		row.settlementTxHash = 'ee'.repeat(32);
+		chain(SPENDER_TX, [WALLET_ADDRESS]);
+		stageRows([row]);
+		await expect(assertHydraDepositSettlementsFinal(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { settlementTxHash: null } }));
 	});
 });

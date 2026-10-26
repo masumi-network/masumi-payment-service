@@ -185,7 +185,12 @@ describe('beginHydraHeadClose', () => {
 			where: {
 				hydraHeadId: 'head-1',
 				OR: [
-					{ depositTxHash: { not: null }, status: { notIn: ['Absorbed', 'Recovered', 'Failed'] } },
+					{
+						OR: [
+							{ depositTxHash: { not: null }, status: { notIn: ['Absorbed', 'Recovered', 'Failed'] } },
+							{ status: { in: ['Absorbed', 'Recovered'] }, settlementTxHash: null },
+						],
+					},
 					// A deposit still being prepared lands on L1 after the close.
 					{ status: 'Preparing', createdAt: { gte: expect.any(Date) } },
 				],

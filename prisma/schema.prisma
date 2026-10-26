@@ -1955,6 +1955,10 @@ model HydraTopup {
 
   status HydraTopupStatus @default(Pending)
 
+  /// Exact Claim/Recover consumer independently confirmed at key-release depth.
+  /// Null for legacy terminal labels until reconciliation proves their settlement.
+  settlementTxHash String?
+
   /// When the node was asked to spend this deposit back to the wallet.
   ///
   /// Recovery leaves no other trace: the deposit keeps its status, because what
@@ -1963,9 +1967,13 @@ model HydraTopup {
   /// second press — which is why it is recorded rather than left to the client
   /// to remember for as long as the page is open.
   ///
-  /// Requested, not completed: the node builds and posts the transaction after
-  /// answering, so the funds arrive later and this only says it was asked.
+  /// Requested, not completed: the node answered the request, but the funds
+  /// may arrive later. This does not prove L1 settlement.
   recoveryRequestedAt DateTime?
+
+  /// A recover request lost its HTTP response. The node may or may not have
+  /// submitted it. Keep this visible so the operator checks L1 before retrying.
+  recoveryResponseUnknownAt DateTime?
 
   @@index([hydraLocalParticipantId, status])
   @@index([status, updatedAt])

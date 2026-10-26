@@ -27,10 +27,12 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 
 let recoverHydraDeposit: typeof import('./recover').recoverHydraDeposit;
 let HydraHttpResponseError: typeof import('@/lib/hydra/hydra/node-http-response').HydraHttpResponseError;
+let HydraTransportAmbiguousError: typeof import('@/lib/hydra/hydra/errors').HydraTransportAmbiguousError;
 
 beforeAll(async () => {
 	({ recoverHydraDeposit } = await import('./recover'));
 	({ HydraHttpResponseError } = await import('@/lib/hydra/hydra/node-http-response'));
+	({ HydraTransportAmbiguousError } = await import('@/lib/hydra/hydra/errors'));
 });
 
 beforeEach(() => {
@@ -94,8 +96,26 @@ function nodeAnswers(answers: { snapshot?: unknown; lastSeen?: unknown }) {
 
 describe('recoverHydraDeposit', () => {
 	it('asks the node to recover a settled deposit', async () => {
-		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true, uncertain: false });
 		expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${'aa'.repeat(32)}`);
+		expect(mockTopupUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', recoveryRequestedAt: null },
+			data: { recoveryRequestedAt: expect.any(Date), recoveryResponseUnknownAt: null },
+		});
+	});
+
+	it('records an unanswered recovery as unknown and leaves retry available', async () => {
+		mockNodeDelete.mockRejectedValue(new HydraTransportAmbiguousError('node response timed out'));
+
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
+			requested: false,
+			uncertain: true,
+			reason: expect.stringContaining('may have'),
+		});
+		expect(mockTopupUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', recoveryRequestedAt: null, recoveryResponseUnknownAt: null },
+			data: { recoveryResponseUnknownAt: expect.any(Date) },
+		});
 	});
 
 	// A recovery is a new L1 transaction from the node.

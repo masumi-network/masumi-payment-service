@@ -81,7 +81,7 @@ describe('HydraProvider', () => {
 
 	beforeEach(() => {
 		node = makeNodeMock();
-		provider = new HydraProvider({ node });
+		provider = new HydraProvider({ node, getRecoveredInputRefs: async () => new Set() });
 	});
 
 	// -------------------------------------------------------------------------
@@ -169,7 +169,7 @@ describe('HydraProvider', () => {
 	describe('spendableUTxOs', () => {
 		// Every in-head spend path filters its inputs here, so it has to read the
 		// node's mint check and not just pass UTxOs through.
-		it('spends a token UTxO only when the replay verified it and found no unburned mint', () => {
+		it('spends a token UTxO only when the replay verified it and found no unburned mint', async () => {
 			const [tokenUtxo, adaUtxo] = snapshotUtxos;
 			const verifiedOutputs = new Map([['tx001#0', '']]);
 			const withCheck = (l2MintCheck: unknown) => {
@@ -177,10 +177,32 @@ describe('HydraProvider', () => {
 				return provider.spendableUTxOs([tokenUtxo, adaUtxo]);
 			};
 
-			expect(withCheck({ unburnedUnits: new Set(), verifiedOutputs })).toEqual([tokenUtxo, adaUtxo]);
-			expect(withCheck({ unburnedUnits: new Set([`${validPolicyId}token`]), verifiedOutputs })).toEqual([adaUtxo]);
-			expect(withCheck({ unburnedUnits: new Set(), verifiedOutputs: new Map() })).toEqual([adaUtxo]);
-			expect(withCheck(undefined)).toEqual([adaUtxo]);
+			expect(await withCheck({ unburnedUnits: new Set(), verifiedOutputs })).toEqual([tokenUtxo, adaUtxo]);
+			expect(await withCheck({ unburnedUnits: new Set([`${validPolicyId}token`]), verifiedOutputs })).toEqual([
+				adaUtxo,
+			]);
+			expect(await withCheck({ unburnedUnits: new Set(), verifiedOutputs: new Map() })).toEqual([adaUtxo]);
+			expect(await withCheck(undefined)).toEqual([adaUtxo]);
+		});
+
+		it('excludes recovered exact refs, keeps sibling outputs, and fails closed on lookup error', async () => {
+			const [tokenUtxo, siblingUtxo, otherUtxo] = snapshotUtxos;
+			Object.assign(node, { l2MintCheck: { unburnedUnits: new Set(), verifiedOutputs: new Map([['tx001#0', '']]) } });
+			const recoveredProvider = new HydraProvider({
+				node,
+				getRecoveredInputRefs: async () => new Set(['tx001#0']),
+			});
+			expect(await recoveredProvider.spendableUTxOs([tokenUtxo, siblingUtxo, otherUtxo])).toEqual([
+				siblingUtxo,
+				otherUtxo,
+			]);
+			const unavailableProvider = new HydraProvider({
+				node,
+				getRecoveredInputRefs: async () => {
+					throw new Error('L1 unavailable');
+				},
+			});
+			await expect(unavailableProvider.spendableUTxOs([otherUtxo])).rejects.toThrow('L1 unavailable');
 		});
 	});
 
@@ -270,7 +292,7 @@ describe('HydraProvider', () => {
 
 		it('revokes an already-captured provider before it can queue transaction bytes', async () => {
 			const isSubmissionAllowed = jest.fn(() => false);
-			provider = new HydraProvider({ node, isSubmissionAllowed });
+			provider = new HydraProvider({ node, isSubmissionAllowed, getRecoveredInputRefs: async () => new Set() });
 
 			await expect(provider.submitTx('deadbeef')).rejects.toThrow(
 				'Hydra provider is no longer admitted for transaction submission',
@@ -369,7 +391,7 @@ describe('HydraProvider', () => {
 		it('returns the node headClock', () => {
 			const clock = { chainTimeMs: 1751959157000, chainSlot: 127811957, receivedAtMs: Date.now() };
 			const clockNode = { ...makeNodeMock(), headClock: clock } as unknown as jest.Mocked<IHydraNode>;
-			const clockProvider = new HydraProvider({ node: clockNode });
+			const clockProvider = new HydraProvider({ node: clockNode, getRecoveredInputRefs: async () => new Set() });
 			expect(clockProvider.getHeadClock()).toEqual(clock);
 		});
 

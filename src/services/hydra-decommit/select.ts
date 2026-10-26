@@ -36,6 +36,8 @@ export interface DecommitSelectionInput {
 	utxos: readonly UTxO[];
 	/** Refs the head has promised to a deposit but not yet folded in. */
 	pendingIncrementRefs: ReadonlySet<string>;
+	/** L1 inputs from deposits proven recovered outside this head. */
+	recoveredRefs?: ReadonlySet<string>;
 	/** Unburned L2 mints as of the replay's verified snapshot; undefined until history replay completes. */
 	l2MintCheck: L2MintCheck | undefined;
 	/**
@@ -111,6 +113,10 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 
 	for (const utxo of input.utxos) {
 		const ref = utxoRef(utxo);
+		if (input.recoveredRefs?.has(ref)) {
+			excluded.set(ref, 'belongs to a deposit recovered on L1');
+			continue;
+		}
 		if (input.pendingIncrementRefs.has(ref)) {
 			excluded.set(ref, 'still being folded into the head by a deposit');
 			continue;

@@ -8,14 +8,13 @@
  * requires an active connection (open head); a head with no live provider returns
  * `connected: false` rather than a stale/guessed balance.
  */
-import { HydraTopupStatus } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getHydraConnectionManager } from './hydra-connection-manager.service';
 import { l2TokenRisk } from '@/lib/hydra/hydra/l2-mint-tally';
 import { inHeadUnit } from '@/utils/hydra/in-head-unit';
+import { getRecoveredHydraInputRefs } from '@/services/hydra-recovered-inputs';
 import type { UTxO } from '@meshsdk/core';
 
 export interface HydraHeadBalanceAsset {
@@ -156,35 +155,16 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 
 	const utxos = await provider.fetchAddressUTxOs(address);
 
-	// Cross-check against what we know L1 did with this head's deposits. A
-	// recovered deposit's funds are back in the wallet, so an in-head UTxO still
-	// carrying its reference is one the head believes in and the chain does not.
-	// The validated deposit spends exactly the committed inputs at this wallet.
-	// Read their full references from L1. A split hash also names uncommitted change.
-	const recovered = await prisma.hydraTopup.findMany({
-		where: { hydraHeadId, status: HydraTopupStatus.Recovered },
-		select: { depositTxHash: true },
-	});
-	const recoveredReferences = new Set<string>();
-	if (utxos.length > 0 && recovered.length > 0) {
-		const source = head.LocalParticipant.Wallet.PaymentSource;
-		const chain = getBlockfrostInstance(source.network, source.PaymentSourceConfig.rpcProviderApiKey);
-		try {
-			for (const deposit of recovered) {
-				if (deposit.depositTxHash === null) continue;
-				const transaction = await chain.txsUtxos(deposit.depositTxHash);
-				for (const input of transaction.inputs) {
-					if (input.address === address && !input.collateral && !input.reference) {
-						recoveredReferences.add(`${input.tx_hash}#${input.output_index}`);
-					}
-				}
-			}
-		} catch (error) {
-			logger.warn('[HydraBalance] could not read recovered deposit inputs', { hydraHeadId, error });
-			throw createHttpError(502, 'Could not check recovered Hydra deposits against L1');
-		}
+	let recoveredReferences: ReadonlySet<string>;
+	try {
+		recoveredReferences = await getRecoveredHydraInputRefs(hydraHeadId);
+	} catch (error) {
+		logger.warn('[HydraBalance] could not read recovered deposit inputs', { hydraHeadId, error });
+		throw createHttpError(502, 'Could not check recovered Hydra deposits against L1');
 	}
-	const unbacked = utxos.filter((utxo) => recoveredReferences.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`));
+	const isRecovered = (utxo: UTxO) =>
+		recoveredReferences.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase());
+	const unbacked = utxos.filter(isRecovered);
 	const unbackedLovelace = unbacked.reduce((total, utxo) => {
 		for (const asset of utxo.output.amount) {
 			if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') return total + BigInt(asset.quantity);
@@ -207,7 +187,7 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 	const isL2Minted = (utxo: UTxO) => l2TokenRisk(utxo, l2MintCheck) === 'minted';
 	const l2Minted = utxos.filter(isL2Minted);
 	const spendableBalance = aggregateInHeadAmounts(
-		utxos.filter((utxo) => !isL2Minted(utxo)).map((utxo) => utxo.output.amount),
+		utxos.filter((utxo) => !isRecovered(utxo) && !isL2Minted(utxo)).map((utxo) => utxo.output.amount),
 	);
 	const l2MintedLovelace =
 		aggregateInHeadAmounts(l2Minted.map((utxo) => utxo.output.amount)).find((asset) => asset.unit === '')?.quantity ??

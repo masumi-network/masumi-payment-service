@@ -14700,6 +14700,7 @@ export type GetHydraHeadTopupResponses = {
                 usableFrom: string | null;
                 absorbBy: string | null;
                 recoveryRequestedAt: string | null;
+                recoveryResponseUnknownAt: string | null;
             }>;
         };
     };
@@ -15720,6 +15721,7 @@ export type PostHydraHeadTopupRecoverResponses = {
         data: {
             depositTxHash: string | null;
             requested: boolean;
+            uncertain: boolean;
             reason: string | null;
         };
     };

@@ -35012,6 +35012,10 @@
                                                             "recoveryRequestedAt": {
                                                                 "type": "string",
                                                                 "nullable": true
+                                                            },
+                                                            "recoveryResponseUnknownAt": {
+                                                                "type": "string",
+                                                                "nullable": true
                                                             }
                                                         },
                                                         "required": [
@@ -35026,7 +35030,8 @@
                                                             "deadline",
                                                             "usableFrom",
                                                             "absorbBy",
-                                                            "recoveryRequestedAt"
+                                                            "recoveryRequestedAt",
+                                                            "recoveryResponseUnknownAt"
                                                         ]
                                                     }
                                                 }
@@ -37078,6 +37083,9 @@
                                                 "requested": {
                                                     "type": "boolean"
                                                 },
+                                                "uncertain": {
+                                                    "type": "boolean"
+                                                },
                                                 "reason": {
                                                     "type": "string",
                                                     "nullable": true
@@ -37086,6 +37094,7 @@
                                             "required": [
                                                 "depositTxHash",
                                                 "requested",
+                                                "uncertain",
                                                 "reason"
                                             ]
                                         }

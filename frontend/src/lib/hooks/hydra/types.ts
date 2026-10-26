@@ -390,6 +390,8 @@ export type HydraTopup = {
    * again at funds already on their way home.
    */
   recoveryRequestedAt?: string | null;
+  /** The node's response was lost. Check L1 before another recovery request. */
+  recoveryResponseUnknownAt?: string | null;
 };
 
 export type HydraWithdrawal = {

@@ -16,13 +16,11 @@ import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import { HydraTopupStatus, Network as NetworkEnum } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { CONFIG } from '@masumi/payment-core/config';
 import { mapWithConcurrency } from '@/utils/map-with-concurrency';
 import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
-import type { Network } from '@/generated/prisma/client';
-import { classifyHydraDepositSpend, findHydraDepositReference } from './deposit-evidence';
+import { observeHydraDepositSettlement } from './settlement-evidence';
 
 /**
  * How many rows of each kind one tick examines.
@@ -72,44 +70,6 @@ function recentlyFailedFilters(nowMs: number) {
 		},
 		LocalParticipant: { Wallet: { PaymentSource: { network } } },
 	}));
-}
-
-/** What L1 did with a deposit, decided from the transaction that spent it. */
-type DepositOutcome = 'unspent' | 'recovered' | 'absorbed' | 'unknown';
-
-async function depositOutcome(params: {
-	network: Network;
-	rpcProviderApiKey: string;
-	depositTxHash: string;
-	headIdentifier: string | null;
-}): Promise<DepositOutcome> {
-	try {
-		if (params.headIdentifier === null) return 'unknown';
-		const blockfrost = getBlockfrostInstance(params.network, params.rpcProviderApiKey);
-		const depositCbor = await blockfrost.txsCbor(params.depositTxHash);
-		const deposit = findHydraDepositReference({
-			cborHex: depositCbor.cbor,
-			txHash: params.depositTxHash,
-			headIdentifier: params.headIdentifier,
-			networkId: params.network === NetworkEnum.Mainnet ? 1 : 0,
-		});
-		if (deposit === null) return 'unknown';
-		const utxos = await blockfrost.txsUtxos(params.depositTxHash);
-		const output = utxos.outputs.find((candidate) => candidate.output_index === deposit.outputIndex);
-		if (!output || output.address !== deposit.address) return 'unknown';
-		const consumed = (output as { consumed_by_tx?: string | null }).consumed_by_tx;
-		if (consumed == null) return 'unspent';
-		const spendingCbor = await blockfrost.txsCbor(consumed);
-		return classifyHydraDepositSpend({ cborHex: spendingCbor.cbor, txHash: consumed, deposit }) ?? 'unknown';
-	} catch (error) {
-		// A lookup failure is not evidence of anything; leave the row alone and
-		// let the next tick decide.
-		logger.warn('hydra-topup-reconciliation: could not check whether a recovered deposit was spent', {
-			depositTxHash: params.depositTxHash,
-			error: error instanceof Error ? error.message : error,
-		});
-		return 'unknown';
-	}
 }
 
 /**
@@ -171,12 +131,19 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 			const rpcProviderApiKey = candidate.LocalParticipant.Wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
 			if (rpcProviderApiKey == null || candidate.depositTxHash == null) return;
 
-			const outcome = await depositOutcome({
+			const evidence = await observeHydraDepositSettlement({
 				network: candidate.LocalParticipant.Wallet.PaymentSource.network,
 				rpcProviderApiKey,
 				depositTxHash: candidate.depositTxHash,
 				headIdentifier: candidate.HydraHead.headIdentifier,
 			});
+			const { outcome } = evidence;
+			const snapshot = {
+				id: candidate.id,
+				status: candidate.status,
+				depositTxHash: candidate.depositTxHash,
+				settlementTxHash: candidate.settlementTxHash,
+			};
 			if (
 				outcome === 'unspent' &&
 				(candidate.status === HydraTopupStatus.Failed ||
@@ -196,8 +163,8 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				});
 				if (depth === 'confirmed-valid') {
 					const restored = await prisma.hydraTopup.updateMany({
-						where: { id: candidate.id, status: candidate.status },
-						data: { status: HydraTopupStatus.Confirmed },
+						where: snapshot,
+						data: { status: HydraTopupStatus.Confirmed, settlementTxHash: null },
 					});
 					if (restored.count === 1) {
 						logger.warn(
@@ -208,7 +175,7 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				}
 				// Not deep enough yet: rotated below like any other unresolved row.
 			}
-			if (outcome !== 'recovered' && outcome !== 'absorbed') {
+			if (evidence.outcome !== 'recovered' && evidence.outcome !== 'absorbed') {
 				// Rotate the row to the back of the queue. All reads are ordered by
 				// `updatedAt` and take a fixed budget, so a row that never gets an
 				// answer — a deposit whose script output is still sitting there, or a
@@ -217,7 +184,7 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				// like this, and a full budget of them starves the Confirmed rows
 				// whose absorption is what re-enables auto top-up.
 				await prisma.hydraTopup
-					.updateMany({ where: { id: candidate.id, status: candidate.status }, data: { updatedAt: new Date() } })
+					.updateMany({ where: snapshot, data: { updatedAt: new Date(), settlementTxHash: null } })
 					.catch((error: unknown) =>
 						logger.warn('hydra-topup-reconciliation: could not rotate an unresolved deposit check', {
 							topupId: candidate.id,
@@ -229,8 +196,8 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 
 			const status = outcome === 'recovered' ? HydraTopupStatus.Recovered : HydraTopupStatus.Absorbed;
 			const promoted = await prisma.hydraTopup.updateMany({
-				where: { id: candidate.id, status: candidate.status },
-				data: { status },
+				where: snapshot,
+				data: { status, settlementTxHash: evidence.settlementTxHash },
 			});
 			if (promoted.count === 1) {
 				// A Pending row taken terminal here never reaches

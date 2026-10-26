@@ -133,11 +133,11 @@ export const listTopupsOutput = z.object({
 			/**
 			 * When the node was asked to send this deposit back.
 			 *
-			 * Set, the deposit is on its way to the wallet and there is nothing left
-			 * to press. Read from the record rather than remembered by the page, so
-			 * a reload does not offer the button again.
+			 * Set after the node answers the recovery request successfully.
 			 */
 			recoveryRequestedAt: z.string().nullable(),
+			/** The node's response was lost; check L1 before retrying. */
+			recoveryResponseUnknownAt: z.string().nullable(),
 		}),
 	),
 });
@@ -149,6 +149,7 @@ export const recoverTopupInput = z.object({
 export const recoverTopupOutput = z.object({
 	depositTxHash: z.string().nullable(),
 	requested: z.boolean(),
+	uncertain: z.boolean(),
 	reason: z.string().nullable(),
 });
 
@@ -244,6 +245,7 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				absorbBy: shiftPeriods(row.nodeDeadline, -1, depositPeriodSeconds),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 				recoveryRequestedAt: row.recoveryRequestedAt?.toISOString() ?? null,
+				recoveryResponseUnknownAt: row.recoveryResponseUnknownAt?.toISOString() ?? null,
 			})),
 		};
 	},

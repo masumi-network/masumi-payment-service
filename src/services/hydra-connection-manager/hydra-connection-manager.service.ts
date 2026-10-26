@@ -38,6 +38,7 @@ import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { fetchHydraHost } from '@/services/hydra-host/transport';
 import { createWorkerAccumulatorComputer } from '@/lib/hydra/hydra/snapshot-accumulator-worker-client';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import { getRecoveredHydraInputRefs } from '@/services/hydra-recovered-inputs';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { probeHeadCurrentSlot } from './head-session-ops';
 import { HeadSession } from './head-session';
@@ -284,6 +285,7 @@ export class HydraConnectionManager {
 			node: hydraHead.mainNode,
 			autoConnect: false,
 			isSubmissionAllowed: () => session.isMutationAllowed(hydraHead) && session.attachment?.provider === provider,
+			getRecoveredInputRefs: () => getRecoveredHydraInputRefs(head.id),
 		});
 		this.setupEventHandlers(head.id, hydraHead, ownerEpoch);
 		session.attach({ head: hydraHead, provider, ownerEpoch });
