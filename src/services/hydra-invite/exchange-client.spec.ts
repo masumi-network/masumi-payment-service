@@ -6,6 +6,7 @@ import {
 	attemptFailure,
 	attemptRedemption,
 	inspectExchangeNetwork,
+	createBoundedExchangeResolver,
 	isPrivateOrSpecialAddress,
 	resolveExchangeTarget,
 	type ExchangeClientDeps,
@@ -31,6 +32,86 @@ const redemption: RedemptionBody = {
 };
 
 const PUBLIC_DNS = async () => [{ address: '93.184.216.34', family: 4 }];
+
+it('stops before sending when DNS never answers', async () => {
+	const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>();
+	const outcome = await attemptRedemption(
+		'https://issuer.example/exchange',
+		redemption,
+		{ allowInsecureHttp: false, allowPrivateNetwork: false },
+		{ resolve: async () => await new Promise(() => undefined), resolveDeadlineMs: 20, send },
+	);
+	expect(outcome).toMatchObject({ kind: 'not-sent', error: { status: 502 } });
+	expect(send).not.toHaveBeenCalled();
+});
+
+it('caps unresolved DNS jobs after callers time out', async () => {
+	let release!: (addresses: Array<{ address: string; family: number }>) => void;
+	const lookup = jest.fn(
+		async (_hostname: string) =>
+			await new Promise<Array<{ address: string; family: number }>>((resolve) => {
+				release = resolve;
+			}),
+	);
+	const resolver = createBoundedExchangeResolver(lookup, 1);
+	const transport = { allowInsecureHttp: false, allowPrivateNetwork: false };
+	await expect(resolveExchangeTarget('https://first.example/exchange', transport, resolver, 20)).rejects.toThrow(
+		/timed out/,
+	);
+	await expect(resolveExchangeTarget('https://second.example/exchange', transport, resolver, 20)).rejects.toThrow(
+		/busy/,
+	);
+	expect(lookup).toHaveBeenCalledTimes(1);
+	release([{ address: '93.184.216.34', family: 4 }]);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	await expect(resolveExchangeTarget('https://second.example/exchange', transport, resolver, 20)).rejects.toThrow(
+		/timed out/,
+	);
+	expect(lookup).toHaveBeenCalledTimes(2);
+});
+
+it('closes a response that keeps sending error-body bytes forever', async () => {
+	const TEST_DEADLINE_MS = 1_000;
+	let reportClosed: () => void = () => undefined;
+	const closed = new Promise<void>((resolve) => {
+		reportClosed = resolve;
+	});
+	const server = createServer((request, response) => {
+		request.resume();
+		response.writeHead(400);
+		response.flushHeaders();
+		const stream = setInterval(() => response.write('x'), 10);
+		response.once('close', () => {
+			clearInterval(stream);
+			reportClosed();
+		});
+	});
+	let deadline: ReturnType<typeof setTimeout> | undefined;
+	try {
+		server.listen(0, '127.0.0.1');
+		await once(server, 'listening');
+		const { port } = server.address() as AddressInfo;
+		await Promise.race([
+			(async () => {
+				const result = await attemptRedemption(
+					`http://127.0.0.1:${port}/exchange`,
+					redemption,
+					{ allowInsecureHttp: true, allowPrivateNetwork: true },
+					{ requestDeadlineMs: 100 },
+				);
+				expect(result).toMatchObject({ kind: 'unknown' });
+				await closed;
+			})(),
+			new Promise<never>((_resolve, reject) => {
+				deadline = setTimeout(() => reject(new Error('error Exchange response stayed open')), TEST_DEADLINE_MS);
+			}),
+		]);
+	} finally {
+		clearTimeout(deadline);
+		server.closeAllConnections();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
+});
 
 it('accepts successful headers and closes an unfinished response body', async () => {
 	const CONNECTION_CLOSE_DEADLINE_MS = 1_000;
@@ -216,6 +297,29 @@ describe('redemption retry on a busy Host', () => {
 		expect(send).toHaveBeenCalledTimes(4);
 		const waitedMs = sleep.mock.calls.reduce((total, [ms]) => total + ms, 0);
 		expect(waitedMs).toBeGreaterThan(5_000);
+	});
+
+	it('bounds the whole retry sequence', async () => {
+		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue(busy);
+		const startedAt = performance.now();
+		const outcome = await attemptRedemption('https://issuer.example/exchange', redemption, transport, {
+			resolve: PUBLIC_DNS,
+			send,
+			attemptDeadlineMs: 30,
+		});
+		expect(outcome.kind).toBe('unknown');
+		expect(send.mock.calls.length).toBeLessThan(4);
+		expect(performance.now() - startedAt).toBeLessThan(1_000);
+	});
+
+	it('marks an expired attempt before its first send as not sent', async () => {
+		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>();
+		const outcome = await attemptRedemption('https://93.184.216.34/exchange', redemption, transport, {
+			send,
+			attemptDeadlineMs: 0,
+		});
+		expect(outcome).toMatchObject({ kind: 'not-sent', error: { status: 502 } });
+		expect(send).not.toHaveBeenCalled();
 	});
 
 	it.each([409, 429])('does not retry a %s', async (status) => {
