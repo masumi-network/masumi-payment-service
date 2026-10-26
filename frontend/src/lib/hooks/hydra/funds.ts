@@ -295,7 +295,10 @@ export async function withdrawHydraNodeFunds(apiClient: Client, payload: { id: s
  * The funds are at a deposit script, not in the wallet, and only the node can
  * spend them back.
  */
-export async function recoverHydraTopup(apiClient: Client, payload: { topupId: string }) {
+export async function recoverHydraTopup(
+  apiClient: Client,
+  payload: { topupId: string; acknowledgePendingRecoveryRisk?: true },
+) {
   const response = await handleApiCall(
     () =>
       apiClient.post<{

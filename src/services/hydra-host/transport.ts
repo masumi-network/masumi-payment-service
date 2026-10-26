@@ -5,6 +5,8 @@ import { Readable, pipeline } from 'node:stream';
 import { createBrotliDecompress, createUnzip } from 'node:zlib';
 import { resolveAllowedHostDestination } from './destination';
 
+const PRE_DISPATCH_ERROR_HEADER = 'x-hydra-host-proxy-error';
+
 export type HydraHostFetchOptions = {
 	method?: string;
 	redirect?: 'error' | 'manual';
@@ -59,7 +61,14 @@ export async function fetchHydraHost(url: string, init: HydraHostFetchOptions): 
 				if (status >= 300 && status < 400 && init.redirect !== 'manual') {
 					throw createHttpError(502, 'Hydra Host redirects are not allowed');
 				}
-				const responseInit = { status, statusText: response.statusMessage };
+				// Carry only the Host's non-dispatch marker. The proxy strips this
+				// header from node replies, so it cannot be forged by the node.
+				const marker = status === 502 ? response.headers[PRE_DISPATCH_ERROR_HEADER] : undefined;
+				const responseInit = {
+					status,
+					statusText: response.statusMessage,
+					...(typeof marker === 'string' ? { headers: { [PRE_DISPATCH_ERROR_HEADER]: marker } } : {}),
+				};
 				if (status === 204 || status === 205 || status === 304) {
 					response.destroy();
 					resolve(new Response(null, responseInit));

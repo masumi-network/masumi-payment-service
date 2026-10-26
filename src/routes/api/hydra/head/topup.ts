@@ -131,11 +131,10 @@ export const listTopupsOutput = z.object({
 			 */
 			absorbBy: z.string().nullable(),
 			/**
-			 * When the node was asked to send this deposit back.
+			 * When the latest recovery request was sent or may have reached the node.
 			 *
-			 * Set, the deposit is on its way to the wallet and there is nothing left
-			 * to press. Read from the record rather than remembered by the page, so
-			 * a reload does not offer the button again.
+			 * This timestamp is not proof that the node posted a transaction. A reload
+			 * requires a guarded L1 and node check before an explicit retry.
 			 */
 			recoveryRequestedAt: z.string().nullable(),
 		}),
@@ -144,11 +143,17 @@ export const listTopupsOutput = z.object({
 
 export const recoverTopupInput = z.object({
 	topupId: z.string().min(1).describe('The deposit to recover'),
+	acknowledgePendingRecoveryRisk: z
+		.literal(true)
+		.optional()
+		.describe(
+			'Operator confirms wallet, L1, and mempool checks and accepts that a prior recovery may still be pending. Required to retry an earlier attempt.',
+		),
 });
 
 export const recoverTopupOutput = z.object({
 	depositTxHash: z.string().nullable(),
-	requested: z.boolean(),
+	requested: z.boolean().describe('True when recovery was requested or its dispatch outcome is unknown'),
 	reason: z.string().nullable(),
 });
 
@@ -163,7 +168,7 @@ export const recoverTopupPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: recoverTopupInput,
 	output: recoverTopupOutput,
-	handler: async ({ input }) => await recoverHydraDeposit(input.topupId),
+	handler: async ({ input }) => await recoverHydraDeposit(input.topupId, input.acknowledgePendingRecoveryRisk === true),
 });
 
 /**

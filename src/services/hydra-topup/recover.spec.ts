@@ -1,5 +1,25 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import { HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import {
+	BigInt as CardanoBigInt,
+	BigNum,
+	ConstrPlutusData,
+	Credential,
+	EnterpriseAddress,
+	FixedTransaction,
+	PlutusData,
+	PlutusList,
+	ScriptHash,
+	Transaction,
+	TransactionBody,
+	TransactionInputs,
+	TransactionOutput,
+	TransactionOutputs,
+	TransactionWitnessSet,
+	Value,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import { resolveHydraDepositScriptHash } from '@/lib/hydra/hydra/commit-draft-validation';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -10,6 +30,12 @@ const mockAssertNotStopping = jest.fn() as AnyMock;
 const mockNodeDelete = jest.fn() as AnyMock;
 const mockNodeGet = jest.fn() as AnyMock;
 const mockGetNode = jest.fn() as AnyMock;
+const mockTxsCbor = jest.fn() as AnyMock;
+const mockTxsUtxos = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/utils/blockfrost', () => ({
+	getBlockfrostInstance: () => ({ txsCbor: mockTxsCbor, txsUtxos: mockTxsUtxos }),
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: { hydraTopup: { findUnique: mockTopupFindUnique, updateMany: mockTopupUpdateMany } },
@@ -48,11 +74,35 @@ beforeEach(() => {
 	mockAssertNotStopping.mockResolvedValue(undefined);
 	mockGetNode.mockReturnValue({ delete: mockNodeDelete, get: mockNodeGet });
 	mockNodeDelete.mockResolvedValue(undefined);
+	mockTxsCbor.mockResolvedValue({ cbor: RETRY_DEPOSIT_CBOR });
+	mockTxsUtxos.mockResolvedValue({
+		outputs: [{ output_index: 0, address: RETRY_DEPOSIT_ADDRESS, consumed_by_tx: null }],
+	});
 	nodeAnswers({});
 });
 
 const HEAD_ID = 'cc'.repeat(28);
 const DEPOSIT_TX = 'aa'.repeat(32);
+const retryDepositFields = PlutusList.new();
+retryDepositFields.add(PlutusData.new_bytes(Buffer.from(HEAD_ID, 'hex')));
+retryDepositFields.add(PlutusData.new_integer(CardanoBigInt.from_str('1')));
+retryDepositFields.add(PlutusData.new_list(PlutusList.new()));
+const retryDepositAddress = EnterpriseAddress.new(
+	0,
+	Credential.from_scripthash(ScriptHash.from_hex(resolveHydraDepositScriptHash())),
+).to_address();
+const RETRY_DEPOSIT_ADDRESS = retryDepositAddress.to_bech32();
+const retryDepositOutput = TransactionOutput.new(retryDepositAddress, Value.new(BigNum.from_str('3000000')));
+retryDepositOutput.set_plutus_data(
+	PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.zero(), retryDepositFields)),
+);
+const retryDepositOutputs = TransactionOutputs.new();
+retryDepositOutputs.add(retryDepositOutput);
+const RETRY_DEPOSIT_CBOR = Transaction.new(
+	TransactionBody.new(TransactionInputs.new(), retryDepositOutputs, BigNum.zero()),
+	TransactionWitnessSet.new(),
+).to_hex();
+const RETRY_DEPOSIT_TX = FixedTransaction.from_hex(RETRY_DEPOSIT_CBOR).transaction_hash().to_hex();
 const OUTPUT = {
 	address: 'addr_test1vz',
 	value: { lovelace: 5_000_000 },
@@ -84,18 +134,157 @@ function recordedAs(headStatus: string) {
 }
 
 /** What the node answers for GET /snapshot and GET /snapshot/last-seen. Defaults: no deposit, no round in flight. */
-function nodeAnswers(answers: { snapshot?: unknown; lastSeen?: unknown }) {
+function nodeAnswers(answers: { snapshot?: unknown; lastSeen?: unknown; commits?: unknown }) {
 	mockNodeGet.mockImplementation(async (path: string) =>
 		path === '/snapshot/last-seen'
 			? (answers.lastSeen ?? { tag: 'LastSeenSnapshot', lastSeen: 7 })
-			: (answers.snapshot ?? confirmedSnapshot({ utxoToCommit: null, depositTxId: null })),
+			: path === '/commits'
+				? (answers.commits ?? [RETRY_DEPOSIT_TX])
+				: (answers.snapshot ?? confirmedSnapshot({ utxoToCommit: null, depositTxId: null })),
 	);
+}
+
+/** Existing attempt for a confirmed, still-unspent deposit. */
+function retryableTopup(previousAttemptAt = new Date(Date.now() - 6 * 60 * 1000)) {
+	mockTopupFindUnique.mockResolvedValue({
+		id: 'topup-1',
+		depositTxHash: RETRY_DEPOSIT_TX,
+		status: 'Confirmed',
+		hydraHeadId: 'head-1',
+		nodeDeadline: null,
+		recoveryRequestedAt: previousAttemptAt,
+		HydraHead: { status: 'Closed', headIdentifier: HEAD_ID },
+		LocalParticipant: {
+			Wallet: { PaymentSource: { network: 'Preprod', PaymentSourceConfig: { rpcProviderApiKey: 'preprodkey' } } },
+		},
+	});
+	return previousAttemptAt;
 }
 
 describe('recoverHydraDeposit', () => {
 	it('asks the node to recover a settled deposit', async () => {
 		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
 		expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${'aa'.repeat(32)}`);
+	});
+
+	it('keeps recovery available when the Host could not connect to the node', async () => {
+		mockNodeDelete.mockRejectedValue(new HydraTransportError('node was not connected'));
+
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
+			requested: false,
+			reason: expect.stringContaining('try again'),
+		});
+		expect(mockTopupUpdateMany).toHaveBeenCalledTimes(2);
+		expect(mockTopupUpdateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({ data: { recoveryRequestedAt: null } }),
+		);
+	});
+
+	it('records an ambiguous attempt without claiming it was posted', async () => {
+		mockNodeDelete.mockRejectedValue(new HydraTransportAmbiguousError('no authenticated answer'));
+
+		const result = await recoverHydraDeposit('topup-1');
+		expect(result).toMatchObject({ requested: true, reason: expect.stringContaining('unknown') });
+		expect(result.reason).not.toMatch(/posted/i);
+		expect(mockTopupUpdateMany).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not blindly dispatch another recovery after an ambiguous attempt', async () => {
+		retryableTopup();
+
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
+			requested: false,
+			reason: expect.stringContaining('mempool'),
+		});
+		expect(mockNodeDelete).not.toHaveBeenCalled();
+		expect(mockTopupUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('retries only after L1 and node checks and a successful DB claim', async () => {
+		const previousAttemptAt = retryableTopup();
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: true });
+		expect(mockTxsCbor).toHaveBeenCalledWith(RETRY_DEPOSIT_TX);
+		expect(mockNodeGet).toHaveBeenCalledWith('/commits');
+		expect(mockNodeGet).toHaveBeenCalledWith('/snapshot/last-seen');
+		expect(mockTopupUpdateMany).toHaveBeenCalledWith({
+			where: {
+				id: 'topup-1',
+				status: 'Confirmed',
+				depositTxHash: RETRY_DEPOSIT_TX,
+				recoveryRequestedAt: previousAttemptAt,
+			},
+			data: { recoveryRequestedAt: expect.any(Date) },
+		});
+		expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${RETRY_DEPOSIT_TX}`);
+	});
+
+	it('keeps the previous attempt marker when a guarded retry never reached the node', async () => {
+		const previousAttemptAt = retryableTopup();
+		mockNodeDelete.mockRejectedValue(new HydraTransportError('node was not connected'));
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: false });
+		expect(mockTopupUpdateMany).toHaveBeenLastCalledWith({
+			where: { id: 'topup-1', recoveryRequestedAt: expect.any(Date) },
+			data: { recoveryRequestedAt: previousAttemptAt },
+		});
+	});
+
+	it('refuses a retry when the deposit output is spent or L1 cannot verify it', async () => {
+		retryableTopup();
+		mockTxsUtxos.mockResolvedValue({
+			outputs: [{ output_index: 0, address: RETRY_DEPOSIT_ADDRESS, consumed_by_tx: 'bb'.repeat(32) }],
+		});
+		mockTxsCbor.mockImplementation(async (hash: string) => ({
+			cbor: hash === RETRY_DEPOSIT_TX ? RETRY_DEPOSIT_CBOR : '00',
+		}));
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: false });
+		expect(mockNodeDelete).not.toHaveBeenCalled();
+		expect(mockTopupUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('refuses a retry when the L1 observer omits the spend status', async () => {
+		retryableTopup();
+		mockTxsUtxos.mockResolvedValue({ outputs: [{ output_index: 0, address: RETRY_DEPOSIT_ADDRESS }] });
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: false });
+		expect(mockNodeDelete).not.toHaveBeenCalled();
+		expect(mockTopupUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('holds a retry during the spacing interval without treating the wait as proof', async () => {
+		retryableTopup(new Date(Date.now() - 60_000));
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({
+			requested: false,
+			reason: expect.stringContaining('five minutes'),
+		});
+		expect(mockNodeDelete).not.toHaveBeenCalled();
+	});
+
+	it('refuses a retry while the node has a snapshot round in flight', async () => {
+		retryableTopup();
+		nodeAnswers({ lastSeen: { tag: 'RequestedSnapshot', requested: 8 } });
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: false });
+		expect(mockNodeDelete).not.toHaveBeenCalled();
+	});
+
+	it('refuses a retry when the node no longer lists the deposit', async () => {
+		retryableTopup();
+		nodeAnswers({ commits: [] });
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: false });
+		expect(mockNodeDelete).not.toHaveBeenCalled();
+	});
+
+	it('refuses a retry when another request won the DB claim', async () => {
+		retryableTopup();
+		mockTopupUpdateMany.mockResolvedValue({ count: 0 });
+
+		await expect(recoverHydraDeposit('topup-1', true)).resolves.toMatchObject({ requested: false });
+		expect(mockNodeDelete).not.toHaveBeenCalled();
 	});
 
 	// A recovery is a new L1 transaction from the node.

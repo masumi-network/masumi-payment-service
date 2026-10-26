@@ -253,6 +253,49 @@ describe('node api proxy', () => {
 		expect((await call('GET', '/v1/nodes/node-1/api/head', USER)).status).toBe(502);
 	});
 
+	it('marks a refused node connection as a Host failure before dispatch', async () => {
+		await store.update('node-1', (current) => ({ ...current, apiPort: 1 }));
+		const response = await call('DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, USER);
+
+		expect(response.status).toBe(502);
+		expect(response.headers.get('x-hydra-host-proxy-error')).toBe('node-not-connected');
+		expect(node.received).toHaveLength(0);
+	});
+
+	it('does not forward a node-supplied Host failure marker', async () => {
+		const spoofing = createServer((_request, response) => {
+			response.writeHead(502, { 'X-Hydra-Host-Proxy-Error': 'node-not-connected' });
+			response.end('{"error":"node refused"}');
+		});
+		await new Promise<void>((resolve) => spoofing.listen(0, '127.0.0.1', resolve));
+		try {
+			await store.update('node-1', (current) => ({ ...current, apiPort: (spoofing.address() as AddressInfo).port }));
+			const response = await call('DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, USER);
+			expect(response.status).toBe(502);
+			expect(response.headers.get('x-hydra-host-proxy-error')).toBeNull();
+		} finally {
+			await new Promise<void>((resolve) => spoofing.close(() => resolve()));
+		}
+	});
+
+	it('does not attest non-dispatch after the node accepted a connection', async () => {
+		let received = 0;
+		const dropping = createServer((request) => {
+			received += 1;
+			request.socket.destroy();
+		});
+		await new Promise<void>((resolve) => dropping.listen(0, '127.0.0.1', resolve));
+		try {
+			await store.update('node-1', (current) => ({ ...current, apiPort: (dropping.address() as AddressInfo).port }));
+			const response = await call('DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, USER);
+			expect(response.status).toBe(502);
+			expect(response.headers.get('x-hydra-host-proxy-error')).toBeNull();
+			expect(received).toBe(1);
+		} finally {
+			await new Promise<void>((resolve) => dropping.close(() => resolve()));
+		}
+	});
+
 	// A clean close fails only the node's response, which pipe() does not pass
 	// on, so the caller's 200 stayed open until its own timeout. A reset fails
 	// the request too, and its handler appended a JSON error body to the partial
