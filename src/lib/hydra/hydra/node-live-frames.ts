@@ -228,6 +228,11 @@ export class LiveFrameProcessor {
 		return this.host.persistenceRotationError == null && isHeadReady && isPartyReady;
 	}
 
+	/** A headless Idle Greetings is held until the history replay decides it. */
+	get isAwaitingReplayVerdict(): boolean {
+		return this._awaitingReplayVerdict;
+	}
+
 	/** Connect may return: the session is ready, or it holds a headless Idle for the replay to decide. */
 	isConnectSettled(): boolean {
 		return this.isLiveSessionReady() || (this._awaitingReplayVerdict && this.host.persistenceRotationError == null);

@@ -477,12 +477,12 @@ that lasts more than three minutes starts a new outage, which can alert again.
 The error and the webhook `reason` name the cause found at the last check.
 `isNodeSide` tells two kinds of cause apart:
 
-- `true`: the node is down, does not follow the head or the chain, or this
-  service could not open a session with it. No contest can happen. Check the
-  Host and restart the node.
+- `true`: the node may be down, may not follow the head or the chain, or this
+  service could not reach it. No contest is guaranteed. Check the Host and the
+  network path, and restart the node if it is down.
 - `false`: the node may still contest, but this service cannot check it. Its
-  replay of the node history failed or has not finished, or the head
-  configuration stopped it. Check this service and its logs.
+  replay of the node history failed or has not finished, or a configuration
+  or protocol error stopped it. Check this service and its logs.
 
 Subscribe to the webhook. Act before the contestation deadline in the webhook
 passes, or within the contestation period if the head is still open.

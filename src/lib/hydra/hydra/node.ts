@@ -455,6 +455,10 @@ export class HydraNode extends EventEmitter {
 		);
 	}
 
+	get isAwaitingReplayVerdict(): boolean {
+		return this._live.isAwaitingReplayVerdict;
+	}
+
 	/** Both evidence sockets have authenticated the same pinned head; never while a headless Idle is held. */
 	get hasVerifiedPinnedSessions(): boolean {
 		return (

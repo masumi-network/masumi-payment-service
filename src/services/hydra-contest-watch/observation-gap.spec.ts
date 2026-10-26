@@ -90,6 +90,7 @@ const node = (
 	overrides: Partial<{
 		status: HydraHeadStatus;
 		hasVerifiedLiveSession: boolean;
+		isAwaitingReplayVerdict: boolean;
 		hasVerifiedPinnedSessions: boolean;
 		confirmedTransactionHistoryError: Error;
 		synced?: boolean;
@@ -99,6 +100,7 @@ const node = (
 	return {
 		status: HydraHeadStatus.Open,
 		hasVerifiedLiveSession: true,
+		isAwaitingReplayVerdict: false,
 		hasVerifiedPinnedSessions: true,
 		confirmedTransactionHistoryError: undefined,
 		isChainSynced: () => synced,
@@ -145,6 +147,19 @@ describe('nodeUnobservedCause', () => {
 			node({ hasVerifiedPinnedSessions: false, confirmedTransactionHistoryError: new Error('log rotated') }),
 		);
 		expect(failed).toEqual({ reason: expect.stringContaining('failed (log rotated)'), isNodeSide: false });
+	});
+
+	// After a fanout the node greets with no head, and the session is held for the replay.
+	it('blames this service, not the node, while a headless Idle waits for the replay', () => {
+		const held = node({
+			hasVerifiedLiveSession: false,
+			isAwaitingReplayVerdict: true,
+			hasVerifiedPinnedSessions: false,
+		});
+		expect(gap.nodeUnobservedCause(held)).toEqual({
+			reason: expect.stringContaining('not decided'),
+			isNodeSide: false,
+		});
 	});
 });
 

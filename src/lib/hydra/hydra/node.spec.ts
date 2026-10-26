@@ -2386,6 +2386,7 @@ describe('HydraNode', () => {
 				await holdHeadlessIdle(started);
 				expect(statuses).toEqual([]);
 				expect(node.hasVerifiedPinnedSessions).toBe(false);
+				expect(node.isAwaitingReplayVerdict).toBe(true);
 
 				// Signed confirmations are not handed out until the verdict: a rollback
 				// verdict must close the admission gate before any of them applies.
@@ -2401,6 +2402,7 @@ describe('HydraNode', () => {
 				expect(node.confirmedTransactionHistoryError).toBeUndefined();
 				expect(node.confirmedTransactionHistoryReady).toBe(true);
 				expect(node.status).toBe(HydraHeadStatus.Final);
+				expect(node.isAwaitingReplayVerdict).toBe(false);
 				// The contest's snapshot, which the handoff checks the fanout against.
 				expect(statuses).toEqual([expect.objectContaining({ ...finalized, snapshotNumber: 3 })]);
 				expect(node.hasVerifiedPinnedSessions).toBe(true);

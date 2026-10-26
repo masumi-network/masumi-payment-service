@@ -17,13 +17,10 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { applyObservationGap, nodeUnobservedCause, type UnobservedCause } from './observation-gap';
-import {
-	ContestObserverConfigurationError,
-	readOnlyContestNode,
-	releaseUnusedContestObservers,
-} from './read-only-observer';
+import { readOnlyContestNode, releaseUnusedContestObservers } from './read-only-observer';
 
 /** A contest is posted and seen on chain within a few blocks. Two minutes without one is not a slow chain. */
 export const CONTEST_GRACE_MS = 2 * 60_000;
@@ -224,10 +221,12 @@ export async function runHydraContestWatch(): Promise<void> {
 				unobservedCause = nodeUnobservedCause(node);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : 'Unknown error';
+				// Only a transport failure points at the node. A configuration or
+				// protocol error, such as a rotated event log, is this service's to fix.
 				unobservedCause =
-					error instanceof ContestObserverConfigurationError
-						? { reason: `this service could not load the head configuration (${message})`, isNodeSide: false }
-						: { reason: `this service could not open a session with the node (${message})`, isNodeSide: true };
+					error instanceof HydraTransportError
+						? { reason: `this service could not reach the node (${message})`, isNodeSide: true }
+						: { reason: `this service could not observe the node (${message})`, isNodeSide: false };
 				logger.warn('[HydraContestWatch] could not reach the head node', { hydraHeadId: head.id, error: message });
 			}
 			try {

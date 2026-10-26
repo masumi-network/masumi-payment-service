@@ -42,6 +42,7 @@ export type ObservableNode = Pick<
 	HydraNode,
 	| 'status'
 	| 'hasVerifiedLiveSession'
+	| 'isAwaitingReplayVerdict'
 	| 'hasVerifiedPinnedSessions'
 	| 'confirmedTransactionHistoryError'
 	| 'isChainSynced'
@@ -49,8 +50,8 @@ export type ObservableNode = Pick<
 
 /**
  * Why this service cannot observe the head. `isNodeSide` is true when the node
- * itself cannot contest, and false when the node may still contest but this
- * service cannot check it.
+ * may be down or unreachable, so no contest is guaranteed. It is false when the
+ * node may still contest but this service cannot check it.
  */
 export type UnobservedCause = { reason: string; isNodeSide: boolean };
 
@@ -62,6 +63,10 @@ export type UnobservedCause = { reason: string; isNodeSide: boolean };
  * apart from a node that is down.
  */
 export function nodeUnobservedCause(node: ObservableNode): UnobservedCause | null {
+	// A node that greets with no head after a fanout is held, not down.
+	if (node.isAwaitingReplayVerdict) {
+		return { reason: "this service's replay of the node history has not decided the head state", isNodeSide: false };
+	}
 	if (!node.hasVerifiedLiveSession)
 		return { reason: 'the node has no verified live session for this head', isNodeSide: true };
 	if (!OBSERVED_NODE_STATUSES.has(node.status)) {

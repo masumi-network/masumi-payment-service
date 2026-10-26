@@ -157,6 +157,8 @@ export function buildCompactSummary(payload: WebhookSendPayload): string {
 		appendDetailLine(lines, '📍', 'Head status', payload.data.headStatus);
 		appendDetailLine(lines, '⏳', 'Contestation deadline', payload.data.contestationDeadline ?? 'none stored');
 		appendDetailLine(lines, '🕒', 'Unobserved since', payload.data.unobservedSince);
+		appendDetailLine(lines, '📝', 'Reason', payload.data.reason.slice(0, MAX_SUMMARY_REASON_LENGTH));
+		appendDetailLine(lines, '🧭', 'Side', payload.data.isNodeSide ? 'node may be down or unreachable' : 'this service');
 		appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 		return lines.join('\n');
 	}

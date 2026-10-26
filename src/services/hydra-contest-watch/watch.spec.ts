@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -48,7 +49,6 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
 }));
 jest.unstable_mockModule('./read-only-observer', () => ({
-	ContestObserverConfigurationError: class extends Error {},
 	readOnlyContestNode: mockReadOnlyNode,
 	releaseUnusedContestObservers: mockReleaseObservers,
 }));
@@ -81,6 +81,7 @@ const empty = {
 /** A node whose live and history sessions are bound to the head and that follows the chain. */
 const liveNode = <T extends object>(fields: T) => ({
 	hasVerifiedLiveSession: true,
+	isAwaitingReplayVerdict: false,
 	hasVerifiedPinnedSessions: true,
 	confirmedTransactionHistoryError: undefined,
 	isChainSynced: () => true,
@@ -343,7 +344,7 @@ describe('runHydraContestWatch', () => {
 				observationCheckedAt: new Date(Date.now() - 60_000),
 			},
 		] as never);
-		mockReadOnlyNode.mockRejectedValue(new Error('connect ECONNREFUSED') as never);
+		mockReadOnlyNode.mockRejectedValue(new HydraTransportError('connect ECONNREFUSED') as never);
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'head-1', observationGapSince: unobservedSince, observationGapAlertedAt: null },
@@ -354,16 +355,15 @@ describe('runHydraContestWatch', () => {
 			expect.objectContaining({
 				hydraHeadId: 'head-1',
 				unobservedSince: unobservedSince.toISOString(),
-				reason: 'this service could not open a session with the node (connect ECONNREFUSED)',
+				reason: 'this service could not reach the node (connect ECONNREFUSED)',
 				isNodeSide: true,
 			}),
 		);
 		expect(mockQueue).not.toHaveBeenCalled();
 	});
 
-	// A bad stored configuration is this service's problem, not a node outage.
-	it('blames the head configuration, not the node, when it stops the observer', async () => {
-		const { ContestObserverConfigurationError } = await import('./read-only-observer');
+	// A bad stored configuration or a protocol error is this service's problem, not a node outage.
+	it('blames this service, not the node, when a non-transport error stops the observer', async () => {
 		const unobservedSince = new Date(Date.now() - 6 * 60_000);
 		mockFindMany.mockResolvedValue([
 			{
@@ -375,11 +375,11 @@ describe('runHydraContestWatch', () => {
 				observationCheckedAt: new Date(Date.now() - 60_000),
 			},
 		] as never);
-		mockReadOnlyNode.mockRejectedValue(new ContestObserverConfigurationError('no pinned identifier') as never);
+		mockReadOnlyNode.mockRejectedValue(new Error('no pinned identifier') as never);
 		await watch.runHydraContestWatch();
 		expect(mockUnobservedQueue).toHaveBeenCalledWith(
 			expect.anything(),
-			expect.objectContaining({ reason: expect.stringContaining('head configuration'), isNodeSide: false }),
+			expect.objectContaining({ reason: expect.stringContaining('no pinned identifier'), isNodeSide: false }),
 		);
 	});
 
@@ -392,6 +392,7 @@ describe('runHydraContestWatch', () => {
 		mockGetNode.mockReturnValue({
 			status: HydraHeadStatus.Open,
 			hasVerifiedLiveSession: false,
+			isAwaitingReplayVerdict: false,
 			hasVerifiedPinnedSessions: false,
 			confirmedTransactionHistoryError: undefined,
 			isChainSynced: () => true,

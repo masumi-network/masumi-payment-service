@@ -248,7 +248,7 @@ const hydraHeadUnobservedPayloadSchema = createWebhookPayloadSchema(
 		isNodeSide: z
 			.boolean()
 			.describe(
-				'True when the node itself cannot contest. False when the node may still contest but this service cannot check it.',
+				'True when the node may be down or unreachable, so no contest is guaranteed. False when the node may still contest but this service cannot check it.',
 			),
 		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
 	}),
