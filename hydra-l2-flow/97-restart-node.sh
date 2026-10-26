@@ -22,7 +22,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$IDX" = 1 ]; then party=purchasing; other_vk=selling-hydra.vk; other_cvk=selling-cardano.vk; else party=selling; other_vk=purchasing-hydra.vk; other_cvk=purchasing-cardano.vk; fi
-api=$((4000 + IDX)); p2p=$((5000 + IDX)); mon=$((6000 + IDX)); other=$(( IDX == 1 ? 2 : 1 ))
+api=$((4000 + IDX)); p2p=$((5000 + IDX)); other=$(( IDX == 1 ? 2 : 1 ))
 persist="$PREPROD_DIR/persistence/$party"
 
 # Stop the node if running.
@@ -49,7 +49,7 @@ fi
 ( "$BIN" \
     --node-id "$IDX" \
     --api-host 127.0.0.1 --api-port "$api" \
-    --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
+    --listen "127.0.0.1:$p2p" \
     --peer "127.0.0.1:$((5000 + other))" \
     "${script_source[@]}" \
     --hydra-signing-key "$PREPROD_DIR/$party-hydra.sk" \
