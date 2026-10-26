@@ -178,13 +178,16 @@ export function proxyWebSocket(
 	query: string,
 	onError: (message: string) => void,
 ): void {
+	// The upgrade is sent with no body, so a forwarded Content-Length would make
+	// the node wait for bytes that never come if it answers without upgrading.
+	const { 'content-length': _bodyLength, ...headers } = forwardableHeaders(request.headers);
 	const upstream = httpRequest({
 		host: LOOPBACK,
 		port: apiPort,
 		method: 'GET',
 		path: upstreamPath(subPath, query),
 		headers: {
-			...forwardableHeaders(request.headers),
+			...headers,
 			Connection: 'Upgrade',
 			Upgrade: 'websocket',
 		},

@@ -484,34 +484,42 @@ describe('node api proxy', () => {
 
 describe('node api websocket proxy', () => {
 	/** Attach a real WebSocket server to the fake node, echoing what it receives. */
-	async function upgradeableNode(): Promise<{ server: Server; port: number; greeted: string[] }> {
+	async function upgradeableNode(): Promise<{
+		server: Server;
+		port: number;
+		greeted: string[];
+		upgradeHeaders: IncomingMessage['headers'][];
+	}> {
 		const { WebSocketServer } = await import('ws');
 		const greeted: string[] = [];
+		const upgradeHeaders: IncomingMessage['headers'][] = [];
 		const server = createServer();
 		const wss = new WebSocketServer({ server });
 		wss.on(
 			'connection',
 			(
 				socket: { send: (d: string) => void; on: (e: string, cb: (d: Buffer) => void) => void },
-				request: { url?: string },
+				request: { url?: string; headers: IncomingMessage['headers'] },
 			) => {
 				greeted.push(request.url ?? '');
+				upgradeHeaders.push(request.headers);
 				socket.send(JSON.stringify({ tag: 'Greetings' }));
 				socket.on('message', (data: Buffer) => socket.send(data.toString()));
 			},
 		);
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-		return { server, port: (server.address() as AddressInfo).port, greeted };
+		return { server, port: (server.address() as AddressInfo).port, greeted, upgradeHeaders };
 	}
 
 	const connect = async (
 		url: string,
 		token?: string,
+		extraHeaders: Record<string, string> = {},
 	): Promise<{ firstMessage: string | null; status: number | null }> => {
 		const WebSocket = (await import('ws')).default;
 		return new Promise((resolve) => {
 			const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}${url}`, {
-				headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
+				headers: { ...(token === undefined ? {} : { Authorization: `Bearer ${token}` }), ...extraHeaders },
 			} as never);
 			const done = (firstMessage: string | null, status: number | null): void => {
 				try {
@@ -539,6 +547,18 @@ describe('node api websocket proxy', () => {
 		expect(result.firstMessage).toContain('Greetings');
 		// The query string the payment service relies on must survive the tunnel.
 		expect(upstream.greeted[0]).toBe('/?history=no');
+
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('does not forward a Content-Length on the bodyless upgrade request', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+
+		const result = await connect('/v1/nodes/node-1/api', USER, { 'Content-Length': '5' });
+
+		expect(result.firstMessage).toContain('Greetings');
+		expect(upstream.upgradeHeaders[0]?.['content-length']).toBeUndefined();
 
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
