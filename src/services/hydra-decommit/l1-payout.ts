@@ -156,17 +156,19 @@ function isDecrementOfHead(cbor: string, txHash: string, utxos: IndexedTransacti
 	if (headInputs.length !== 1) return false;
 	const headInput = headInputs[0];
 	const bodyInputs = transaction.body().inputs();
-	let inputIndex = -1;
-	for (let index = 0; index < bodyInputs.len(); index++) {
-		const input = bodyInputs.get(index);
-		if (
+	// Spend pointers refer to ledger-sorted input references, not their CBOR order.
+	const canonicalInputs = Array.from({ length: bodyInputs.len() }, (_unused, index) => bodyInputs.get(index)).sort(
+		(a, b) => {
+			const firstHash = a.transaction_id().to_hex();
+			const secondHash = b.transaction_id().to_hex();
+			return firstHash === secondHash ? a.index() - b.index() : firstHash < secondHash ? -1 : 1;
+		},
+	);
+	const inputIndex = canonicalInputs.findIndex(
+		(input) =>
 			input.transaction_id().to_hex().toLowerCase() === headInput.tx_hash.toLowerCase() &&
-			input.index() === headInput.output_index
-		) {
-			inputIndex = index;
-			break;
-		}
-	}
+			input.index() === headInput.output_index,
+	);
 	if (inputIndex < 0) return false;
 	const redeemers = transaction.witness_set().redeemers();
 	if (!redeemers) return false;

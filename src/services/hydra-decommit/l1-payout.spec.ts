@@ -96,8 +96,15 @@ function chainTransaction(label: string, alternative = 1, otherAlternative?: num
 	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('200000'));
 	const redeemers = Redeemers.new();
 	const bodyInputs = body.inputs();
-	for (let index = 0; index < bodyInputs.len(); index++) {
-		const hash = bodyInputs.get(index).transaction_id().to_hex().toLowerCase();
+	const canonicalInputs = Array.from({ length: bodyInputs.len() }, (_unused, index) => bodyInputs.get(index)).sort(
+		(a, b) => {
+			const firstHash = a.transaction_id().to_hex();
+			const secondHash = b.transaction_id().to_hex();
+			return firstHash === secondHash ? a.index() - b.index() : firstHash < secondHash ? -1 : 1;
+		},
+	);
+	for (let index = 0; index < canonicalInputs.length; index++) {
+		const hash = canonicalInputs[index].transaction_id().to_hex().toLowerCase();
 		const inputAlternative = hash === headInputHash ? alternative : otherAlternative;
 		if (inputAlternative === undefined) throw new Error('missing test spend redeemer');
 		redeemers.add(
@@ -267,6 +274,30 @@ describe('findDecommitPayoutTx', () => {
 		});
 
 		expect(found).toBeNull();
+	});
+
+	it('finds a Decrement whose Spend pointer follows ledger order rather than unsorted CBOR order', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const chain = chainTransaction('unsorted', 1, 0);
+		const serializedInputs = Transaction.from_hex(chain.cbor).body().inputs();
+		expect(serializedInputs.get(0).transaction_id().to_hex()).toBe(chain.headInputHash);
+		expect(serializedInputs.get(1).transaction_id().to_hex()).toBe(chain.otherInputHash);
+		const blockfrost = blockfrostWith(
+			{ unsorted: [{ address: ADDRESS, amount }] },
+			{},
+			true,
+			OPEN_DATUM,
+			{ unsorted: 1 },
+			{ unsorted: 0 },
+		);
+
+		const found = await findPayout({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBe(chain.hash);
 	});
 
 	it('does not link a payout when the indexed head input differs from the CBOR input', async () => {
