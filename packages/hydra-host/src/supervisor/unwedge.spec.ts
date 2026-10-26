@@ -9,7 +9,7 @@ function options(overrides: Partial<UnwedgeOptions> = {}): UnwedgeOptions {
 	return {
 		fetchLastSeen: jest.fn<() => Promise<LastSeenSnapshotResponse>>().mockResolvedValue({ tag: 'NoSeenSnapshot' }),
 		fetchConfirmedSnapshot: jest.fn<() => Promise<unknown>>().mockResolvedValue({ snapshot: 'confirmed' }),
-		fetchHead: jest.fn<() => Promise<unknown>>().mockResolvedValue({ tag: 'Open' }),
+		fetchHead: jest.fn<() => Promise<unknown>>().mockResolvedValue(headHolding(null, 3)),
 		sideLoadSnapshot: jest.fn<(snapshot: unknown) => Promise<void>>().mockResolvedValue(undefined),
 		settleWaitMs: 30_000,
 		sleep: noopSleep,
@@ -21,10 +21,15 @@ function options(overrides: Partial<UnwedgeOptions> = {}): UnwedgeOptions {
 const DEPOSIT = { [`${'dd'.repeat(32)}#0`]: {} };
 
 /** `GET /head` while Open, with the confirmed snapshot at version 3 holding `utxoToCommit`. */
-function headHolding(utxoToCommit: unknown, version: number): unknown {
+function headHolding(utxoToCommit: unknown, version: number) {
 	return {
 		tag: 'Open',
-		contents: { coordinatedHeadState: { version, confirmedSnapshot: { snapshot: { version: 3, utxoToCommit } } } },
+		contents: {
+			coordinatedHeadState: {
+				version,
+				confirmedSnapshot: { tag: 'ConfirmedSnapshot', snapshot: { version: 3, utxoToCommit } },
+			},
+		},
 	};
 }
 
@@ -43,20 +48,41 @@ describe('holdsUnsettledCommit', () => {
 				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot', headId: 'cc' } } },
 			},
 		],
+	])('reports nothing unsettled when %s', (_label, state) => {
+		expect(holdsUnsettledCommit(state)).toBe(false);
+	});
+
+	it.each([
+		['the head has no coordinated state', { tag: 'Open' }],
+		['the head version is malformed', { tag: 'Open', contents: { coordinatedHeadState: { version: '3' } } }],
+		['the head is not open', { ...headHolding(null, 3), tag: 'Closed' }],
+		['the head contents are malformed', { ...headHolding(null, 3), contents: 'bad' }],
 		[
-			'the head version is not a number',
+			'the confirmed snapshot has an unknown tag',
 			{
 				tag: 'Open',
 				contents: {
 					coordinatedHeadState: {
-						version: '3',
-						confirmedSnapshot: { snapshot: { version: 3, utxoToCommit: DEPOSIT } },
+						version: 3,
+						confirmedSnapshot: { tag: 'UnknownSnapshot', snapshot: { version: 3, utxoToCommit: null } },
 					},
 				},
 			},
 		],
-	])('reports nothing unsettled when %s', (_label, state) => {
-		expect(holdsUnsettledCommit(state)).toBe(false);
+		[
+			'the snapshot has no commit field',
+			{
+				tag: 'Open',
+				contents: {
+					coordinatedHeadState: {
+						version: 3,
+						confirmedSnapshot: { tag: 'ConfirmedSnapshot', snapshot: { version: 3 } },
+					},
+				},
+			},
+		],
+	])('reports unknown when %s', (_label, state) => {
+		expect(holdsUnsettledCommit(state)).toBeNull();
 	});
 });
 
@@ -220,6 +246,19 @@ describe('unwedgeNode', () => {
 		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
 	});
 
+	it('holds the round when the head state does not prove the deposit is settled', async () => {
+		const opts = options({
+			fetchLastSeen: jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValue({ tag: 'SeenSnapshot', number: 7 }),
+			fetchHead: jest.fn<() => Promise<unknown>>().mockResolvedValue({ tag: 'Open' }),
+		});
+
+		const outcome = await unwedgeNode(opts);
+		expect(outcome).toMatchObject({ kind: 'Held', reason: expect.stringContaining('could not verify') });
+		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+	});
+
 	it('reports unrecovered when the side-load is rejected', async () => {
 		const fetchLastSeen = jest
 			.fn<() => Promise<LastSeenSnapshotResponse>>()
@@ -284,7 +323,7 @@ describe('unwedgeNode read failures', () => {
 				return call <= 2 ? Promise.resolve({ tag: 'SeenSnapshot', snapshotNumber: 4 }) : rejecting();
 			},
 			fetchConfirmedSnapshot: () => Promise.resolve({ snapshotNumber: 4 }),
-			fetchHead: () => Promise.resolve({}),
+			fetchHead: () => Promise.resolve(headHolding(null, 3)),
 			sideLoadSnapshot: () => Promise.resolve(),
 			allowAutoSideLoad: true,
 			settleWaitMs: 0,
@@ -303,6 +342,23 @@ describe('unwedgeNode read failures', () => {
 // SIGKILLed mid-drain.
 describe('unwedgeNode during a shutdown', () => {
 	it('defers before the side-load when a shutdown begins during the head-state read', async () => {
+		let stopping = false;
+		const opts = options({
+			fetchLastSeen: jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValue({ tag: 'SeenSnapshot', number: 7 }),
+			fetchHead: () => {
+				stopping = true;
+				return Promise.resolve(headHolding(null, 3));
+			},
+			isAborted: () => stopping,
+		});
+
+		expect(await unwedgeNode(opts)).toEqual({ kind: 'Deferred' });
+		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+	});
+
+	it('defers an unknown head-state result when shutdown begins during its read', async () => {
 		let stopping = false;
 		const opts = options({
 			fetchLastSeen: jest
