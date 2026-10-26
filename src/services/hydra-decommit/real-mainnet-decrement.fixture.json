@@ -1,0 +1,98 @@
+{
+	"source": "VERIFIED: Koios mainnet /tx_cbor and /tx_info for this transaction on 2026-10-26",
+	"txHash": "d3abfd6aa455baa0df726653906ac36a67029899bda1d293c7a6d9973ac7a195",
+	"blockTime": 1790427932,
+	"headId": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae",
+	"payoutAddress": "addr1qxk6pvm8uufjvmwappnl4s7zu7t0ql6rx9wnzl3e4x0zuqdcgnhgarwqwzera5canfysuau8z4rtd7exc0qrul4hcm5s5l8xwx",
+	"payoutLovelace": "9000000",
+	"cbor": "84a800d901028282582000ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a8490082582000ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a849020dd901028182582000ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a8490212d9010281825820da3c833601a80fe05cbea520853a6feb4429a3ae92b395756d176ad8d5ca5c5f000183a300581d711d511733200df551c8cd8cddb3160ed39087af815638be37a1b80ffd01821a182c51a6a2581cc48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ada1480014df105553444d1a151b2320581cf6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622caea34b487964726148656164563201581c75f6c070903fd0330dbd8a8afc5ec74c2206cc85860bcbdaa555af0801581cfd6a4bdb343c05ed9876ab8932f918424ff618bc15f739737edb132401028201d81858ced8799fd8799fd8799f5820a60a4d130c461d45d7e2eb9a2f417933b562ff8c3ae35275d73b692fe74d614000ff581cf6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae9f5820bf33ff3834979c6c4a40281bbe80c9d0961f365ffade0f7137ffe2e9aa3a06435820eb4b8373ce63fc7156ec2e770a5b6679a953b54c28b82387173af53a040e7374ffd8799f1a19bfcc00ffd8799f1a00124f80ff18325820b62e3ef39a80beff31b3a1fd4a70e9a01fee6e5674bbdd76754a37f9b5ae5e4c1a0026ffb6ffff82583901ada0b367e713266ddd0867fac3c2e796f07f43315d317e39a99e2e01b844ee8e8dc070b23ed31d9a490e77871546b6fb26c3c03e7eb7c6e91a0089544082581d6175f6c070903fd0330dbd8a8afc5ec74c2206cc85860bcbdaa555af081a007dcef6021a0009c1d70ed9010281581c75f6c070903fd0330dbd8a8afc5ec74c2206cc85860bcbdaa555af080b58203baff9361784bd43b905c9324d15b7d58049569751a38da3edf2cc561a73ae9f075820b32e534151f454adb723ecfee1b61c500644c5fdb7b47d1036e0e7a8a7929696a200d901028182582014ec6cb78bbe71ba1e102cd3d6772b092964d1c52329f060e93e5a93ff887b6258406866b9ee12702b5cb9a60f5dc06b1517ef12e0d649090cc71339780d23fa189998b443955e7d9b641cd668af9ce256bd56250d2f6f627cf755f1847cde74650c05a182000082d87a9fd8799f9f5840fb7b048dbdd9d01aca6895f8ffaca4f9e65a3d7e685a492188b87a98371d58b25c5646a0c53a44ce964278ab1233d4e54283ea2e116e4c0f0cdd74e7ce8948005840e55954fdf54b417fb098a42bdf91d60b74a90205e266a49e678b8d82de8bc22d690805aa20dafe39637b0321318dfbbe1937eb4dd7c4cddf8c39f5500740cf0eff18a60158205df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456ffff821a002f34b01a3362ad25f5d90103a100a119d90373487964726156322f44656372656d656e745478",
+	"utxos": {
+		"hash": "d3abfd6aa455baa0df726653906ac36a67029899bda1d293c7a6d9973ac7a195",
+		"inputs": [
+			{
+				"address": "addr1v96ldsrsjqlaqvcdhk9g4lz7caxzypkvskrqhj7654267zqggk26q",
+				"amount": [
+					{
+						"unit": "lovelace",
+						"quantity": "8884429"
+					}
+				],
+				"tx_hash": "00ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a849",
+				"output_index": 2
+			},
+			{
+				"address": "addr1wyw4z9enyqxl25wgekxdmvckpmfeppa0s9tr303h5xuqllg65gj5g",
+				"amount": [
+					{
+						"unit": "lovelace",
+						"quantity": "414557670"
+					},
+					{
+						"unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
+						"quantity": "354100000"
+					},
+					{
+						"unit": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae4879647261486561645632",
+						"quantity": "1"
+					},
+					{
+						"unit": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae75f6c070903fd0330dbd8a8afc5ec74c2206cc85860bcbdaa555af08",
+						"quantity": "1"
+					},
+					{
+						"unit": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622caefd6a4bdb343c05ed9876ab8932f918424ff618bc15f739737edb1324",
+						"quantity": "1"
+					}
+				],
+				"tx_hash": "00ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a849",
+				"output_index": 0
+			}
+		],
+		"outputs": [
+			{
+				"address": "addr1qxk6pvm8uufjvmwappnl4s7zu7t0ql6rx9wnzl3e4x0zuqdcgnhgarwqwzera5canfysuau8z4rtd7exc0qrul4hcm5s5l8xwx",
+				"amount": [
+					{
+						"unit": "lovelace",
+						"quantity": "9000000"
+					}
+				]
+			},
+			{
+				"address": "addr1v96ldsrsjqlaqvcdhk9g4lz7caxzypkvskrqhj7654267zqggk26q",
+				"amount": [
+					{
+						"unit": "lovelace",
+						"quantity": "8244982"
+					}
+				]
+			},
+			{
+				"address": "addr1wyw4z9enyqxl25wgekxdmvckpmfeppa0s9tr303h5xuqllg65gj5g",
+				"amount": [
+					{
+						"unit": "lovelace",
+						"quantity": "405557670"
+					},
+					{
+						"unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
+						"quantity": "354100000"
+					},
+					{
+						"unit": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae4879647261486561645632",
+						"quantity": "1"
+					},
+					{
+						"unit": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae75f6c070903fd0330dbd8a8afc5ec74c2206cc85860bcbdaa555af08",
+						"quantity": "1"
+					},
+					{
+						"unit": "f6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622caefd6a4bdb343c05ed9876ab8932f918424ff618bc15f739737edb1324",
+						"quantity": "1"
+					}
+				],
+				"inline_datum": "d8799fd8799fd8799f5820a60a4d130c461d45d7e2eb9a2f417933b562ff8c3ae35275d73b692fe74d614000ff581cf6ec7beb99b731e4f2d359d6e77c0b429c7c8b98ddceb234a7622cae9f5820bf33ff3834979c6c4a40281bbe80c9d0961f365ffade0f7137ffe2e9aa3a06435820eb4b8373ce63fc7156ec2e770a5b6679a953b54c28b82387173af53a040e7374ffd8799f1a19bfcc00ffd8799f1a00124f80ff18325820b62e3ef39a80beff31b3a1fd4a70e9a01fee6e5674bbdd76754a37f9b5ae5e4c1a0026ffb6ffff"
+			}
+		]
+	}
+}

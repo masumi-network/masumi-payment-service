@@ -23,6 +23,7 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { resolveTxHash } from '@meshsdk/core';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { DEFAULT_HYDRA_HEAD_SCRIPT_HASH, HYDRA_HEAD_V2_ASSET_NAME_HEX } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
@@ -32,6 +33,28 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 
 const { findDecommitPayoutTx, decommitPayoutSearchBounds } = await import('./l1-payout');
+
+type RealDecrementFixture = {
+	txHash: string;
+	blockTime: number;
+	headId: string;
+	payoutAddress: string;
+	payoutLovelace: string;
+	cbor: string;
+	utxos: {
+		hash: string;
+		inputs: Array<{
+			address: string;
+			amount: Array<{ unit: string; quantity: string }>;
+			tx_hash: string;
+			output_index: number;
+		}>;
+		outputs: Array<{ address: string; amount: Array<{ unit: string; quantity: string }>; inline_datum?: string }>;
+	};
+};
+const REAL_DECREMENT = JSON.parse(
+	readFileSync(new URL('./real-mainnet-decrement.fixture.json', import.meta.url), 'utf8'),
+) as RealDecrementFixture;
 
 const ADDRESS = 'addr_test1_local';
 const TOKEN = 'a'.repeat(56) + '746f6b656e';
@@ -163,6 +186,28 @@ function blockfrostWith(
 }
 
 describe('findDecommitPayoutTx', () => {
+	it('identifies a recorded Hydra 2.4.1 mainnet decrement payout', async () => {
+		const addressesTransactions = jest.fn() as AnyMock;
+		addressesTransactions.mockImplementation((_address: string, options: { page: number }) =>
+			Promise.resolve(
+				options.page === 1 ? [{ tx_hash: REAL_DECREMENT.txHash, block_time: REAL_DECREMENT.blockTime }] : [],
+			),
+		);
+		const txsUtxos = jest.fn() as AnyMock;
+		txsUtxos.mockResolvedValue(REAL_DECREMENT.utxos);
+		const txsCbor = jest.fn() as AnyMock;
+		txsCbor.mockResolvedValue({ cbor: REAL_DECREMENT.cbor });
+
+		const found = await findDecommitPayoutTx({
+			blockfrost: { addressesTransactions, txsUtxos, txsCbor } as never,
+			headId: REAL_DECREMENT.headId,
+			address: REAL_DECREMENT.payoutAddress,
+			expected: { lovelace: BigInt(REAL_DECREMENT.payoutLovelace), assets: {} },
+		});
+
+		expect(found).toBe(REAL_DECREMENT.txHash);
+	});
+
 	it('does not link an unrelated exact-value payment to a finalized decommit', async () => {
 		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
 		const blockfrost = blockfrostWith({ unrelated: [{ address: ADDRESS, amount }] }, {}, false);
