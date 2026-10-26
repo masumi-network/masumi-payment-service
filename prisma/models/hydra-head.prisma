@@ -75,7 +75,7 @@ model HydraHead {
   /// while this service cannot observe the head's node (down, unreachable, no
   /// verified session, the head lost, or not following the chain), which is when
   /// hydra-node may not contest. `since` is the first check that could not
-  /// observe it; the alert time makes the webhook fire once per gap; `checkedAt`
+  /// observe it; the alert time is the last alert, which gates repeats; `checkedAt`
   /// is the latest such check, so a gap left from an earlier outage starts over.
   /// `alertedNodeSide` is false when the next node-side check should alert
   /// again: after a service-side alert, or a service-side check that followed

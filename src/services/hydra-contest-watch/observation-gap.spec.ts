@@ -324,6 +324,20 @@ describe('applyObservationGap', () => {
 		expect(mockQueue.mock.calls.length).toBeGreaterThan(1);
 	});
 
+	// This instance read a service-side alert. Meanwhile another instance
+	// escalated, and a service-side check rearmed the gap. The stale read must
+	// not alert again within the grace period of that newer alert.
+	it('does not escalate a gap from a read older than the last alert', async () => {
+		const staleRead = head({
+			...since(30),
+			observationGapAlertedAt: minutesAgo(25),
+			observationGapAlertedNodeSide: false,
+		});
+		row = { ...since(30), observationGapAlertedAt: minutesAgo(1), observationGapAlertedNodeSide: false };
+		await expect(gap.applyObservationGap(staleRead, DOWN, NOW)).resolves.toBe('unchanged');
+		expect(mockQueue).not.toHaveBeenCalled();
+	});
+
 	// Another instance escalated after this one read the row. Its rearm must not
 	// undo that escalation, or the same outage alerts again.
 	it('does not rearm a gap from a read older than the last alert', async () => {

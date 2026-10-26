@@ -467,13 +467,13 @@ dialog warns until you do it.
 **Keep each node running while its head is open or closed.** If the
 counterparty closes on an older snapshot, your hydra-node contests with the
 newer one by itself, but only while it runs and follows the chain. When this
-service cannot observe a head's node for five minutes, it records a
+service cannot observe a head's node for its alert grace period, it records a
 `HeadUnobserved` head error and sends the `HYDRA_HEAD_UNOBSERVED` webhook, once
-per outage, with the exception below. A head with a contestation period under
-20 minutes gets a quarter of that period instead of five minutes. The watch
-checks about once a minute, so the alert can come up to a minute later than
-that. A restart of this service
-that lasts more than three minutes starts a new outage, which can alert again.
+per outage, with the exception below. The alert grace period is five minutes,
+or a quarter of the contestation period when that is under 20 minutes. The
+watch checks about once a minute, so the alert can come up to a minute later
+than that. A restart of this service that lasts more than three minutes starts
+a new outage, which can alert again.
 
 The error and the webhook `reason` name the cause found at the last check.
 `isNodeSide` tells two kinds of cause apart:
@@ -487,12 +487,12 @@ The error and the webhook `reason` name the cause found at the last check.
   configuration error stopped it. This service cannot tell whether the node
   still runs and contests. Check this service and its logs.
 
-The exception: while a gap lasts, each time a check finds a node-side cause
-after a check found a service-side one, the gap is alerted again with
-`isNodeSide: true`, at most once per grace period. So a node that goes down
-while this service cannot follow it is still alerted. On a head with a live payment session, a rotated event log
-keeps this service from checking the node at all, so while it lasts a node
-outage is not seen.
+The exception: while a gap lasts, a node-side cause found after a service-side
+one alerts the gap again with `isNodeSide: true`. Repeat alerts wait at least
+one alert grace period after the last alert. So a node that goes down while
+this service cannot follow it is still alerted, at most one grace period late.
+On a head with a live payment session, a rotated event log keeps this service
+from checking the node at all, so while it lasts a node outage is not seen.
 
 Subscribe to the webhook. Act before the contestation deadline in the webhook
 passes, or within the contestation period if the head is still open.
