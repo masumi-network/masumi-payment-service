@@ -560,7 +560,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head/errors',
 		summary: 'Clear the recorded errors for a head. (admin access required)',
 		description:
-			'Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.',
+			'Acknowledges diagnostic errors recorded against a head. Close nonexecution proof rows remain while recovery needs them, then the reaper removes them. The head status and close admission do not change.',
 		tags: TAG,
 		security: secured,
 		// Body, not query: `src/app.ts` sets `delete: ['body', 'params']`, so a

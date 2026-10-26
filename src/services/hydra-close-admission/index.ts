@@ -149,6 +149,22 @@ export async function releaseStalledCloseAdmissions(): Promise<number> {
 			data: { isClosing: false, closingSince: null, closeAdmissionId: null, closeRefusedAt: null },
 		});
 		if (cleared.count === 1) {
+			// The fallback row is no longer needed after this exact admission has
+			// been released. Remove it now so an acknowledged error does not leave
+			// the head flagged indefinitely in the operator view.
+			if (head.closeRefusedAt === null && head.closeAdmissionId !== null) {
+				try {
+					await prisma.hydraHeadError.deleteMany({
+						where: {
+							hydraHeadId: head.id,
+							errorType: HydraErrorType.CommandFailed,
+							clientInput: closeNonexecutionClientInput(head.closeAdmissionId),
+						},
+					});
+				} catch (error) {
+					logger.warn(`[HydraCloseAdmission] Could not remove consumed Close proof for head ${head.id}`, { error });
+				}
+			}
 			released += 1;
 			logger.warn(
 				`[HydraCloseAdmission] Released the close latch on head ${head.id}; its Close cannot execute and the ` +

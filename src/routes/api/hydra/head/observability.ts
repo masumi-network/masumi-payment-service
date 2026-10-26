@@ -16,6 +16,7 @@ import { z } from '@masumi/payment-core/zod';
 
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
+import { CLOSE_NONEXECUTION_CLIENT_INPUT_PREFIX } from '@/services/hydra-close-admission/nonexecution-evidence';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
 import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
@@ -79,11 +80,11 @@ export const clearHeadErrorsSchemaOutput = z.object({ cleared: z.number() });
 /**
  * Forget a head's errors.
  *
- * They are a log, not state: a failed Init that later succeeded leaves entries
- * behind that describe a problem which no longer exists, and an operator who
- * has read and acted on them has no way to stop the head being flagged. Nothing
- * downstream reads these rows — the head's own status is the source of truth —
- * so clearing them changes what is displayed and nothing else.
+ * Most rows are diagnostic logs that an operator may clear after reading them.
+ * A CloseNonexecution row is different: it is the reaper's durable fallback
+ * proof when writing closeRefusedAt failed. Never delete one through this
+ * endpoint, because a concurrent Close may have just written its proof. The
+ * reaper deletes the exact marker after it releases that admission.
  */
 export const clearHeadErrorsDelete = adminAuthenticatedEndpointFactory.build({
 	method: 'delete',
@@ -94,7 +95,14 @@ export const clearHeadErrorsDelete = adminAuthenticatedEndpointFactory.build({
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
 		}
-		const { count } = await prisma.hydraHeadError.deleteMany({ where: { hydraHeadId: input.headId } });
+		const { count } = await prisma.hydraHeadError.deleteMany({
+			where: {
+				hydraHeadId: input.headId,
+				// Apply this at deletion time. A read-then-delete check could race with
+				// the fallback proof writer and erase the only release evidence.
+				OR: [{ clientInput: null }, { clientInput: { not: { startsWith: CLOSE_NONEXECUTION_CLIENT_INPUT_PREFIX } } }],
+			},
+		});
 		return { cleared: count };
 	},
 });
