@@ -8,9 +8,9 @@
  * by the caller. Each transition is written defensively because replay can
  * repeat events, and a restart can deliver them out of order.
  *
- * Approved is when the value leaves the head, Finalized is when L1 has it.
- * An anonymous Finalized event can settle only a row whose approval was already
- * recorded. Its timestamp alone cannot identify an unsent local withdrawal.
+ * Approved is when the value leaves the head. A node finalization only records
+ * an L1 observation; an independent depth check later marks it Finalized.
+ * An anonymous finalization can settle only a row whose approval was recorded.
  */
 
 import { Mutex } from 'async-mutex';
@@ -21,7 +21,7 @@ import type { DecommitDistributedValue, HydraDecommitOutcome } from '@/lib/hydra
 import { resolveDecommitPayoutTx } from './payout-lookup';
 import { PENDING_EXPIRED_REASONS } from './stale';
 
-/** Statuses a later event is still allowed to move away from. */
+/** Statuses a later node event is still allowed to move away from. */
 const OPEN_STATUSES = [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved];
 
 /**
@@ -146,12 +146,12 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
 }
 
 /**
- * Record that L1 has the funds.
+ * Record the node's claim that its L1 decrement was observed.
  *
  * Split out because it is the one transition the head reports anonymously.
  * DecommitFinalized carries no transaction id, so the row is found by head and
- * recorded Approved status; the id it does not carry is then looked up on chain, because the
- * in-head decommit id is not a transaction any explorer has ever seen.
+ * recorded Approved status. Independent payout identity and depth are checked
+ * later, because the in-head decommit id is not a transaction on L1.
  */
 async function finalizeDecommit(params: {
 	hydraHeadId: string;
@@ -178,8 +178,8 @@ async function finalizeDecommit(params: {
 			hydraHeadId,
 			AND: [
 				decommitTxId === undefined
-					? { status: HydraDecommitStatus.Approved }
-					: { decommitTxId, OR: [{ status: { in: OPEN_STATUSES } }, EXPIRED] },
+					? { status: HydraDecommitStatus.Approved, l1ObservedAt: null }
+					: { decommitTxId, OR: [{ status: { in: OPEN_STATUSES }, l1ObservedAt: null }, EXPIRED] },
 				// A head replays its entire history on every reconnection, so a
 				// finalization from weeks ago arrives again alongside today's pending
 				// withdrawal. Without this the old event is attributed to the new
@@ -219,8 +219,8 @@ async function finalizeDecommit(params: {
 	await prisma.hydraDecommit.update({
 		where: { id: row.id },
 		data: {
-			status: HydraDecommitStatus.Finalized,
-			finalizedAt: now,
+			status: HydraDecommitStatus.Approved,
+			l1ObservedAt: observedAt ?? now,
 			failureReason: null,
 			...(row.approvedAt === null ? { approvedAt: now } : {}),
 			// Beside what was asked for, never over it. The two differ routinely —
@@ -232,15 +232,18 @@ async function finalizeDecommit(params: {
 				: { settledLovelace: distributed.lovelace, settledAssets: distributed.assets }),
 		},
 	});
-	logger.info(`[HydraDecommit] withdrawal ${row.id} settled on L1`);
+	logger.info(`[HydraDecommit] withdrawal ${row.id} reported on L1; waiting for independent confirmation depth`);
 
-	// After the status, and never blocking it. Identifying the payout is a
-	// convenience for whoever reads the row; failing to identify it must not make
-	// a settled withdrawal look unsettled.
+	// A provider outage cannot promote the row. The scheduled pass retries this
+	// same proof, so an outage here does not strand the withdrawal.
 	if (distributed) {
 		void resolveDecommitPayoutTx({ decommitId: row.id, distributed }).catch((error: unknown) => {
 			logger.warn(`[HydraDecommit] could not identify the payout transaction for ${row.id}: ${String(error)}`);
 		});
+	} else {
+		logger.warn(
+			`[HydraDecommit] withdrawal ${row.id} has no distributed value; independent L1 finality needs recovery evidence`,
+		);
 	}
 	return true;
 }

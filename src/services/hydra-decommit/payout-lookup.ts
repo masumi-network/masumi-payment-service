@@ -1,25 +1,17 @@
-/**
- * Attaching the L1 transaction to a settled withdrawal.
- *
- * Everything the head knows is already recorded by the time this runs; this only
- * adds the one thing it cannot tell us. Kept apart from the settlement itself so
- * that a Blockfrost outage delays a link rather than a status.
- */
+/** Independent L1 payout proof and confirmation-depth reconciliation. */
 
 import { HydraDecommitStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { CONFIG } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import type { DecommitDistributedValue } from '@/lib/hydra';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decommitPayoutSearchBounds, findDecommitPayoutTx } from './l1-payout';
 
-/**
- * How long a settled withdrawal stays worth looking for.
- *
- * A decrement lands within a block or two, so anything still unidentified after
- * a day was not missed by timing and will not appear by waiting longer.
- */
-const PAYOUT_LOOKUP_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Match the conservative key-release depth even if the general threshold is lower. */
+export const DECOMMIT_MIN_CONFIRMATIONS = 20;
+/** Recheck recent finalized payouts for a rollback after initial promotion. */
+const FINALITY_RECHECK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Kept small: each row costs several Blockfrost calls. */
 const PAYOUT_LOOKUP_BATCH = 10;
@@ -29,11 +21,41 @@ const PAYOUT_LOOKUP_BATCH = 10;
  *
  * Deliberately not the shared Hydra interval. Each row costs up to
  * MAX_PAGES * PAGE_SIZE address-history lookups, so a full batch on a ten-second
- * schedule sustains roughly forty requests a second — several times a
- * Blockfrost free tier — to chase a link nobody is waiting on. A decrement lands
- * within a block or two, so five minutes loses nothing.
+ * schedule sustains roughly forty requests a second. The row remains Approved
+ * during this retry interval; the node's event cannot grant spendability.
  */
 export const PAYOUT_LOOKUP_INTERVAL_MS = 5 * 60 * 1000;
+
+type Blockfrost = ReturnType<typeof getBlockfrostInstance>;
+
+function isNotFound(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const value = error as { status_code?: unknown; statusCode?: unknown; status?: unknown };
+	return value.status_code === 404 || value.statusCode === 404 || value.status === 404;
+}
+
+async function payoutDepth(observer: Blockfrost, txId: string): Promise<'deep' | 'shallow' | 'missing'> {
+	let details: Awaited<ReturnType<Blockfrost['txs']>>;
+	try {
+		details = await observer.txs(txId);
+	} catch (error) {
+		if (isNotFound(error)) return 'missing';
+		throw error;
+	}
+	if (details.hash.toLowerCase() !== txId.toLowerCase() || details.valid_contract !== true) return 'missing';
+	let block: Awaited<ReturnType<Blockfrost['blocks']>>;
+	try {
+		block = await observer.blocks(details.block);
+	} catch (error) {
+		if (isNotFound(error)) return 'missing';
+		throw error;
+	}
+	const confirmations = block.confirmations ?? 0;
+	return Number.isSafeInteger(confirmations) &&
+		confirmations >= Math.max(CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD, DECOMMIT_MIN_CONFIRMATIONS)
+		? 'deep'
+		: 'shallow';
+}
 
 export async function resolveDecommitPayoutTx(params: {
 	decommitId: string;
@@ -50,7 +72,7 @@ export async function resolveDecommitPayoutTx(params: {
 			},
 		},
 	});
-	if (!row || row.l1TxId !== null) return;
+	if (!row || row.status !== HydraDecommitStatus.Approved || row.l1ObservedAt === null) return;
 	if (row.HydraHead.headIdentifier === null) {
 		logger.warn(`[HydraDecommit] no head identifier available to verify the payout for ${decommitId}`);
 		return;
@@ -76,6 +98,9 @@ export async function resolveDecommitPayoutTx(params: {
 	}
 
 	const blockfrost = getBlockfrostInstance(paymentSource.network, apiKey);
+	// Reprove provenance even for a hash written before this depth gate existed.
+	// Older rows may have been linked by amount alone, so a cached hash cannot
+	// grant Finalized after the migration.
 	const txId = await findDecommitPayoutTx({
 		blockfrost,
 		headId: row.HydraHead.headIdentifier,
@@ -89,42 +114,42 @@ export async function resolveDecommitPayoutTx(params: {
 		return;
 	}
 
-	// Conditional, because the finalization path and the retry pass can both be
-	// resolving the same row: the read above is not in a transaction with this
-	// write, so the guard belongs here rather than only there.
-	const { count } = await prisma.hydraDecommit.updateMany({
-		where: { id: decommitId, l1TxId: null },
+	await prisma.hydraDecommit.updateMany({
+		where: { id: decommitId, status: HydraDecommitStatus.Approved, l1ObservedAt: { not: null }, l1TxId: row.l1TxId },
 		data: { l1TxId: txId },
 	});
-	if (count > 0) logger.info(`[HydraDecommit] withdrawal ${decommitId} was paid out by ${txId}`);
+	const depth = await payoutDepth(blockfrost, txId);
+	if (depth === 'missing') {
+		await prisma.hydraDecommit.updateMany({
+			where: { id: decommitId, status: HydraDecommitStatus.Approved, l1TxId: txId },
+			data: { l1TxId: null },
+		});
+		return;
+	}
+	if (depth !== 'deep') return;
+	const { count } = await prisma.hydraDecommit.updateMany({
+		where: { id: decommitId, status: HydraDecommitStatus.Approved, l1ObservedAt: { not: null }, l1TxId: txId },
+		data: { status: HydraDecommitStatus.Finalized, finalizedAt: new Date(), l1CheckedAt: new Date() },
+	});
+	if (count > 0) logger.info(`[HydraDecommit] withdrawal ${decommitId} reached independent L1 depth in ${txId}`);
 }
 
 /**
- * Retry the payout lookup for withdrawals that settled without one.
- *
- * Identification runs once at finalization and is deliberately allowed to fail:
- * a chain lookup must never be what decides whether a withdrawal counts as
- * settled. Without a second attempt, though, a single Blockfrost blip leaves the
- * row permanently unable to show where the money went, and there is nothing an
- * operator can do about it from the UI.
- *
- * Bounded by age rather than by attempt count: a payout that has not been
- * identified within a day is not going to be, and re-walking address history for
- * it forever would cost more than the link is worth.
+ * Retry every observed but unproven payout, regardless of age. The Approved
+ * status blocks another withdrawal and must never silently stop retrying.
  */
 export async function reconcileUnidentifiedDecommitPayouts(): Promise<void> {
 	const rows = await prisma.hydraDecommit.findMany({
 		where: {
-			status: HydraDecommitStatus.Finalized,
-			l1TxId: null,
+			status: HydraDecommitStatus.Approved,
+			l1ObservedAt: { not: null },
 			settledLovelace: { not: null },
-			finalizedAt: { gte: new Date(Date.now() - PAYOUT_LOOKUP_WINDOW_MS) },
 		},
 		select: { id: true, settledLovelace: true, settledAssets: true },
 		// Oldest first. An unordered slice would hand back whichever rows the
 		// planner happened to reach, so with more stuck rows than fit in a batch
 		// the same few could be retried forever while the rest were never tried.
-		orderBy: { finalizedAt: 'asc' },
+		orderBy: { l1CheckedAt: 'asc' },
 		take: PAYOUT_LOOKUP_BATCH,
 	});
 
@@ -140,6 +165,59 @@ export async function reconcileUnidentifiedDecommitPayouts(): Promise<void> {
 			});
 		} catch (error) {
 			logger.warn(`[HydraDecommit] payout lookup retry failed for ${row.id}: ${String(error)}`);
+		} finally {
+			await prisma.hydraDecommit.updateMany({
+				where: { id: row.id, status: HydraDecommitStatus.Approved },
+				data: { l1CheckedAt: new Date() },
+			});
+		}
+	}
+	const finalized = await prisma.hydraDecommit.findMany({
+		where: {
+			status: HydraDecommitStatus.Finalized,
+			l1TxId: { not: null },
+			finalizedAt: { gte: new Date(Date.now() - FINALITY_RECHECK_WINDOW_MS) },
+		},
+		select: {
+			id: true,
+			l1TxId: true,
+			LocalParticipant: {
+				select: {
+					Wallet: {
+						select: {
+							PaymentSource: {
+								select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
+							},
+						},
+					},
+				},
+			},
+		},
+		orderBy: { l1CheckedAt: 'asc' },
+		take: PAYOUT_LOOKUP_BATCH,
+	});
+	for (const row of finalized) {
+		if (!row.l1TxId) continue;
+		const paymentSource = row.LocalParticipant?.Wallet?.PaymentSource;
+		const apiKey = paymentSource?.PaymentSourceConfig?.rpcProviderApiKey;
+		if (!paymentSource || !apiKey) continue;
+		try {
+			if ((await payoutDepth(getBlockfrostInstance(paymentSource.network, apiKey), row.l1TxId)) === 'deep') {
+				await prisma.hydraDecommit.updateMany({
+					where: { id: row.id, status: HydraDecommitStatus.Finalized, l1TxId: row.l1TxId },
+					data: { l1CheckedAt: new Date() },
+				});
+				continue;
+			}
+			await prisma.hydraDecommit.updateMany({
+				where: { id: row.id, status: HydraDecommitStatus.Finalized, l1TxId: row.l1TxId },
+				data: { status: HydraDecommitStatus.Approved, finalizedAt: null, l1TxId: null, l1CheckedAt: new Date() },
+			});
+			logger.warn(
+				`[HydraDecommit] payout ${row.l1TxId} lost required L1 depth; withdrawal ${row.id} is Approved again`,
+			);
+		} catch (error) {
+			logger.warn(`[HydraDecommit] could not recheck payout ${row.l1TxId}: ${String(error)}`);
 		}
 	}
 }
