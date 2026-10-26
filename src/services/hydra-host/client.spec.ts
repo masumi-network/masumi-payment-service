@@ -8,10 +8,17 @@ let fetchHostCapabilities: typeof import('./client').fetchHostCapabilities;
 let fetchHostNodeHealth: typeof import('./client').fetchHostNodeHealth;
 let forgetHostInvite: typeof import('./client').forgetHostInvite;
 let provisionNodeOnHost: typeof import('./client').provisionNodeOnHost;
+let removeUnclaimedHostNode: typeof import('./client').removeUnclaimedHostNode;
 
 beforeAll(async () => {
-	({ HydraHostRequestError, fetchHostCapabilities, fetchHostNodeHealth, forgetHostInvite, provisionNodeOnHost } =
-		await import('./client'));
+	({
+		HydraHostRequestError,
+		fetchHostCapabilities,
+		fetchHostNodeHealth,
+		forgetHostInvite,
+		provisionNodeOnHost,
+		removeUnclaimedHostNode,
+	} = await import('./client'));
 });
 
 describe('Hydra Host node health freshness', () => {
@@ -28,6 +35,38 @@ describe('Hydra Host node health freshness', () => {
 
 afterEach(() => {
 	transportMock.mockReset();
+});
+
+describe('removing an unclaimed Host node', () => {
+	const options = { allowInsecureHttp: false };
+	const remove = () => removeUnclaimedHostNode('https://hydra.example.com', 'admin-token', 'node-1', options);
+
+	it('keeps the node when an old Host lacks the guarded route', async () => {
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ nodeId: 'node-1' }), { status: 200 }));
+		await expect(remove()).rejects.toMatchObject({ status: 404 });
+		expect(transportMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('accepts a missing node only after the Host confirms it is gone', async () => {
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'no such node' }), { status: 404 }));
+		await expect(remove()).resolves.toBeUndefined();
+		expect(transportMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the node when both paths miss a proxy prefix', async () => {
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		await expect(remove()).rejects.toMatchObject({ status: 404 });
+		expect(transportMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps a node claimed by an invite', async () => {
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'node is claimed' }), { status: 409 }));
+		await expect(remove()).rejects.toMatchObject({ status: 409 });
+		expect(transportMock).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe('Hydra Host transport security', () => {

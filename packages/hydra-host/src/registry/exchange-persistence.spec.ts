@@ -104,3 +104,37 @@ describe('exchange persistence failures', () => {
 		expect((await new ExchangeStore(directory).listInvites())[0].startError).toBe('failed start');
 	});
 });
+
+describe('orphan removal and invite claims', () => {
+	it('refuses removal while an open invite owns the node', async () => {
+		const remove = jest.fn<() => Promise<boolean>>().mockResolvedValue(true);
+		await expect(store.removeUnclaimedNode(invite.hostNodeId, remove)).resolves.toBeNull();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it('does not register an invite after removal wins the queue', async () => {
+		let beginRemoval!: () => void;
+		let finishRemoval!: () => void;
+		const removalStarted = new Promise<void>((resolve) => {
+			beginRemoval = resolve;
+		});
+		const mayFinishRemoval = new Promise<void>((resolve) => {
+			finishRemoval = resolve;
+		});
+		let isRemoving = false;
+		const removal = store.removeUnclaimedNode('node-2', async () => {
+			isRemoving = true;
+			beginRemoval();
+			await mayFinishRemoval;
+			return true;
+		});
+		await removalStarted;
+		const registration = store.registerInvite({ ...invite, nonce: 'nonce-two', hostNodeId: 'node-2' }, async () => {
+			if (isRemoving) throw new Error('node is being removed');
+		});
+		finishRemoval();
+		await expect(removal).resolves.toBe(true);
+		await expect(registration).rejects.toThrow('node is being removed');
+		expect(await store.listInvites()).toEqual([invite]);
+	});
+});

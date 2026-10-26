@@ -59,29 +59,6 @@ export async function registerInvite(
 	body: unknown,
 ): Promise<{ nonce: string }> {
 	const parsed = readRegisterBody(body);
-	// The pattern above says the id is well formed, not that it names anything.
-	// A nonce is single-use and the Exchange Plane burns it before the node is
-	// touched: registering one against a node that does not exist means the
-	// counterparty publishes their material, is told the redemption succeeded,
-	// and the start then fails with `no such node` on an invite that can never be
-	// redeemed again.
-	const node = await nodes.read(parsed.hostNodeId);
-	if (node === null) {
-		throw new ProvisionError(`no such node: ${parsed.hostNodeId}`, 404);
-	}
-	// The same reasoning one step further: a node that WILL not exist is no
-	// better than one that does not. An un-acknowledged node is `PendingEscrow`,
-	// and the supervisor removes one once `escrowTtlSeconds` is up — an hour by
-	// default, against an invite this host will hold for up to thirty days. The
-	// reservation would outlive the node it names by a factor of seven hundred,
-	// and the counterparty finds that out only after their nonce is spent and
-	// their material is published.
-	if (node.escrowAckedAt === null) {
-		throw new ProvisionError(
-			`node ${parsed.hostNodeId} has not been escrow-acknowledged, so it may still be reaped; acknowledge it before reserving it`,
-			409,
-		);
-	}
 	const record: InviteRecord = {
 		nonce: parsed.nonce,
 		hostNodeId: parsed.hostNodeId,
@@ -92,6 +69,20 @@ export async function registerInvite(
 		redeemerSignature: null,
 		startError: null,
 	};
-	await store.registerInvite(record);
+	await store.registerInvite(record, async () => {
+		// A nonce must name a node that survives until redemption. This read is
+		// inside the invite queue, after any cleanup removal that won the queue.
+		const node = await nodes.read(parsed.hostNodeId);
+		if (node === null) throw new ProvisionError(`no such node: ${parsed.hostNodeId}`, 404);
+		if (node.removalRequested || node.state === 'Removing') {
+			throw new ProvisionError(`node ${parsed.hostNodeId} is being removed`, 409);
+		}
+		if (node.escrowAckedAt === null) {
+			throw new ProvisionError(
+				`node ${parsed.hostNodeId} has not been escrow-acknowledged, so it may still be reaped; acknowledge it before reserving it`,
+				409,
+			);
+		}
+	});
 	return { nonce: record.nonce };
 }

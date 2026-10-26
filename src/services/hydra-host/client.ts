@@ -456,6 +456,34 @@ export async function removeHostNode(
 	await request(baseUrl, `/v1/nodes/${nodeId}${query}`, adminToken, options, { method: 'DELETE' });
 }
 
+/** An old Host returns 404 for this route. Verify whether its node still exists before treating that as removal. */
+export async function removeUnclaimedHostNode(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	try {
+		await request(baseUrl, `/v1/nodes/${nodeId}/remove-unclaimed`, adminToken, transport, { method: 'DELETE' });
+	} catch (error) {
+		if (!(error instanceof HydraHostRequestError) || error.status !== 404) throw error;
+		try {
+			await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, transport);
+		} catch (readError) {
+			// A wrong proxy prefix can make both routes return 404. Require the
+			// Host's node-specific answer before treating the node as gone.
+			if (
+				readError instanceof HydraHostRequestError &&
+				readError.status === 404 &&
+				readError.message.endsWith(': no such node')
+			)
+				return;
+			throw readError;
+		}
+		throw error;
+	}
+}
+
 /**
  * URLs the payment service uses to reach a provisioned node.
  *

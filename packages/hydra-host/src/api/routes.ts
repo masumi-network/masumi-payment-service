@@ -21,6 +21,7 @@ export type RouteKind =
 	| 'stopNode'
 	| 'restartNode'
 	| 'removeNode'
+	| 'removeUnclaimedNode'
 	| 'nodeHealth'
 	| 'capabilities'
 	| 'peerAllowlist'
@@ -124,6 +125,9 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 
 	if (segments.length === 4) {
 		const action = segments[3];
+		if (method === 'DELETE' && action === 'remove-unclaimed') {
+			return { kind: 'removeUnclaimedNode', tier: 'admin', nodeId };
+		}
 		if (method === 'POST') {
 			switch (action) {
 				case 'escrow-ack':

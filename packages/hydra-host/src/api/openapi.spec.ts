@@ -17,6 +17,7 @@ const EVERY_ROUTE_KIND: Record<RouteKind, true> = {
 	stopNode: true,
 	restartNode: true,
 	removeNode: true,
+	removeUnclaimedNode: true,
 	nodeHealth: true,
 	capabilities: true,
 	peerAllowlist: true,
