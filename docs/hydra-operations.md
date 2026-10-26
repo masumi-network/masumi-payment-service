@@ -466,12 +466,18 @@ dialog warns until you do it.
 
 **Keep each node running while its head is open or closed.** If the
 counterparty closes on an older snapshot, your hydra-node contests with the
-newer one by itself, but only while it runs. When this service cannot see a
-head's node report the head for five minutes, it records a `HeadUnobserved`
-head error and sends the `HYDRA_HEAD_UNOBSERVED` webhook, once per outage.
-Subscribe to it. When it fires, check the Host and restart the node. Do this
-before the contestation deadline in the webhook passes, or within the
-contestation period if the head is still open.
+newer one by itself, but only while it runs and follows the chain. When this
+service cannot observe a head's node for five minutes, it records a
+`HeadUnobserved` head error and sends the `HYDRA_HEAD_UNOBSERVED` webhook, once
+per outage. A head with a contestation period under 20 minutes gets a quarter of
+that period instead of five minutes. The error names the cause found at the
+last check. Subscribe to the webhook. When it fires, check the Host and restart
+the node. Do this before the contestation deadline in the webhook passes, or
+within the contestation period if the head is still open.
+
+A planned Host pause stops the nodes of open heads too, so a pause longer than
+the grace period sends this webhook for each of them. That alert is expected.
+Keep the pause shorter than the contestation period.
 
 **Closing.** Close from the head's action menu. What is inside the head returns
 to L1 after the dispute window, then fans out, and nothing needs watching in

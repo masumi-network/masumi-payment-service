@@ -133,12 +133,20 @@ describe('Hydra webhook payment-source scope', () => {
 			gapSince: '2026-10-26T00:00:00.000Z',
 			checkedAt: '2026-10-26T00:10:00.000Z',
 		};
+		const unobserved = {
+			hydraHeadId: 'head-1',
+			headStatus: 'Closed',
+			contestationDeadline: '2026-10-27T00:00:00.000Z',
+			unobservedSince: '2026-10-26T00:00:00.000Z',
+			checkedAt: '2026-10-26T00:05:00.000Z',
+		};
 
 		await webhookEventsService.triggerHydraHeadLowBalance(lowBalance);
 		await webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx as never, lowBalance);
 		await webhookEventsService.queueHydraHeadSnapshotRoundStuckInTransaction(tx as never, snapshotRound);
 		await webhookEventsService.triggerHydraHeadPostTxFailed(postTxFailed);
 		await webhookEventsService.queueHydraHeadContestMissingInTransaction(tx as never, contestMissing);
+		await webhookEventsService.queueHydraHeadUnobservedInTransaction(tx as never, unobserved);
 
 		expect(mockQueueWebhook).toHaveBeenCalledWith(
 			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
@@ -156,6 +164,7 @@ describe('Hydra webhook payment-source scope', () => {
 			[WebhookEventType.HYDRA_HEAD_LOW_BALANCE, lowBalance, 'participant-1'],
 			[WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK, snapshotRound, 'head-1'],
 			[WebhookEventType.HYDRA_HEAD_CONTEST_MISSING, contestMissing, 'head-1'],
+			[WebhookEventType.HYDRA_HEAD_UNOBSERVED, unobserved, 'head-1'],
 		] as const) {
 			expect(mockQueueWebhookInTransaction).toHaveBeenCalledWith(tx, eventType, payload, entityId, 'source-1');
 		}

@@ -72,12 +72,15 @@ model HydraHead {
   contestGapAlertedAt DateTime?
 
   /// Observation watch (`services/hydra-contest-watch/observation-gap.ts`). Set
-  /// while the head's node reports no head state (down, unreachable, or the head
-  /// lost), which is when hydra-node cannot contest. `since` is when that began;
-  /// the alert time makes the webhook fire once per gap. Cleared when the node
-  /// reports the head again.
+  /// while this service cannot observe the head's node (down, unreachable, no
+  /// verified session, the head lost, or not following the chain), which is when
+  /// hydra-node may not contest. `since` is the first check that could not
+  /// observe it; the alert time makes the webhook fire once per gap; `checkedAt`
+  /// is the latest such check, so a gap left from an earlier outage starts over.
+  /// Cleared when the node is observed again.
   observationGapSince     DateTime?
   observationGapAlertedAt DateTime?
+  observationCheckedAt    DateTime?
 
   /// Durable admission gate set before Close is sent. Reservation writers lock
   /// the head row and refuse new L2 work once closing has begun.

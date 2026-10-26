@@ -71,10 +71,18 @@ const empty = {
 	contestGapSignature: null,
 	contestGapSince: null,
 	contestGapAlertedAt: null,
+	contestationPeriod: 86_400n,
 	contestationDeadline: null,
 	observationGapSince: null,
 	observationGapAlertedAt: null,
+	observationCheckedAt: null,
 };
+/** A node whose live and history sessions are bound to the head and that follows the chain. */
+const liveNode = <T extends object>(fields: T) => ({
+	hasVerifiedPinnedSessions: true,
+	isChainSynced: () => true,
+	...fields,
+});
 const closedOnThree = {
 	status: HydraHeadStatus.Closed,
 	closedSnapshotNumber: 3n,
@@ -225,11 +233,13 @@ describe('runHydraContestWatch', () => {
 				rejectConnection = reject;
 			}),
 		);
-		mockGetNode.mockReturnValue({
-			status: HydraHeadStatus.FanoutPossible,
-			closedSnapshotNumber: 3n,
-			verifiedSnapshotNumber: 5n,
-		});
+		mockGetNode.mockReturnValue(
+			liveNode({
+				status: HydraHeadStatus.FanoutPossible,
+				closedSnapshotNumber: 3n,
+				verifiedSnapshotNumber: 5n,
+			}),
+		);
 		const running = watch.runHydraContestWatch();
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		try {
@@ -251,11 +261,13 @@ describe('runHydraContestWatch', () => {
 		mockFindMany.mockResolvedValue([
 			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: true, ...recorded(30) },
 		] as never);
-		mockGetNode.mockReturnValue({
-			status: HydraHeadStatus.Closed,
-			closedSnapshotNumber: undefined,
-			verifiedSnapshotNumber: 5n,
-		});
+		mockGetNode.mockReturnValue(
+			liveNode({
+				status: HydraHeadStatus.Closed,
+				closedSnapshotNumber: undefined,
+				verifiedSnapshotNumber: 5n,
+			}),
+		);
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
@@ -264,11 +276,13 @@ describe('runHydraContestWatch', () => {
 		mockFindMany.mockResolvedValue([
 			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: true, ...empty },
 		] as never);
-		mockGetNode.mockReturnValue({
-			status: HydraHeadStatus.Closed,
-			closedSnapshotNumber: 3n,
-			verifiedSnapshotNumber: 5n,
-		});
+		mockGetNode.mockReturnValue(
+			liveNode({
+				status: HydraHeadStatus.Closed,
+				closedSnapshotNumber: 3n,
+				verifiedSnapshotNumber: 5n,
+			}),
+		);
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'head-1', contestGapSignature: null },
@@ -280,11 +294,13 @@ describe('runHydraContestWatch', () => {
 		mockFindMany.mockResolvedValue([
 			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: false, ...empty },
 		] as never);
-		mockReadOnlyNode.mockResolvedValue({
-			status: HydraHeadStatus.Closed,
-			closedSnapshotNumber: 3n,
-			verifiedSnapshotNumber: 5n,
-		});
+		mockReadOnlyNode.mockResolvedValue(
+			liveNode({
+				status: HydraHeadStatus.Closed,
+				closedSnapshotNumber: 3n,
+				verifiedSnapshotNumber: 5n,
+			}),
+		);
 		await watch.runHydraContestWatch();
 		expect(mockReadOnlyNode).toHaveBeenCalledWith('head-1');
 		expect(mockUpdateMany).toHaveBeenCalledWith(
@@ -297,11 +313,13 @@ describe('runHydraContestWatch', () => {
 		mockFindMany.mockResolvedValue([
 			{ id: 'head-1', status: HydraHeadStatus.Open, isEnabled: false, ...empty },
 		] as never);
-		mockReadOnlyNode.mockResolvedValue({
-			status: HydraHeadStatus.Closed,
-			closedSnapshotNumber: 3n,
-			verifiedSnapshotNumber: 5n,
-		});
+		mockReadOnlyNode.mockResolvedValue(
+			liveNode({
+				status: HydraHeadStatus.Closed,
+				closedSnapshotNumber: 3n,
+				verifiedSnapshotNumber: 5n,
+			}),
+		);
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ contestGapSignature: '3<5' }) }),
@@ -311,15 +329,22 @@ describe('runHydraContestWatch', () => {
 	// HYD-01: the node is the only party that contests, so a node this service
 	// cannot reach must not leave the watch silent.
 	it('alerts when the node of an open head stays unreachable past the grace period', async () => {
-		const unobservedSince = minutesAgo(6);
+		const unobservedSince = new Date(Date.now() - 6 * 60_000);
 		mockFindMany.mockResolvedValue([
-			{ id: 'head-1', status: HydraHeadStatus.Open, isEnabled: false, ...empty, observationGapSince: unobservedSince },
+			{
+				id: 'head-1',
+				status: HydraHeadStatus.Open,
+				isEnabled: false,
+				...empty,
+				observationGapSince: unobservedSince,
+				observationCheckedAt: new Date(Date.now() - 60_000),
+			},
 		] as never);
 		mockReadOnlyNode.mockRejectedValue(new Error('connect ECONNREFUSED') as never);
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'head-1', observationGapSince: unobservedSince, observationGapAlertedAt: null },
-			data: { observationGapAlertedAt: expect.any(Date) },
+			data: { observationGapAlertedAt: expect.any(Date), observationCheckedAt: expect.any(Date) },
 		});
 		expect(mockUnobservedQueue).toHaveBeenCalledWith(
 			expect.anything(),
@@ -328,15 +353,25 @@ describe('runHydraContestWatch', () => {
 		expect(mockQueue).not.toHaveBeenCalled();
 	});
 
-	it('starts the clock when the node reports no head state', async () => {
+	// HYD-01 review: a lost socket leaves the node's last status in place. Only
+	// the verified session shows that the node is gone.
+	it('starts the clock when an attached node still says Open but lost its session', async () => {
 		mockFindMany.mockResolvedValue([
-			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: true, ...empty },
+			{ id: 'head-1', status: HydraHeadStatus.Open, isEnabled: true, ...empty },
 		] as never);
-		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.Open,
+			hasVerifiedPinnedSessions: false,
+			isChainSynced: () => true,
+		});
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'head-1', observationGapSince: null },
-			data: { observationGapSince: expect.any(Date), observationGapAlertedAt: null },
+			data: {
+				observationGapSince: expect.any(Date),
+				observationGapAlertedAt: null,
+				observationCheckedAt: expect.any(Date),
+			},
 		});
 		expect(mockUnobservedQueue).not.toHaveBeenCalled();
 	});

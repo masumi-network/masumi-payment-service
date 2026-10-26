@@ -489,6 +489,20 @@ describe('HydraNode', () => {
 	});
 
 	describe('status change processing', () => {
+		// The contest watch counts a node as observed only while this holds. A lost
+		// socket keeps the last status, so status alone would read a dead node as Open.
+		it('drops the verified session but keeps the last status when the live socket closes', async () => {
+			const { node, historyConnection, liveConnection } = await startSignedNode();
+			for (const frame of signedHistoryChain().frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(node.hasVerifiedPinnedSessions).toBe(true);
+
+			liveConnection.emit('close', new Error('socket hang up'));
+
+			expect(node.status).toBe(HydraHeadStatus.Open);
+			expect(node.hasVerifiedPinnedSessions).toBe(false);
+		});
+
 		it.each(['PeerConnected', 'PeerDisconnected', 'FutureNotification'])(
 			'ignores a forged Idle on %s after an authenticated Open session',
 			async (tag) => {

@@ -5,5 +5,6 @@ ALTER TYPE "WebhookEventType" ADD VALUE 'HYDRA_HEAD_UNOBSERVED';
 ALTER TYPE "HydraErrorType" ADD VALUE 'HeadUnobserved';
 
 -- AlterTable
-ALTER TABLE "HydraHead" ADD COLUMN "observationGapAlertedAt" TIMESTAMP(3),
+ALTER TABLE "HydraHead" ADD COLUMN "observationCheckedAt" TIMESTAMP(3),
+ADD COLUMN "observationGapAlertedAt" TIMESTAMP(3),
 ADD COLUMN "observationGapSince" TIMESTAMP(3);

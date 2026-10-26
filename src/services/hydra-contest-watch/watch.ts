@@ -18,7 +18,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { webhookEventsService } from '@/services/webhooks/events.service';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
-import { applyObservationGap, isHeadObserved } from './observation-gap';
+import { applyObservationGap, nodeUnobservedReason } from './observation-gap';
 import { readOnlyContestNode, releaseUnusedContestObservers } from './read-only-observer';
 
 /** A contest is posted and seen on chain within a few blocks. Two minutes without one is not a slow chain. */
@@ -197,9 +197,11 @@ export async function runHydraContestWatch(): Promise<void> {
 			contestGapSignature: true,
 			contestGapSince: true,
 			contestGapAlertedAt: true,
+			contestationPeriod: true,
 			contestationDeadline: true,
 			observationGapSince: true,
 			observationGapAlertedAt: true,
+			observationCheckedAt: true,
 		},
 	});
 	const connectionManager = getHydraConnectionManager();
@@ -208,20 +210,21 @@ export async function runHydraContestWatch(): Promise<void> {
 	await Promise.allSettled(
 		heads.map(async (head) => {
 			let node: HydraNode | null = null;
+			let unobservedReason: string | null;
 			try {
 				node = head.isEnabled ? connectionManager.getNode(head.id) : null;
 				if (!node) {
 					needsReadOnlyObserver.add(head.id);
 					node = await readOnlyContestNode(head.id);
 				}
+				unobservedReason = nodeUnobservedReason(node);
 			} catch (error) {
-				logger.warn('[HydraContestWatch] could not reach the head node', {
-					hydraHeadId: head.id,
-					error: error instanceof Error ? error.message : 'Unknown error',
-				});
+				const message = error instanceof Error ? error.message : 'Unknown error';
+				unobservedReason = `the service could not open a session with the node (${message})`;
+				logger.warn('[HydraContestWatch] could not reach the head node', { hydraHeadId: head.id, error: message });
 			}
 			try {
-				await applyObservationGap(head, isHeadObserved(node?.status), new Date());
+				await applyObservationGap(head, unobservedReason, new Date());
 			} catch (error) {
 				logger.warn('[HydraContestWatch] could not record whether the head node is observed', {
 					hydraHeadId: head.id,

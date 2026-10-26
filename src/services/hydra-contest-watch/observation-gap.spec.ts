@@ -8,9 +8,13 @@ const mockUpdateMany = jest.fn() as AnyMock;
 const mockErrorCreate = jest.fn() as AnyMock;
 const mockQueue = jest.fn() as AnyMock;
 
-type StoredGap = { observationGapSince: Date | null; observationGapAlertedAt: Date | null };
+type StoredGap = {
+	observationGapSince: Date | null;
+	observationGapAlertedAt: Date | null;
+	observationCheckedAt: Date | null;
+};
 /** The head row as the database holds it; a failed transaction restores it. */
-let row: StoredGap = { observationGapSince: null, observationGapAlertedAt: null };
+let row: StoredGap = { observationGapSince: null, observationGapAlertedAt: null, observationCheckedAt: null };
 
 const database = {
 	hydraHead: { updateMany: mockUpdateMany },
@@ -45,8 +49,16 @@ beforeAll(async () => {
 
 const NOW = new Date('2026-10-27T12:00:00.000Z');
 const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
-const none = { observationGapSince: null, observationGapAlertedAt: null };
-const since = (minutes: number) => ({ observationGapSince: minutesAgo(minutes), observationGapAlertedAt: null });
+const none: StoredGap = { observationGapSince: null, observationGapAlertedAt: null, observationCheckedAt: null };
+/** A gap that began `minutes` ago and was last checked one minute ago. */
+const since = (minutes: number): StoredGap => ({
+	observationGapSince: minutesAgo(minutes),
+	observationGapAlertedAt: null,
+	observationCheckedAt: minutesAgo(1),
+});
+const DOWN = 'the node has no verified live session for this head';
+const DAY_SECONDS = 86_400n;
+const GRACE_MS = 5 * 60_000;
 
 /** A conditional updateMany against `row`, the way Postgres applies it. */
 function applyConditionalUpdate({ where, data }: { where: Partial<StoredGap>; data: Partial<StoredGap> }) {
@@ -66,22 +78,57 @@ beforeEach(() => {
 	mockQueue.mockResolvedValue(undefined as never);
 });
 
-const head = (stored: StoredGap) => ({
+const head = (stored: StoredGap, contestationPeriod = DAY_SECONDS) => ({
 	id: 'head-1',
 	status: HydraHeadStatus.Closed,
+	contestationPeriod,
 	contestationDeadline: new Date('2026-10-28T12:00:00.000Z'),
 	...stored,
 });
 
-describe('isHeadObserved', () => {
-	it('counts only node states in which the node follows the head', () => {
-		expect(gap.isHeadObserved(HydraHeadStatus.Open)).toBe(true);
-		expect(gap.isHeadObserved(HydraHeadStatus.Closed)).toBe(true);
-		expect(gap.isHeadObserved(HydraHeadStatus.Final)).toBe(true);
-		expect(gap.isHeadObserved(HydraHeadStatus.Disconnected)).toBe(false);
-		// A node that lost its state comes back headless and Idle.
-		expect(gap.isHeadObserved(HydraHeadStatus.Idle)).toBe(false);
-		expect(gap.isHeadObserved(undefined)).toBe(false);
+const node = (
+	overrides: Partial<{ status: HydraHeadStatus; hasVerifiedPinnedSessions: boolean; synced?: boolean }>,
+) => {
+	const { synced = true, ...rest } = overrides;
+	return {
+		status: HydraHeadStatus.Open,
+		hasVerifiedPinnedSessions: true,
+		isChainSynced: () => synced,
+		...rest,
+	};
+};
+
+/** One watch tick per minute while the node stays down; returns the last decision. */
+async function tickEveryMinute(minutes: number) {
+	let decision;
+	for (let minute = 1; minute <= minutes; minute += 1) {
+		decision = await gap.applyObservationGap(head(row), DOWN, new Date(NOW.getTime() + minute * 60_000));
+	}
+	return decision;
+}
+
+describe('nodeUnobservedReason', () => {
+	it('counts a node that follows the head and the chain as observed', () => {
+		expect(gap.nodeUnobservedReason(node({}))).toBeNull();
+		expect(gap.nodeUnobservedReason(node({ status: HydraHeadStatus.Final }))).toBeNull();
+		expect(gap.nodeUnobservedReason({ ...node({}), isChainSynced: () => undefined })).toBeNull();
+	});
+
+	// A lost socket leaves the last status in place, so Open alone proves nothing.
+	it('does not count a node whose live session is gone, whatever status it last reported', () => {
+		expect(gap.nodeUnobservedReason(node({ hasVerifiedPinnedSessions: false }))).toBe(DOWN);
+	});
+
+	it('does not count a node that lost the head or the chain', () => {
+		expect(gap.nodeUnobservedReason(node({ status: HydraHeadStatus.Idle }))).toContain('Idle');
+		expect(gap.nodeUnobservedReason(node({ synced: false }))).toBe('the node does not follow the chain');
+	});
+});
+
+describe('observationGraceMs', () => {
+	it('gives a short contestation period a quarter of it, and caps the rest at five minutes', () => {
+		expect(gap.observationGraceMs(300n)).toBe(75_000);
+		expect(gap.observationGraceMs(DAY_SECONDS)).toBe(GRACE_MS);
 	});
 });
 
@@ -90,26 +137,44 @@ describe('decideObservationGap', () => {
 		['observed, no gap', none, true, 'unchanged'],
 		['observed again after a gap', since(10), true, 'clear'],
 		['first tick without the node', none, false, 'record'],
-		['still inside the grace period', since(4), false, 'unchanged'],
+		['still inside the grace period', since(4), false, 'touch'],
 		['past the grace period', since(5), false, 'alert'],
 		[
 			'already alerted for this gap',
-			{ observationGapSince: minutesAgo(30), observationGapAlertedAt: minutesAgo(25) },
+			{
+				observationGapSince: minutesAgo(30),
+				observationGapAlertedAt: minutesAgo(25),
+				observationCheckedAt: minutesAgo(1),
+			},
 			false,
-			'unchanged',
+			'touch',
+		],
+		[
+			'a gap left from an earlier outage',
+			{
+				observationGapSince: minutesAgo(90),
+				observationGapAlertedAt: minutesAgo(85),
+				observationCheckedAt: minutesAgo(60),
+			},
+			false,
+			'record',
 		],
 	] as const)('%s', (_name, stored, isObserved, expected) => {
-		expect(gap.decideObservationGap(stored, isObserved, NOW)).toBe(expected);
+		expect(gap.decideObservationGap(stored, isObserved, NOW, GRACE_MS)).toBe(expected);
 	});
 });
 
 describe('applyObservationGap', () => {
-	it('records the error and the webhook once the gap outlives the grace period', async () => {
+	it('records the error with its cause and the webhook once the gap outlives the grace period', async () => {
 		row = since(6);
-		await expect(gap.applyObservationGap(head(row), false, NOW)).resolves.toBe('alert');
+		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).resolves.toBe('alert');
 		expect(row.observationGapAlertedAt).toEqual(NOW);
 		expect(mockErrorCreate).toHaveBeenCalledWith({
-			data: expect.objectContaining({ hydraHeadId: 'head-1', errorType: HydraErrorType.HeadUnobserved }),
+			data: expect.objectContaining({
+				hydraHeadId: 'head-1',
+				errorType: HydraErrorType.HeadUnobserved,
+				errorMessage: expect.stringContaining(DOWN),
+			}),
 		});
 		expect(mockQueue).toHaveBeenCalledWith(expect.anything(), {
 			hydraHeadId: 'head-1',
@@ -123,29 +188,61 @@ describe('applyObservationGap', () => {
 	it('alerts again on the next tick when the webhook could not be queued', async () => {
 		row = since(6);
 		mockQueue.mockRejectedValueOnce(new Error('queue unavailable') as never);
-		await expect(gap.applyObservationGap(head(row), false, NOW)).rejects.toThrow('queue unavailable');
+		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).rejects.toThrow('queue unavailable');
 		expect(row.observationGapAlertedAt).toBeNull();
-		await expect(gap.applyObservationGap(head(row), false, NOW)).resolves.toBe('alert');
+		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).resolves.toBe('alert');
 		expect(mockQueue).toHaveBeenCalledTimes(2);
 	});
 
 	it('alerts once when two instances see the same gap', async () => {
 		row = since(6);
 		const staleRead = head(row);
-		await gap.applyObservationGap(staleRead, false, NOW);
-		await expect(gap.applyObservationGap(staleRead, false, NOW)).resolves.toBe('unchanged');
+		await gap.applyObservationGap(staleRead, DOWN, NOW);
+		await expect(gap.applyObservationGap(staleRead, DOWN, NOW)).resolves.toBe('unchanged');
 		expect(mockQueue).toHaveBeenCalledTimes(1);
 		expect(mockErrorCreate).toHaveBeenCalledTimes(1);
 	});
 
+	it('does not clear a newer gap from a stale read', async () => {
+		const staleRead = head(since(10));
+		row = since(2);
+		await gap.applyObservationGap(staleRead, null, NOW);
+		expect(row).toEqual(since(2));
+	});
+
 	it('starts a new gap after the node came back, and alerts that one too', async () => {
-		row = { observationGapSince: minutesAgo(30), observationGapAlertedAt: minutesAgo(25) };
-		await gap.applyObservationGap(head(row), true, NOW);
+		row = {
+			observationGapSince: minutesAgo(30),
+			observationGapAlertedAt: minutesAgo(25),
+			observationCheckedAt: minutesAgo(1),
+		};
+		await gap.applyObservationGap(head(row), null, NOW);
 		expect(row).toEqual(none);
-		await gap.applyObservationGap(head(row), false, NOW);
+		await gap.applyObservationGap(head(row), DOWN, NOW);
 		expect(row.observationGapSince).toEqual(NOW);
-		const later = new Date(NOW.getTime() + gap.OBSERVATION_GRACE_MS);
-		await expect(gap.applyObservationGap(head(row), false, later)).resolves.toBe('alert');
+		await expect(tickEveryMinute(GRACE_MS / 60_000)).resolves.toBe('alert');
 		expect(mockQueue).toHaveBeenCalledTimes(1);
+	});
+
+	// The service was down, or the head left the watch, while an alerted gap stayed stored.
+	it('starts over on a gap left from an earlier outage instead of staying silent', async () => {
+		row = {
+			observationGapSince: minutesAgo(90),
+			observationGapAlertedAt: minutesAgo(85),
+			observationCheckedAt: minutesAgo(60),
+		};
+		await expect(gap.applyObservationGap(head(row), DOWN, NOW)).resolves.toBe('record');
+		expect(row).toEqual({ observationGapSince: NOW, observationGapAlertedAt: null, observationCheckedAt: NOW });
+		expect(mockQueue).not.toHaveBeenCalled();
+		await expect(tickEveryMinute(GRACE_MS / 60_000)).resolves.toBe('alert');
+	});
+
+	it('alerts well inside a five-minute contestation period', async () => {
+		row = {
+			observationGapSince: minutesAgo(1.5),
+			observationGapAlertedAt: null,
+			observationCheckedAt: minutesAgo(0.5),
+		};
+		await expect(gap.applyObservationGap(head(row, 300n), DOWN, NOW)).resolves.toBe('alert');
 	});
 });
