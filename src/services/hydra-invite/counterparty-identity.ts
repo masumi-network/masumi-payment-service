@@ -1,16 +1,9 @@
 /**
- * Who is on the other end of an invite.
+ * Registry entries held by the wallet named in an invite.
  *
- * A wallet address authenticates an invite but does not identify anyone: a
- * signature proves the sender holds that key, not that the key belongs to the
- * organisation the operator meant to open a head with. Registry entries close
- * that gap, because they are the same on-chain identities agents are discovered
- * and paid through.
- *
- * The difference this makes is not cosmetic. `addr_test1qppueqn6…` is a check
- * people click past; "Acme Weather Agent" is one they perform. Approving a
- * redemption is the only human gate in the whole exchange, so it is worth
- * making the gate legible.
+ * A valid signature proves control of a wallet, not who controls it. Anyone
+ * can mint a registry entry and choose its metadata name. Show these entries
+ * as unverified claims, never as proof of the counterparty's identity.
  *
  * Best-effort by construction: a wallet holding no registry entry is a fact to
  * show the operator, not an error, and a chain lookup that fails must not block

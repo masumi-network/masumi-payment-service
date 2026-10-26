@@ -43,7 +43,7 @@ import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
 
 /**
- * Registry identity for the wallet that signed an invite.
+ * Unverified registry entries held by the wallet that signed an invite.
  *
  * Needs a Blockfrost key, which belongs to a payment source rather than to the
  * invite — so the source for that network is asked. An operator with no
@@ -295,7 +295,7 @@ export const previewInviteSchemaOutput = z.object({
 			entries: z.array(z.object({ unit: z.string(), assetName: z.string(), name: z.string().nullable() })),
 			lookupError: z.string().nullable(),
 		})
-		.describe('Registry entries held by the issuing wallet, so an operator can recognise who this is'),
+		.describe('Unverified, self-declared registry entries held by the issuing wallet'),
 });
 
 /**
@@ -324,7 +324,7 @@ function previewExpiryIso(rawExpiresAt: string): string {
  *
  * Separate from redemption on purpose: redeeming provisions a node and tells a
  * counterparty we are ready, and an operator should see who they are dealing
- * with — wallet, registry identity, terms — before any of that happens.
+ * with by checking the signed wallet address through a trusted channel.
  */
 export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -381,6 +381,11 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 
 export const redeemInviteSchemaInput = z.object({
 	code: z.string().min(1),
+	expectedIssuerWalletAddress: z
+		.string()
+		.trim()
+		.min(1)
+		.describe('Full issuer wallet address obtained through a separate trusted channel'),
 	hotWalletId: z.string().min(1).describe('Wallet that will identify us on the resulting head'),
 	autoFund: z
 		.boolean()
@@ -407,8 +412,12 @@ export const redeemInvitePost = adminAuthenticatedEndpointFactory.build({
 	input: redeemInviteSchemaInput,
 	output: redeemInviteSchemaOutput,
 	handler: async ({ input }) => {
+		const invite = decodeInviteCode(input.code);
+		if (input.expectedIssuerWalletAddress !== invite.payload.issuerWalletAddress) {
+			throw createHttpError(400, 'expected issuer wallet address does not match the invite');
+		}
 		const redeemed = await redeemHeadInvite({
-			invite: decodeInviteCode(input.code),
+			invite,
 			localHotWalletId: input.hotWalletId,
 			autoFund: input.autoFund,
 			allowInsecureExchangeHttp: input.allowInsecureExchangeHttp,

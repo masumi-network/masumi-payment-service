@@ -1795,7 +1795,7 @@ export const postHydraInvitePreview = <ThrowOnError extends boolean = false>(opt
 /**
  * Redeem a counterparty invite. (admin access required)
  *
- * Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.
+ * Requires an expected issuer wallet address, verifies the invite signature, provisions our node, sends our material to the issuer's Exchange Plane and records the head. The address comparison checks the operator's claim, not how they obtained it. Redemption spends a node and a peer port.
  */
 export const postHydraInviteRedeem = <ThrowOnError extends boolean = false>(options?: Options<PostHydraInviteRedeemData, ThrowOnError>): RequestResult<PostHydraInviteRedeemResponses, PostHydraInviteRedeemErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraInviteRedeemResponses, PostHydraInviteRedeemErrors, ThrowOnError>({
     responseType: 'json',

@@ -149,12 +149,13 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/invite/redeem',
 		summary: 'Redeem a counterparty invite. (admin access required)',
 		description:
-			"Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
+			"Requires an expected issuer wallet address, verifies the invite signature, provisions our node, sends our material to the issuer's Exchange Plane and records the head. The address comparison checks the operator's claim, not how they obtained it. Redemption spends a node and a peer port.",
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(redeemInviteSchemaInput, {}) },
 		responses: {
 			200: successResponse('Invite redeemed', redeemInviteSchemaOutput, {}),
+			400: { description: 'Expected issuer wallet address is missing or does not match the invite' },
 			409: { description: 'Wrong network, already redeemed, expired, or our own invite' },
 			502: { description: "The counterparty's exchange plane refused or could not be reached" },
 			...unauthorized,
