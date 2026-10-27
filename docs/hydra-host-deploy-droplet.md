@@ -850,11 +850,14 @@ update `src/services/hydra-host/reviewed-catalogue.ts` before placement. Press
    tokens in `/srv/hydra/host.env`, mode 600, owned by root.
 3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`.
 4. systemd unit with `RequiresMountsFor` and `TimeoutStopSec=270`, enabled.
-5. Cloud firewall: 8443 restricted, 8444 open, 5001-5032 to counterparties, 22 to
-   you.
-6. `/usr/local/sbin/hydra-peer-rules` installed, run once, and re-run on every
-   membership or DNS change.
-7. Load balancer terminating TLS in front of 8443, health check expecting 401.
+5. Cloud firewall: 8443 from the Control Plane load balancer, 8444 from the
+   Exchange Plane load balancer, 5001-5032 from counterparties, and 22 from
+   your administrative range.
+6. Install `/usr/local/sbin/hydra-peer-firewall`. Run `baseline` before the
+   Host starts. Run `refresh` on its timer and after membership changes.
+7. Use separate TLS Control and Exchange Plane load balancers. Set TCP health
+   checks on backend ports 8443 and 8444. Keep the local 401 request as a
+   manual check.
 8. Volume snapshots scheduled and restore tested; unlock secret and escrowed keys
    stored separately.
 
