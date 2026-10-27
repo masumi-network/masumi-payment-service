@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { HostInviteRecord } from './client';
@@ -6,7 +7,7 @@ import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { encrypt } from '@/utils/security/encryption';
 
 const findHosts = jest.fn<() => Promise<object[]>>();
-const findInvite = jest.fn<(query: { where: { nonce: string } }) => Promise<null>>();
+const findInvite = jest.fn<(query: { where: { nonceHash: string } }) => Promise<null>>();
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHost: { findMany: findHosts },
@@ -41,6 +42,7 @@ const record: HostInviteRecord = {
 const validResponse = { invites: [record], now: NOW };
 // A skipped record whose nonce is readable is still reported as held.
 const HELD = [record.nonce];
+const NONCE_HASH = createHash('sha256').update(record.nonce).digest('hex');
 
 beforeAll(async () => {
 	({ fetchHostRedemptions } = await import('./client'));
@@ -194,7 +196,7 @@ describe('Host redemption response validation over HTTP', () => {
 
 		await expect(pollHydraRedemptions()).resolves.toEqual({ polled: 1, adopted: 0, rejected: 0 });
 		expect(requests).toEqual(['/v1/invites?redeemedSince=0', '/healthy/v1/invites?redeemedSince=0']);
-		expect(findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { nonce: record.nonce } }));
+		expect(findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { nonceHash: NONCE_HASH } }));
 
 		requests.length = 0;
 		responseBody = JSON.stringify({ invites: [], now: NOW });
@@ -225,6 +227,6 @@ describe('Host redemption response validation over HTTP', () => {
 		await pollHydraRedemptions();
 
 		expect(requests).toEqual(['/v1/invites?redeemedSince=0', '/v1/invites?redeemedSince=0']);
-		expect(findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { nonce: record.nonce } }));
+		expect(findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { nonceHash: NONCE_HASH } }));
 	});
 });
