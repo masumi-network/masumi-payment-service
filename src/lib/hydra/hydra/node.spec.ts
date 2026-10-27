@@ -26,6 +26,7 @@ import {
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
 import type { L2MintIncident } from './l2-mint-tally';
+import { stringifyHydraJson } from './json';
 import {
 	HydraCommandRefusedUnsyncedError,
 	HydraProtocolError,
@@ -1962,6 +1963,37 @@ describe('HydraNode', () => {
 				expect(historyConnection.invalidate).not.toHaveBeenCalled();
 			},
 		);
+
+		it('hands each verified snapshot to the signed-snapshot store, and no forged one', async () => {
+			const onSignedSnapshotVerified = jest.fn();
+			const { historyConnection } = await startSignedNode({ onSignedSnapshotVerified });
+			const { frames } = signedHistoryChain();
+			const [first, second, third] = frames;
+			const forged = structuredClone(third);
+			forged.signatures.multiSignature[1] = forged.signatures.multiSignature[0];
+
+			for (const frame of [first, second, forged]) historyConnection.emit('message', JSON.stringify(frame));
+
+			const stored = onSignedSnapshotVerified.mock.calls.map(([payload]) => JSON.parse(stringifyHydraJson(payload)));
+			expect(stored).toEqual([
+				{ tag: 'ConfirmedSnapshot', snapshot: first.snapshot, signatures: first.signatures },
+				{ tag: 'ConfirmedSnapshot', snapshot: second.snapshot, signatures: second.signatures },
+			]);
+		});
+
+		it('stores a signed snapshot even when its transition fails the replay', async () => {
+			const onSignedSnapshotVerified = jest.fn();
+			const { node, historyConnection } = await startSignedNode({ onSignedSnapshotVerified });
+			const [first, , third] = signedHistoryChain().frames;
+
+			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+
+			expect(node.confirmedTransactionHistoryError).toBeDefined();
+			const storedNumbers = onSignedSnapshotVerified.mock.calls.map(
+				([payload]) => (payload as { snapshot: { number: number } }).snapshot.number,
+			);
+			expect(storedNumbers).toEqual([first.snapshot.number, third.snapshot.number]);
+		});
 
 		it('pages a large replay without trusting a partial prefix as complete', async () => {
 			const { node, historyConnection } = await startSignedNode({ maxUnreconciledTransactions: 1 });

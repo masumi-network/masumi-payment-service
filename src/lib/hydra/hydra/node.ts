@@ -249,6 +249,7 @@ export class HydraNode extends EventEmitter {
 			},
 			trustLocalNodeSnapshotMetadata: this._trustLocalNodeSnapshotMetadata,
 			computeSnapshotAccumulator: config.computeSnapshotAccumulator,
+			onSignedSnapshotVerified: config.onSignedSnapshotVerified,
 			get persistenceRotationError(): HydraProtocolError | undefined {
 				return self._unsupportedPersistenceRotationError;
 			},

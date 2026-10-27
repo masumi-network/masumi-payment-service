@@ -59,6 +59,7 @@ import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame
 import { assertSafeFirstHistorySnapshot, isIdenticalSignedSnapshotRedelivery } from './node-history-snapshot-guards';
 import { pageClosedBeforeHeadExisted } from './node-history-page';
 import type { HistoryReplayHost } from './node-history-replay-host';
+import { toConfirmedSnapshotPayload } from './signed-snapshot';
 import { HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
@@ -604,8 +605,13 @@ export class HydraHistoryReplay {
 		const signed = verifyHydraSnapshotSignatures(parsedMessage, orderedKeys);
 		const computeAccumulator = this.host.computeSnapshotAccumulator ?? computeHydraAccumulatorHash;
 		const accumulator = computeAccumulator([...signed.outputs.values()]);
-		const adopt = (computedAccumulator: string) =>
-			this.adoptHistorySnapshot(parsedMessage, completeHydraSnapshotVerification(signed, computedAccumulator), pass);
+		const adopt = (computedAccumulator: string) => {
+			const verifiedSnapshot = completeHydraSnapshotVerification(signed, computedAccumulator);
+			// Every party signed it, so it can win a contest even when this replay
+			// rejects the transition that led to it.
+			this.host.onSignedSnapshotVerified?.(toConfirmedSnapshotPayload(parsedMessage));
+			return this.adoptHistorySnapshot(parsedMessage, verifiedSnapshot, pass);
+		};
 		const failCurrent = (error: unknown) => {
 			if (pass === this._pass && !this._failed) this.fail(error);
 		};
