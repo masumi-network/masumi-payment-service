@@ -336,11 +336,13 @@ describe('executeHydraDecommit request outcomes', () => {
 	// deposit side already does for the mirror case ("still being folded").
 	it('refuses a withdrawal while the head still has a pending decommit', async () => {
 		mockFetchPendingDecommitRefs.mockResolvedValue(['abc123'.repeat(10) + 'de#0']);
+		const onAccepted = jest.fn();
 
-		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+		await expect(executeHydraDecommit({ headId: 'head-1', onAccepted })).rejects.toMatchObject({
 			statusCode: 409,
 			message: expect.stringContaining('still being settled on L1'),
 		});
+		expect(onAccepted).not.toHaveBeenCalled();
 
 		expect(mockDecommitUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
@@ -1029,5 +1031,49 @@ describe('executeHydraDecommit verification errors', () => {
 				errorAt: expect.any(Date),
 			},
 		});
+	});
+});
+
+describe('executeHydraDecommit acceptance', () => {
+	it('W1 accepts once the withdrawal is recorded Pending, before it is requested from the node', async () => {
+		const onAccepted = jest.fn();
+
+		await executeHydraDecommit({ headId: 'head-1', onAccepted });
+
+		expect(onAccepted).toHaveBeenCalledTimes(1);
+		const pendingWrite = mockDecommitUpdate.mock.calls.findIndex(
+			([update]) => (update as { data?: { status?: string } }).data?.status === 'Pending',
+		);
+		expect(pendingWrite).toBeGreaterThanOrEqual(0);
+		expect(onAccepted.mock.invocationCallOrder[0]).toBeGreaterThan(
+			mockDecommitUpdate.mock.invocationCallOrder[pendingWrite],
+		);
+		expect(onAccepted.mock.invocationCallOrder[0]).toBeLessThan(mockDecommitCall.mock.invocationCallOrder[0]);
+	});
+
+	it('W2 does not accept more lovelace than is eligible', async () => {
+		const onAccepted = jest.fn();
+
+		await expect(
+			executeHydraDecommit({ headId: 'head-1', lovelace: 1_000_000_000n, onAccepted }),
+		).rejects.toMatchObject({
+			statusCode: 400,
+			message: expect.stringContaining('lovelace is eligible to withdraw, which is less than the 1000000000 requested'),
+		});
+		expect(onAccepted).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
+	// The node's answer comes after the answer to the operator, and lands on the row.
+	it('W3 has already accepted when the node rejects the request, which then fails the row', async () => {
+		const onAccepted = jest.fn();
+		mockDecommitCall.mockRejectedValueOnce(new Error('DecommitInvalid: nope'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1', onAccepted })).rejects.toThrow('rejected the withdrawal');
+
+		expect(onAccepted).toHaveBeenCalledTimes(1);
+		expect(mockDecommitUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
+		);
 	});
 });

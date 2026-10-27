@@ -4,6 +4,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { HydraTransportAmbiguousError } from '@/lib/hydra';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
 import { countLiveInHeadEscrows } from '@/services/hydra-decommit/live-escrows';
 import {
@@ -13,6 +14,7 @@ import {
 	WALLET_BUSY_MESSAGE,
 } from '@/services/hydra-decommit/refusals';
 import { staleWithdrawal } from '@/services/hydra-decommit/stale';
+import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import {
@@ -191,13 +193,15 @@ export function assertWithdrawAmountShape(input: {
 }
 
 /**
- * Start a withdrawal. Does not wait for it.
+ * Start a withdrawal. Waits until it is recorded, then returns.
  *
  * Same reasoning as the top-up endpoint: the work outlives the request. An
  * exact amount is split inside the head, the decommit is proposed, and the head
  * then has to sign a snapshot removing it before its node posts the L1
- * transaction — none of which this request can usefully hold open. The resulting
- * rows are readable through listWithdrawalsGet.
+ * transaction. The request waits only until the withdrawal is built, signed and
+ * recorded Pending (the split takes about a second), so every refusal up to
+ * there is the answer. What the node and the head decide afterwards lands on the
+ * row, readable through listWithdrawalsGet.
  */
 export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -207,11 +211,11 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		assertWithdrawAmountShape(input);
 
 		// Every refusal the executor decides before its `try` block, mirrored here.
-		// The work itself outlives the request, but none of these is recorded: no
-		// `HydraDecommit` row, no head error, nothing in the withdrawal list. The
-		// operator was shown "Withdrawal started" for a withdrawal that had already
-		// been refused, and the reason went to a log they were never going to read.
-		// The executor re-checks all of it, because minutes pass before it acts.
+		// None of these is recorded: no `HydraDecommit` row, no head error, nothing
+		// in the withdrawal list. The executor re-checks all of it, and its own
+		// refusals are the answer too, but it records a head error for a withdrawal
+		// already in progress or for live escrows on `drain`; refused here, they
+		// leave no head error behind.
 		//
 		// Kept in step with `executeHydraDecommit` deliberately: this list used to
 		// stop at the connection check while the executor went on to refuse a
@@ -268,13 +272,47 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		});
 		if (claimableWallets === 0) throw createHttpError(409, WALLET_BUSY_MESSAGE);
 
-		void executeHydraDecommit({
-			headId: input.headId,
-			lovelace: input.lovelace ? BigInt(input.lovelace) : null,
-			asset: input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
-			drain: input.drain,
-		}).catch((error: unknown) => {
-			logger.error(`hydra: withdrawal from head ${input.headId} failed: ${(error as Error).message}`);
+		// Answered once the executor has recorded the withdrawal Pending, not before.
+		// Asking for more than is eligible, or an asset the wallet does not hold,
+		// used to answer `accepted` and fail the row a moment later; now it is the
+		// answer. The node's own verdict comes after and lands on the row.
+		let accepted = false;
+		await new Promise<void>((resolve, reject) => {
+			void executeHydraDecommit({
+				headId: input.headId,
+				lovelace: input.lovelace ? BigInt(input.lovelace) : null,
+				asset:
+					input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
+				drain: input.drain,
+				onAccepted: () => {
+					accepted = true;
+					resolve();
+				},
+			}).then(
+				() => resolve(),
+				(error: unknown) => {
+					// Once accepted the answer has gone out, and this log is where the error goes.
+					if (accepted) {
+						logger.error(`hydra: withdrawal from head ${input.headId} failed: ${describeErrorForOperator(error)}`);
+						return;
+					}
+					// Before that it is the answer, with the reason the row records, shown
+					// even for a 5xx: in production a hidden message reads only "Bad
+					// Gateway" or "Internal Server Error".
+					reject(
+						createHttpError.isHttpError(error)
+							? Object.assign(error, { expose: true })
+							: // The node did not answer the in-head split: it may still apply.
+								createHttpError(
+									error instanceof HydraTransportAmbiguousError ? 504 : 500,
+									describeErrorForOperator(error),
+									{
+										expose: true,
+									},
+								),
+					);
+				},
+			);
 		});
 
 		return { headId: input.headId, accepted: true as const };

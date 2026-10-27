@@ -14884,7 +14884,7 @@ export type PostHydraHeadWithdrawData = {
 
 export type PostHydraHeadWithdrawErrors = {
     /**
-     * Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant
+     * Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant; or the wallet holds nothing eligible, less than was asked for, or too little to leave the remainder an output needs; or the withdrawn output, or carving an asset onto its own output, needs more lovelace than is eligible
      */
     400: unknown;
     /**
@@ -14896,13 +14896,29 @@ export type PostHydraHeadWithdrawErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
+     * Head not open, disabled, on a paused Hydra Host, not yet identified on chain, or its node is still catching up; its participants, payment sources or network no longer valid, or the head changed during on-chain verification; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
      */
     409: unknown;
     /**
-     * No live connection to the head
+     * The withdrawal transaction would be larger than the head accepts
+     */
+    422: unknown;
+    /**
+     * Preparing the withdrawal failed for another reason, such as the node refusing the in-head split or not answering a read of the in-head funds
+     */
+    500: unknown;
+    /**
+     * No live connection to the head, the head could not be verified on chain, the head state could not be read, the head reported invalid ledger parameters, or the in-head split confirmed without the expected output
      */
     502: unknown;
+    /**
+     * The Hydra Host has not recently confirmed the node's chain state; retry shortly
+     */
+    503: unknown;
+    /**
+     * The node did not answer the in-head split, or the head did not confirm it in time. Nothing has left the head, but the split may still apply, so the wallet can stay busy until it settles
+     */
+    504: unknown;
 };
 
 export type PostHydraHeadWithdrawResponses = {

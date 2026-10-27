@@ -17,6 +17,8 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import createHttpError from 'http-errors';
+import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 
@@ -30,6 +32,7 @@ const mockCountLiveEscrows = jest.fn() as AnyMock;
 const mockGetHead = jest.fn() as AnyMock;
 const mockAssertReady = jest.fn() as AnyMock;
 const mockExecute = jest.fn() as AnyMock;
+const mockLoggerError = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
@@ -51,7 +54,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: jest.fn(), error: mockLoggerError, debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
@@ -238,5 +241,73 @@ describe('withdrawal list paging', () => {
 			take: 10,
 			cursor: { id: 'decommit-9' },
 		});
+	});
+});
+
+describe('withdrawHeadPost answers on acceptance', () => {
+	it('W-R1 answers with the executor refusal when it refuses before accepting', async () => {
+		mockExecute.mockRejectedValue(
+			createHttpError(
+				400,
+				'Only 115000000 lovelace is eligible to withdraw, which is less than the 1000000000 requested',
+			),
+		);
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 400,
+			message: expect.stringContaining('is eligible to withdraw'),
+		});
+		expect(mockLoggerError).not.toHaveBeenCalled();
+	});
+
+	// In production an unexposed 5xx answers with only its default message.
+	it('W-R1b shows the reason of a 5xx refusal before accepting', async () => {
+		mockExecute.mockRejectedValue(createHttpError(504, 'The in-head split abc was not confirmed within 60s'));
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 504, expose: true });
+	});
+
+	it('W-R1d answers a split the node never answered as 504, not as a refusal', async () => {
+		mockExecute.mockRejectedValue(
+			new HydraTransportAmbiguousError('Hydra did not report an outcome for transaction abc'),
+		);
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 504, expose: true });
+	});
+
+	it('W-R1c answers an unexpected error before accepting with its reason', async () => {
+		mockExecute.mockRejectedValue(new Error('TxInvalid: split input unknown'));
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 500,
+			expose: true,
+			message: 'TxInvalid: split input unknown',
+		});
+	});
+
+	it('W-R2 does not answer before the executor accepts', async () => {
+		let accept: () => void = () => undefined;
+		mockExecute.mockImplementation((params: { onAccepted: () => void }) => {
+			accept = params.onAccepted;
+			return new Promise(() => undefined); // keeps running after the answer
+		});
+		let answered = false;
+		const answer = withdrawHeadPost.handler({ input }).then(() => {
+			answered = true;
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(answered).toBe(false);
+		accept();
+		await answer;
+		expect(answered).toBe(true);
+		expect(mockExecute).toHaveBeenCalledWith(
+			expect.objectContaining({ headId: 'head-1', onAccepted: expect.any(Function) }),
+		);
+	});
+
+	it('W-R3 still answers accepted when the node rejects after acceptance, and logs it', async () => {
+		mockExecute.mockImplementation(async (params: { onAccepted: () => void }) => {
+			params.onAccepted();
+			throw new Error('Hydra node rejected the withdrawal: DecommitInvalid');
+		});
+		await expect(withdrawHeadPost.handler({ input })).resolves.toMatchObject({ accepted: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining('DecommitInvalid'));
 	});
 });
