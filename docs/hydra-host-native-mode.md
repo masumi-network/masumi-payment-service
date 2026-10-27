@@ -181,6 +181,14 @@ timer. On a Linux service manager, make `baseline` a start precondition, as the
 droplet unit does with `ExecStartPre`. The generated ruleset covers this case: it emits an `input` chain
 alongside the `forward` chain that Docker bridge traffic needs.
 
+For a native Host with this firewall helper, set `HYDRA_HOST_CONTROL_SOCKET`
+and `HYDRA_CONTROL_SOCKET` to the same absolute path inside the Host data
+directory. Make that directory private to the Host user (mode `0700`). The
+helper needs `HYDRA_CONTROL_SOCKET_UID` set to that user's numeric uid. It
+refuses to send its admin token to the TCP control port. Use a path with
+trusted, non-writable ancestors and no symlink in the path. The helper checks
+these before sending the token.
+
 ### 3. Keep it running
 
 There is no supervisor around the supervisor here. Use whatever the machine

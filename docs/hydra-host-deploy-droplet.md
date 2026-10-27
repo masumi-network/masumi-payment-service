@@ -204,6 +204,7 @@ docker create --name hydra-host \
   -v /mnt/hydra_data:/data \
   -v /run/hydra-peer-egress:/run/hydra-peer-egress:ro \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
+  -e HYDRA_HOST_CONTROL_SOCKET=/data/peer-firewall.sock \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
   -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
   -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=false \
@@ -243,6 +244,13 @@ transaction ids`.
 `docker create` rather than `docker run -d`: the container is created here and
 started by systemd in the next step, so there is exactly one thing that decides
 when it runs.
+
+The private control socket is inside the existing `/data` mount. The Host
+checks that its directory belongs to uid `10001` and has no group or other
+access, as set in the Ownership step. The socket is separate from TCP 8443.
+When upgrading an existing container, recreate it with this environment
+setting. `docker start` cannot add an environment setting to a created
+container.
 
 `--memory` caps what the container can take from the droplet. Under
 `--network host` the peer plane is open to every address the nftables ruleset
@@ -378,8 +386,9 @@ peer port is closed cannot reach its counterparty. The Host therefore generates 
 per-head source allow-list from what it already knows: a counterparty's address
 must already be configured to set `--peer`.
 
-The Host emits the rules and does not apply them. The container cannot alter the
-firewall of the machine it runs on, and should not try.
+The Host reports the allowed peer addresses and does not apply firewall rules.
+The root helper validates those addresses and renders the nftables commands
+itself. It does not execute the `nftables` text returned by the Host.
 
 [`packages/hydra-host/scripts/hydra-peer-firewall`](../packages/hydra-host/scripts/hydra-peer-firewall)
 applies them. Install it with its settings and the admin token:
@@ -393,8 +402,17 @@ cat > /etc/default/hydra-peer-firewall <<'EOF'
 HYDRA_PEER_PORT_START=5001
 HYDRA_PEER_PORT_COUNT=32
 HYDRA_ADMIN_TOKEN_FILE=/srv/hydra/admin-token
+HYDRA_CONTROL_SOCKET=/mnt/hydra_data/peer-firewall.sock
+HYDRA_CONTROL_SOCKET_UID=10001
 EOF
 ```
+
+The helper sends the admin token through this Unix socket only. It has no TCP
+fallback, even while the Host is restarting. Remove any old
+`HYDRA_CONTROL_URL` setting. A refresh fails closed if the socket is absent.
+The Host socket path and helper socket path refer to the same file through the
+`/data` bind mount. The helper checks that the socket and its private parent
+directory belong to uid `10001` before it sends the token.
 
 The port range must match `HYDRA_HOST_PEER_PORT_START` and
 `HYDRA_HOST_PEER_PORT_COUNT`. `refresh` compares it with the `peerRange` the
@@ -402,20 +420,20 @@ Host reports and refuses a mismatch.
 
 It has three commands:
 
-| Command    | What it does                                                                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `baseline` | Loads a ruleset that refuses the whole peer range. The `ExecStartPre` of the Host unit runs it.                                                   |
-| `refresh`  | Fetches `GET /v1/peer-allowlist`, checks the file, applies it, persists it to `/etc/nftables.d/hydra-peer.nft`, then acknowledges it to the Host. |
-| `verify`   | Reads the loaded ruleset and exits 0 only if both the `input` and `forward` chains refuse the range. Prints `verified` on success.                |
+| Command    | What it does                                                                                                                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseline` | Loads a ruleset that refuses the whole peer range. The `ExecStartPre` of the Host unit runs it.                                                                                          |
+| `refresh`  | Fetches `GET /v1/peer-allowlist` over the private socket, validates addresses, renders and applies the rules, persists them to `/etc/nftables.d/hydra-peer.nft`, then acknowledges them. |
+| `verify`   | Reads the loaded ruleset and exits 0 only if both the `input` and `forward` chains refuse the range. Prints `verified` on success.                                                       |
 
 `baseline` and `refresh` both end with `verify`. A command that cannot prove the
 loaded state exits non-zero. A failed fetch leaves the loaded ruleset unchanged.
 
-`refresh` refuses a file that does not refuse the range on exactly two hooks or
-that does not end with the closing brace. `nft -c` alone does not catch this.
-The generated ruleset opens with `add table` and `flush table`, so a fetch that
-dies after those two lines leaves a file that is valid syntax and that flushes
-every rule. Applied, that file opens the whole peer range.
+`refresh` checks the Host range, peer ports, closed states and IPv4 addresses
+before it writes a local ruleset. It then requires a drop on both hooks and a
+closing brace. `nft -c` alone does not catch a truncated file. The generated
+ruleset opens with `add table` and `flush table`, so a partial file could
+otherwise open the peer range.
 
 Refresh on a timer, so membership and DNS changes reach the firewall without an
 operator. `/etc/systemd/system/hydra-peer-firewall.service`:
@@ -871,13 +889,16 @@ update `src/services/hydra-host/reviewed-catalogue.ts` before placement. Press
    `/mnt/hydra_data`, owned by `10001:10001`; unlock secret stored separately.
 2. Blockfrost project id in a file, mode 600, owned by `10001:10001`. Host
    tokens in `/srv/hydra/host.env`, mode 600, owned by root.
-3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`.
+3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`,
+   and `HYDRA_HOST_CONTROL_SOCKET=/data/peer-firewall.sock`.
 4. systemd unit with `RequiresMountsFor` and `TimeoutStopSec=270`, enabled.
 5. Cloud firewall: 8443 from the Control Plane load balancer, 8444 from the
    Exchange Plane load balancer, 5001-5032 from counterparties, and 22 from
    your administrative range.
-6. Install `/usr/local/sbin/hydra-peer-firewall`. Run `baseline` before the
-   Host starts. Run `refresh` on its timer and after membership changes.
+6. Install `/usr/local/sbin/hydra-peer-firewall` and set
+   `HYDRA_CONTROL_SOCKET=/mnt/hydra_data/peer-firewall.sock` with uid `10001`.
+   Run `baseline` before the Host starts. Run `refresh` on its timer and after
+   membership changes.
 7. Enable `hydra-peer-firewall-baseline.service`.
 8. Install `/usr/local/sbin/hydra-peer-egress` and
    `/etc/default/hydra-peer-egress`. Run `baseline`, then `verify`.

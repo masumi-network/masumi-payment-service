@@ -235,6 +235,9 @@ starts, so the whole range is refused and verified. Then run
 `hydra-peer-firewall refresh` on a timer and after every membership change, so
 each peered port opens to its counterparty only. Skipping it leaves 32
 unauthenticated etcd raft ports open to every address the cloud firewall admits.
+Configure the private Unix control socket on both the Host and root helper
+before starting the refresh timer. The helper has no TCP fallback. See the
+socket paths in [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md).
 Also set `HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true`. The Host then keeps a
 removed node's peer port out of use until `refresh` acknowledges a ruleset
 without that node's peers. Without it, a new node on that port is open to the

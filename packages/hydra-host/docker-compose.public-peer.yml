@@ -12,6 +12,12 @@
 #   3. `sudo hydra-peer-firewall refresh` opens each peered port. Run it on the
 #      hydra-peer-firewall.timer, and again after every provision, invite
 #      redemption, node removal or DNS change.
+#      Create a persistent HYDRA_CONTROL_SOCKET_DIR on the Linux Docker host,
+#      for example /srv/hydra-control. Set owner 10001:10001 and mode 0700.
+#      Configure the root helper with
+#      HYDRA_CONTROL_SOCKET=$HYDRA_CONTROL_SOCKET_DIR/control.sock and
+#      HYDRA_CONTROL_SOCKET_UID=10001. A directory under /run needs a boot
+#      service to recreate it before Docker starts.
 #
 #   4. Enable hydra-peer-firewall-baseline.service. Docker bakes the
 #      acknowledgement into the container once, at `up`, and restarts the
@@ -30,6 +36,7 @@
 services:
   hydra-host:
     environment:
+      HYDRA_HOST_CONTROL_SOCKET: /run/hydra-host-control/control.sock
       # Required acknowledgement. `hydra-peer-firewall verify` prints a value
       # only when the loaded ruleset refuses the peer range on both hooks, so an
       # empty value means the firewall is not verified.
@@ -37,6 +44,8 @@ services:
       # Hold a removed node's peer port until `refresh` acknowledges a ruleset
       # without that node's peers. Provisioning waits for the first refresh.
       HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH: 'true'
+    volumes:
+      - ${HYDRA_CONTROL_SOCKET_DIR:?set an absolute private host directory}:/run/hydra-host-control
     ports:
       # Must match HYDRA_HOST_PEER_PORT_START and _COUNT in the base file.
       - '${HYDRA_HOST_PEER_BIND_IP:-0.0.0.0}:5001-5032:5001-5032'
