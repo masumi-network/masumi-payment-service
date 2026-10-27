@@ -39,9 +39,12 @@ Head's error list, so an operator without a webhook receiver still sees them.
    once the pause outlasts the bound above.
    Resume the Host before the contestation deadline.
    A running node whose history replay keeps failing raises this alert too,
-   because the watch uses only a completed, verified replay. Check the Head's
-   error list for a `HistoryReplay` failure before you restore a node that is
-   running.
+   because the watch uses only a completed, verified replay. Before you restore
+   a node that is running, look for the replay failure. For an enabled Head
+   with a live connection, it is a `CommandFailed` entry with input
+   `HistoryReplay` in the Head's error list. A disabled Head is watched through
+   a read-only observer that records no such entry, so search the service log
+   for `[HydraNode] History replay rejected a protocol frame` instead.
 3. If node persistence is lost, use the stored `initChainSlot` and
    `initChainHash` as the pre-Init replay point for `--start-chain-from`.
    REPORTED: [the preprod recovery drill](hydra-persistence-recovery-verification.md)

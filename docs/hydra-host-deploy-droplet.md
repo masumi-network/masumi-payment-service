@@ -98,7 +98,10 @@ boot dependency and waits at the console for the passphrase with no timeout.
 SSH does not start, so the Host stays offline until someone types the
 passphrase in the DigitalOcean console. With `nofail`, the droplet boots with
 the volume locked. Unlock it over SSH with
-`systemctl start systemd-cryptsetup@hydra_data`, then run `mount /mnt/hydra_data`.
+`systemctl start systemd-cryptsetup@hydra_data`, then run
+`systemctl start hydra-host`. The Host unit failed at boot on its missing mount,
+and `Restart=always` does not retry a failed dependency. Starting the unit
+mounts the volume through `RequiresMountsFor`.
 
 Persist the mapped filesystem in `/etc/fstab`:
 
