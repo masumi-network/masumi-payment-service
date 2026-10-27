@@ -1,17 +1,18 @@
-# Runbook: stuck Hydra L2 lock reservations (locked purchasing wallet)
+# Runbook: held Hydra L2 reservations
 
 ## Symptom
 
 A purchasing hot wallet stops participating in **both** L1 and L2 batching. The
 wallet row has `lockedAt != null` and `pendingTransactionId != null`, the
 referenced `Transaction` row is `Pending` with an `intendedTxHash` (and possibly
-`txHash = null`), and the purchase request is parked in `FundsLockingInitiated`.
+`txHash = null`). An initial lock leaves the purchase in
+`FundsLockingInitiated`. An action reservation can also remain held.
 Logs show one of:
 
 - `L2 funds-lock failed; reservation retained fail-closed` (submit threw)
 - `L2 funds-lock accepted but txHash persistence failed; reservation retained`
 - `Hydra returned divergent txHash; preserving reservation fail-closed`
-- hourly `expired L2 lock reservation retained` warnings from
+- hourly `expired L2 reservations require explicit reconciliation` warnings from
   `reportExpiredL2Reservations`
 
 ## Why this is fail-closed on purpose
@@ -21,8 +22,9 @@ acceptance is not consensus proof, and history absence is not proof of
 rejection while the tx could still appear in a signed snapshot. Auto-releasing
 the reservation could double-lock the same purchase (once on L2 from the
 withheld body, once on L1 from the retried request). So the service retains the
-reservation and waits for signed-snapshot evidence; it never times it out on
-its own.
+reservation until a verified release nudge spends the reserved inputs, or
+an operator accepts the risk of an unprovable release. Expiry alone never frees
+the wallet.
 
 In the normal case no action is needed: if the tx **was** accepted by the head,
 the event/replay path matches it by `intendedTxHash` and confirms it; the
@@ -43,94 +45,55 @@ WHERE t.status = 'Pending' AND t.layer = 'L2'
 Also check `HydraHead.reconciliationStalledTxId` — a stalled replay can delay
 the confirmation that would resolve the reservation. Resolve the stall first.
 
-## Safe manual release: only with the automatic path's proof
+## Automatic release and its proof
 
-Expiry, history absence and live-UTxO absence are **not** enough. A peer can
-hold a snapshot our node signed before expiry and publish it later. If that
-snapshot applied the body, a released and retried purchase locks twice. See
-`decideL2ReservationRelease` in
-`packages/payment-source-v2/src/services/hydra-reconcile/l2-reservation-release-decision.ts`.
+The recovery job requires healthy, verified Head history and a fresh Head
+clock past the body's validity bound plus grace. For an initial lock with
+recorded inputs and a trusted value floor, it records and submits a release
+nudge. The nudge spends exactly those inputs. Its one output carries at least
+the purchases' paid funds, which are the value floor. It releases the
+reservation only when the
+nudge's exact nonce-tagged output bytes appear in a verified current snapshot.
+For a Final Head, it also requires that output in the verified final snapshot
+and a confirmed L1 fanout. See `l2-release-nudge-proof.ts`,
+`l2-reservation-recovery.ts`, and `final-l2-reservation-release.ts` in
+`packages/payment-source-v2/src/services/hydra-reconcile/`.
 
-Prefer the automatic release: it runs the proof below every reconcile pass and
-marks the row with `l2ReleasedByInputProofAt`. Release by hand only when the
-automatic path cannot run (for example after a restart wiped its in-memory
-baseline while the head stays idle), and only when ALL of these hold:
+Input references reported by a node, history absence, expiry, and a node's
+rejection are not release proof. An idle Head may need time to confirm the
+recorded nudge. Actions and older reservations without the required inputs or
+value floor remain held for operator review. The release helper changes the
+transaction to `RolledBack`, stamps `l2ReleasedByInputProofAt`, frees the
+reserved wallet, and restores request state in one serializable transaction.
 
-1. The head's ordered replay is **healthy** (`reconciliationStalledTxId IS NULL`)
-   and `Node.confirmedTransactionHistoryReady` was reached.
-2. The signed validity bound has **provably passed**: the current head chain
-   time (latest Tick) is past `Transaction.invalidHereafterSlot`'s slot-end
-   time.
-3. `Transaction.l2ReservationInputRefs` is not empty. Without the input refs
-   there is no proof. Leave the reservation in place.
-4. You have ONE of these two proofs:
-   - **Post-expiry snapshot proof.** After step 2, read **our own** node's
-     confirmed snapshot number `B` from `GET /snapshot` (not from replay or the
-     DB, which can lag). Then wait for a confirmed snapshot `S` with
-     `S.number > B` whose multi-signature verifies against the head's
-     participant keys. Every ref in `l2ReservationInputRefs` must be present
-     in `S`'s UTxO set. If `l2ReleaseNudgeInputRef` is set, that ref must be
-     **absent** from `S` (the nudge has applied). An idle head makes no new
-     snapshot: self-send an unreserved wallet UTxO in the head to produce one.
-     Our node signs at most `B + 1` while the body is still valid, so `S`
-     includes every snapshot that could have applied it.
-   - **Final fanout proof.** The head is closed and its fanout is confirmed on
-     L1. The fanout matches the verified final snapshot
-     (`resolveVerifiedHydraFanoutReferences` accepts it), every ref in
-     `l2ReservationInputRefs` is in that final snapshot's UTxO set, and the
-     body is not in confirmed history. No snapshot can follow a fanout.
+## Operator release when proof is unavailable
 
-   An input that is missing from the snapshot, or present only as a pending
-   commit, proves nothing. Keep the reservation.
+1. Check that the Head replay is healthy and that the body's validity bound
+   has passed. Inspect independent participant or L1 evidence for any sign
+   that the body applied. Do not treat absence from one node as proof.
+2. Call `GET /api/v1/hydra/head/l2-reservations?headId=<head-id>`. Inspect
+   `releasable`, `blockedReason`, `updatedAt`, the intended hash, and the
+   recorded nudge. Resolve a blocked reason before proceeding.
+3. If release is still necessary, call
+   `POST /api/v1/hydra/head/l2-reservations/release` with `headId`,
+   `transactionId`, `expectedUpdatedAt` from step 2, and
+   `acknowledgeUnprovable: true`. The server rechecks the row and live Head
+   evidence and may refuse the release. Only an Open Head that is not
+   closing can use this endpoint.
 
-Then run the release in one serializable transaction. Fill in the values you
-saw while you collected the proof. Each guard raises on mismatch, so a row that
-changed after the proof (a late confirmation, an automatic release, another
-operator) aborts the whole transaction instead of being overwritten.
+A Final Head with a held reservation whose nudge never applied has no
+supported release. The pending L2 transaction also blocks the Head's final
+handoff (`final-handoff.ts`). Do not change the rows by hand. Escalate it to
+the payment service maintainers with the Head id and the transaction id.
 
-```sql
-BEGIN ISOLATION LEVEL SERIALIZABLE;
-DO $$
-DECLARE
-  changed integer;
-BEGIN
-  UPDATE "Transaction"
-     SET status = 'FailedViaTimeout', "l2ReleasedByInputProofAt" = now()
-   WHERE id = '<tx-id>'
-     AND status = 'Pending'
-     AND layer = 'L2'
-     AND "intendedTxHash" = '<intended-tx-hash>'
-     AND "txHash" IS NOT DISTINCT FROM <tx-hash-or-NULL>
-     AND "l2ReservationInputRefs" = ARRAY[<input-refs-checked-in-the-proof>]::text[]
-     AND "l2ReleaseNudgeInputRef" IS NOT DISTINCT FROM <nudge-ref-or-NULL>;
-  GET DIAGNOSTICS changed = ROW_COUNT;
-  IF changed <> 1 THEN
-    RAISE EXCEPTION 'Transaction <tx-id> no longer matches the proof';
-  END IF;
-
-  UPDATE "HotWallet"
-     SET "lockedAt" = NULL, "pendingTransactionId" = NULL
-   WHERE id = '<wallet-id>' AND "pendingTransactionId" = '<tx-id>';
-  GET DIAGNOSTICS changed = ROW_COUNT;
-  IF changed <> 1 THEN
-    RAISE EXCEPTION 'Wallet <wallet-id> is not reserved by <tx-id>';
-  END IF;
-END $$;
--- Restore the purchase request to retryable state (see the Transaction row's
--- l2ReservationPreviousActionId / l2ReservationPreviousTransactionId /
--- l2ReservationPreviousLayer columns for the exact prior wiring). Guard each
--- request update with "currentTransactionId" = '<tx-id>' and check that it
--- changed exactly one row, as above.
-COMMIT;
-```
-
-`l2ReleasedByInputProofAt` makes replay halt if the body ever confirms later.
-`l2ReleasedByOperatorAt` (the admin release) does the same. The head then shows
-`reconciliationStalledReason = 'replay-apply-retry'` on that body, and the log
-says `released L2 reservation confirmed in a snapshot; holding replay`.
+This is an operator risk decision, **not proof that the body never applied**.
+The admin route stamps `l2ReleasedByOperatorAt` and restores wallet and request
+state atomically. If the body later confirms, replay stops with
+`reconciliationStalledReason = 'replay-apply-retry'` for investigation. Do not
+change the database rows by hand.
 
 Correction: this section used to call every such confirmation an invariant
-breach that needs investigation. That is true for an input-proof release and
+breach that needs investigation. That is true for a nudge-proof release and
 for an initial lock. It was too strict for an admin release of an action. The
 admin release cannot prove the body dead, so the body can still confirm (the
 mainnet incident of 2026-10-22 on head `f6ec7beb…a7622cae`, withdraw
@@ -180,13 +143,8 @@ investigation, not a retry:
 - An initial lock. Its release sent the purchase back to locking and overwrote
   the purchase fields the body's datum was built from, and the purchase may
   already be locked a second time.
-- A release on the input proof. That proof says the body can never confirm, so
+- A release on the nudge proof. That proof says the body can never confirm, so
   a confirmation means the proof failed.
-
-If the paired PaymentRequest was stamped by the reservation
-(`l2ReservationPeerPreviousLayer` is set), restore its `layer` from that column
-and disconnect its `CurrentTransaction` in the same transaction, with the same
-`"currentTransactionId" = '<tx-id>'` guard.
 
 ## Do NOT
 
@@ -197,5 +155,5 @@ and disconnect its `CurrentTransaction` in the same transaction, with the same
 - Delete the Transaction row — it is the only durable record of the signed
   body's identity (`intendedTxHash`) and of the pre-reservation state.
 - "Fix" this by removing the fail-closed retention in
-  `l2-lock.ts` / `l2-reservation-recovery.ts`. The input proof in
-  `decideL2ReservationRelease` is the automated release.
+  `l2-lock.ts` / `l2-reservation-recovery.ts`. The verified release nudge is
+  the automated proof.

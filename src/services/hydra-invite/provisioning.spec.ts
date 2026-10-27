@@ -17,6 +17,8 @@ import type { Mock } from 'jest-mock';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindMany = jest.fn() as AnyMock;
+const mockHostFindUnique = jest.fn() as AnyMock;
+const mockWithPauseLease = jest.fn() as AnyMock;
 const mockFindFirst = jest.fn() as AnyMock;
 const mockCreate = jest.fn() as AnyMock;
 const mockAcknowledge = jest.fn() as AnyMock;
@@ -34,7 +36,7 @@ class HydraHostRequestError extends Error {
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
-		hydraHost: { findMany: mockFindMany },
+		hydraHost: { findMany: mockFindMany, findUnique: mockHostFindUnique },
 		hydraLocalParticipant: { findFirst: mockFindFirst, create: mockCreate },
 	},
 }));
@@ -60,6 +62,11 @@ jest.unstable_mockModule('@/services/hydra-host/placement', () => ({
 
 jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({
 	expectedHostCapabilitiesForNetwork: () => ({}),
+}));
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	HOST_LEASE_WAIT_MS: 10_000,
+	withHostPauseLease: mockWithPauseLease,
 }));
 
 jest.unstable_mockModule('./node-keys', () => ({
@@ -108,11 +115,86 @@ beforeEach(() => {
 		secrets: { hydraSigningKey: 'hydra-sk', cardanoSigningKey: 'cardano-sk' },
 	});
 	mockFindFirst.mockResolvedValue(null);
+	mockHostFindUnique.mockResolvedValue({
+		status: 'Active',
+		pausedAt: null,
+		baseUrl: 'https://host',
+		allowInsecureHttp: false,
+		encryptedAdminToken: 'enc:admin-token',
+	});
+	mockWithPauseLease.mockImplementation(async (_hostId: string, action: () => Promise<void>) => {
+		await action();
+		return true;
+	});
 	mockCreate.mockResolvedValue({ id: 'participant-1' });
 	mockAcknowledge.mockResolvedValue(undefined);
 });
 
 describe('reserveNodeForExchange', () => {
+	it('refuses a pause that began after Host placement, before provisioning', async () => {
+		mockHostFindUnique.mockResolvedValue({ pausedAt: new Date() });
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockProvision).not.toHaveBeenCalled();
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
+	it('does not provision while rotation holds the Host lease', async () => {
+		mockWithPauseLease.mockResolvedValue(false);
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockFetchCapabilities).not.toHaveBeenCalled();
+		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// A token update can run while this call waits for the lease; the old token would be refused.
+	it('provisions with the admin token read under the lease', async () => {
+		mockHostFindUnique.mockResolvedValue({
+			status: 'Active',
+			pausedAt: null,
+			baseUrl: 'https://host',
+			allowInsecureHttp: false,
+			encryptedAdminToken: 'enc:rotated-admin-token',
+		});
+
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockProvision).toHaveBeenCalledWith(
+			'https://host',
+			'rotated-admin-token',
+			'nonce-1',
+			PERIODS,
+			expect.anything(),
+		);
+	});
+
+	// Placement picked an Active Host, but the operator may change its status during the wait.
+	it('refuses a Host that stopped being Active while the call waited for the lease', async () => {
+		mockHostFindUnique.mockResolvedValue({
+			status: 'Draining',
+			pausedAt: null,
+			baseUrl: 'https://host',
+			allowInsecureHttp: false,
+			encryptedAdminToken: 'enc:admin-token',
+		});
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// Two invites minted on one Host at once must not refuse each other.
+	it('waits for a lease held by another short action', async () => {
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 10_000);
+	});
+
 	it('acknowledges escrow on the node it just recorded', async () => {
 		const reserved = await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
 

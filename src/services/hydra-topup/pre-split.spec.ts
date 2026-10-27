@@ -4,6 +4,7 @@ import type { Mock } from 'jest-mock';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockSendAssets = jest.fn() as AnyMock;
+const mockSetTimeToExpire = jest.fn() as AnyMock;
 const mockLookupConfirmedChainTx = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
@@ -18,12 +19,18 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 // which the tests override via submitCarveTx — stub the exports so importing the
 // module is safe.
 jest.unstable_mockModule('@meshsdk/core', () => ({
+	SLOT_CONFIG_NETWORK: { preprod: { zeroTime: 0, zeroSlot: 0, slotLength: 1000 } },
+	unixTimeToEnclosingSlot: (ms: number) => Math.floor(ms / 1000),
 	Transaction: class {
 		sendLovelace() {
 			return this;
 		}
 		sendAssets(...args: unknown[]) {
 			mockSendAssets(...args);
+			return this;
+		}
+		setTimeToExpire(slot: string) {
+			mockSetTimeToExpire(slot);
 			return this;
 		}
 		build() {
@@ -127,6 +134,52 @@ describe('carveExactUtxo', () => {
 
 		await carveExactUtxo(params);
 		expect(recorded).toEqual([TX]);
+	});
+
+	// The carve already went out, so the caller must see a pre-split failure, not a raw database error.
+	it('reports a carve it could not record after submission as a pre-split failure', async () => {
+		const params = baseParams({
+			submitCarveTx: jest.fn(async () => TX) as AnyMock,
+			onCarveSubmitted: async () => {
+				throw new Error('record to update not found');
+			},
+		});
+
+		await expect(carveExactUtxo(params)).rejects.toThrow(HydraPreSplitError);
+	});
+
+	it('signs a finite validity bound and records it with the hash before submission', async () => {
+		const wallet = { signTx: jest.fn(async () => 'signed'), submitTx: jest.fn(async (_signed: string) => TX) };
+		const record = jest.fn(async (_hash: string, _slot: bigint) => {
+			expect(wallet.submitTx).not.toHaveBeenCalled();
+		});
+		await carveExactUtxo(baseParams({ wallet, submitCarveTx: undefined, onCarveSubmitted: record }));
+
+		expect(mockSetTimeToExpire).toHaveBeenCalledWith('600');
+		expect(record).toHaveBeenCalledWith(TX, 600n);
+		expect(wallet.submitTx).toHaveBeenCalledWith('signed');
+	});
+
+	it('does not submit a signed carve when its hash and bound cannot be stored', async () => {
+		const wallet = { signTx: jest.fn(async () => 'signed'), submitTx: jest.fn(async () => TX) };
+		await expect(
+			carveExactUtxo(
+				baseParams({
+					wallet,
+					submitCarveTx: undefined,
+					onCarveSubmitted: async () => {
+						throw new Error('database unavailable');
+					},
+				}),
+			),
+		).rejects.toThrow('database unavailable');
+		expect(wallet.submitTx).not.toHaveBeenCalled();
+	});
+
+	it('refuses to build a carve if its wallet-claim-anchored validity window has elapsed', async () => {
+		const params = baseParams({ validUntilMs: -1 });
+		await expect(carveExactUtxo(params)).rejects.toThrow('validity window expired');
+		expect(params.submitCarveTx as AnyMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects a non-positive amount', async () => {

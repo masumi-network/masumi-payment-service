@@ -11,7 +11,6 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
 import type { Duplex } from 'node:stream';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
@@ -29,10 +28,17 @@ import { nonceLogRef } from './nonce-log-ref.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
 import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
+import { createDocsAssetServer } from './docs-assets.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
-import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
+import {
+	buildProxyQuery,
+	isProxyableHttpPath,
+	isProxyableWebSocketPath,
+	matchNodeApiProxy,
+	queryOf,
+} from './proxy-path.js';
 import {
 	buildPeerAllowlist,
 	renderNftables,
@@ -41,7 +47,10 @@ import {
 } from './peer-allowlist.js';
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
+import { dispatchPrivilegedInit } from './privileged-init.js';
+import { readBlockfrostLatestParameters, type ReadCurrentL1Parameters } from './init-admission.js';
 import { matchRoute } from './routes.js';
+import { applyControlPlaneLimits } from './server-limits.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -58,19 +67,8 @@ export type ServerDeps = {
 	provision: ProvisionDeps;
 	resolvePeerHostname?: PeerHostnameResolver;
 	logger: SupervisorLogger;
+	readCurrentL1Parameters?: ReadCurrentL1Parameters;
 };
-
-/**
- * The raw query of a request target, `?` included, or empty.
- *
- * Taken by index rather than through `URL`, because `URL` would percent-decode
- * and re-encode on the way, and the value here is handed to an allow-list that
- * must see exactly what the caller sent.
- */
-function queryOf(url: string | undefined): string {
-	const index = (url ?? '').indexOf('?');
-	return index === -1 ? '' : (url ?? '').slice(index);
-}
 
 function send(response: ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body ?? null);
@@ -162,10 +160,12 @@ function readPeers(body: unknown): PeerRecord[] {
 
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
+	const readCurrentL1Parameters = deps.readCurrentL1Parameters ?? readBlockfrostLatestParameters;
 	const resolvePeerHostname = deps.resolvePeerHostname ?? createBoundedPeerResolver();
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
+	const serveDocsAsset = createDocsAssetServer();
 	// Said once, not on every call: the proxy sees one for each request a service
 	// makes. It is the signal that a service is still on the credential that
 	// reaches every node on this Host.
@@ -217,6 +217,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 			// writes (the proxy strips a same-name upstream header; raw-socket
 			// upgrade replies bypass it, but crawlers never send Upgrade).
 			response.setHeader('X-Robots-Tag', 'noindex, nofollow');
+			// Per response, so an answer pipelined behind a proxied one does not
+			// inherit its opt-out from the idle timeout.
+			response.setTimeout(server.timeout);
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
 
@@ -251,14 +254,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 						sendNotFound(request, response);
 						return;
 					}
-					const body = await readFile(asset.filePath);
-					response.writeHead(200, {
-						'Content-Type': asset.contentType,
-						'Content-Length': body.byteLength,
-						'Cache-Control': 'public, max-age=300',
-						'X-Content-Type-Options': 'nosniff',
-					});
-					response.end(method === 'HEAD' ? undefined : body);
+					await serveDocsAsset(response, asset, method === 'HEAD');
 					return;
 				}
 			}
@@ -326,17 +322,16 @@ export function createControlPlane(deps: ServerDeps): Server {
 		});
 	});
 
-	// Bound how long a connection may occupy the control plane. It normally sits
-	// behind a load balancer, but the peer plane is public and there is no reason
-	// to assume this port never will be. Proxied WebSockets opt out of this
-	// per-socket, since a quiet head is legitimately silent for long stretches.
-	server.headersTimeout = 15_000;
-	server.requestTimeout = 30_000;
-	server.keepAliveTimeout = 10_000;
+	// Proxied node traffic opts out of the idle timeout per socket, since a quiet
+	// head is legitimately silent for long stretches.
+	applyControlPlaneLimits(server, config.ports.capacity, (message) => logger.warn(message));
 
 	// WebSocket upgrades never reach the request handler, so they are
 	// authenticated and authorised here on their own path.
 	server.on('upgrade', (request, socket, head) => {
+		// Node drops its own error listener from an upgrade socket. A client reset
+		// while the record is read or the node handshake runs would crash the Host.
+		socket.on('error', (error) => logger.warn(`[api] websocket upgrade socket failed: ${error.message}`));
 		void (async () => {
 			const rejectUpgrade = (status: number, reason: string): void => {
 				logger.warn(`[api] websocket upgrade rejected: ${reason}`);
@@ -394,6 +389,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 		response: ServerResponse,
 	): Promise<void> {
 		switch (kind) {
+			case 'initNode': {
+				await dispatchPrivilegedInit(store, nodeId ?? '', logger, config, readCurrentL1Parameters);
+				send(response, 202, { dispatched: true });
+				return;
+			}
 			case 'capabilities': {
 				const capabilities = await readCapabilities({
 					release: config.release,
@@ -705,6 +705,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 			return;
 		}
 
+		// Only an authenticated caller gets here, and a node may take its time.
+		// Per response, not per socket: a pipelined response gets the socket,
+		// and with it this timeout, only when its turn comes. After the last
+		// answer Node arms the keep-alive timeout itself.
+		response.setTimeout(0);
 		proxyHttp(request, response, record.apiPort, target.subPath, query, (message) => logger.error(`[api] ${message}`));
 	}
 

@@ -22,7 +22,7 @@ import {
 } from '@/services/hydra-topup-reconciliation';
 import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-deps';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
-import { carveExactUtxo, HydraPreSplitError } from './pre-split';
+import { CARVE_VALIDITY_MS, carveExactUtxo, HydraPreSplitError } from './pre-split';
 import { canReleaseTopupWallet, isOwnTopupOutstanding, outstandingOwnTopupWhere } from './wallet-release';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import {
@@ -30,7 +30,7 @@ import {
 	HYDRA_HOST_PAUSED_MESSAGE,
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
-import { PREPARING_STALE_AFTER_MS } from './stale';
+import { blockingHydraTopupMessage, claimBlockingHydraTopup } from './blocking';
 import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
 import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 
@@ -93,6 +93,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	// Set the moment the carve is signed, before it is submitted — see the
 	// release guard in this function's `finally`.
 	let carveTxHash: string | null = null;
+	let carveConfirmed = false;
 	/**
 	 * Set once this operation's own deposit is confirmed on chain.
 	 *
@@ -139,6 +140,9 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// the same UTxO, and the loser's signed transaction would be rejected on
 		// chain. Held across the carve's wait for confirmation too: a UTxO spent
 		// during that wait is just as gone by the time the commit selects it.
+		// The carve's signed upper bound starts before the claim. Even if later
+		// preparation is slow, it expires well before the 30-minute claim lease.
+		const carveValidUntilMs = Date.now() + CARVE_VALIDITY_MS;
 		walletClaimToken = await claimHotWalletForL1(localParticipant.walletId, 'top-up');
 
 		let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
@@ -161,14 +165,15 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			throw createHttpError(500, 'Payment source has no RPC provider configured for the L1 top-up');
 		}
 
-		// Reconcile any prior pending top-up first; only one Pending deposit per
-		// participant is permitted, so refuse a new one while an earlier could land.
+		// Refuse a new top-up while an earlier deposit can still reach the Head.
 		// Claimed in one serializable transaction rather than checked and then
 		// written. Two requests arriving together would otherwise both find no
 		// active top-up and both start a pre-split against the same wallet, which
 		// is the same shape of race the node funding had.
 		//
-		// Preparing counts as active: it holds a carve that is already on chain.
+		// Confirmed counts as active until the deposit is absorbed or recovered.
+		// Its L1 confirmation alone has not raised the in-head balance yet.
+		// Preparing also counts as active: it can hold a carve on L1.
 		// A row whose process died mid-carve is aged out here too, since nothing
 		// else can resolve one — it has no deposit hash for reconciliation to look
 		// for, and it would otherwise block this head's top-ups for good.
@@ -179,27 +184,8 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					// writer locks the head before its top-up row: a close that commits
 					// first is seen here, and one that commits after counts this row.
 					await lockOpenHydraHeadForDeposit(tx, head.id);
-					const active = await tx.hydraTopup.findFirst({
-						where: {
-							hydraLocalParticipantId: localParticipant.id,
-							status: { in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending] },
-						},
-						orderBy: { createdAt: 'desc' },
-					});
-
-					if (active !== null) {
-						const isStalePreparation =
-							active.status === HydraTopupStatus.Preparing &&
-							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS;
-						if (!isStalePreparation) {
-							return { claimed: false as const, active };
-						}
-						await tx.hydraTopup.updateMany({
-							where: { id: active.id, status: HydraTopupStatus.Preparing },
-							data: { status: HydraTopupStatus.Failed },
-						});
-						logger.warn(`[HydraAPI] Failed a stale preparing top-up ${active.id} so a new one can start`);
-					}
+					const active = await claimBlockingHydraTopup(tx, localParticipant.id);
+					if (active !== null) return { claimed: false as const, active };
 
 					// Under FOR SHARE on the Host: a pause that commits first is seen here,
 					// and one that commits after counts this row as in flight.
@@ -230,12 +216,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		);
 
 		if (!claim.claimed) {
-			throw createHttpError(
-				409,
-				claim.active.status === HydraTopupStatus.Preparing
-					? 'A prior Hydra top-up is still being prepared on L1'
-					: 'A prior Hydra top-up remains pending independent L1 confirmation',
-			);
+			throw createHttpError(409, blockingHydraTopupMessage(claim.active.status));
 		}
 		preparingTopupId = claim.id;
 
@@ -262,17 +243,22 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					walletAddress: address,
 					unit: params.exact.unit,
 					amount: params.exact.amount,
+					validUntilMs: carveValidUntilMs,
 					network: hotWallet.PaymentSource.network,
 					rpcProviderApiKey,
 					existingUtxos: utxos,
 					// So the row an operator is watching names the transaction that
 					// took their funds, rather than saying only that something is
 					// happening.
-					onCarveSubmitted: async (splitTxHash) => {
+					onCarveSubmitted: async (splitTxHash, splitInvalidHereafterSlot) => {
+						await prisma.hydraTopup.update({
+							where: { id: claim.id, status: HydraTopupStatus.Preparing },
+							data: { splitTxHash, splitInvalidHereafterSlot },
+						});
 						carveTxHash = splitTxHash;
-						await prisma.hydraTopup.update({ where: { id: claim.id }, data: { splitTxHash } });
 					},
 				});
+				carveConfirmed = true;
 			} catch (error) {
 				if (error instanceof HydraPreSplitError) throw createHttpError(502, `Pre-split failed: ${error.message}`);
 				throw error;
@@ -464,12 +450,12 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// — can fail with the carve still on its way. Until it settles, the inputs
 		// it spends read as unspent, so handing the wallet back here let the next
 		// batch tick build over them and lose one of the two to `BadInputsUTxO`.
-		// Nothing tracks a carve after this returns, so the lock is left for the
-		// stale-lock sweep, which frees it half an hour later.
+		// A confirmed carve no longer spends unconfirmed inputs. Otherwise its
+		// signed bound expires before the stale-lock sweep can release the claim.
 		if (
 			walletClaimToken !== null &&
 			(!walletReleaseTransferred || ownsTerminalTransition) &&
-			canReleaseTopupWallet({ outstandingOwnTopup, carveTxHash, depositConfirmed })
+			canReleaseTopupWallet({ outstandingOwnTopup, carveTxHash, carveConfirmed, depositConfirmed })
 		) {
 			try {
 				await releaseHotWalletAfterL1(localParticipant.walletId, walletClaimToken);

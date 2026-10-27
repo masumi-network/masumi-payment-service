@@ -1,5 +1,6 @@
-import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import { deriveHostNodeToken } from './node-token';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -7,6 +8,7 @@ const mockHostFindUnique = jest.fn() as AnyMock;
 const mockHostUpdate = jest.fn() as AnyMock;
 const mockHostUpdateMany = jest.fn() as AnyMock;
 const mockHostFindMany = jest.fn() as AnyMock;
+const mockHostCount = jest.fn() as AnyMock;
 const mockParticipantFindMany = jest.fn() as AnyMock;
 const mockParticipantFindUnique = jest.fn() as AnyMock;
 const mockInviteFindMany = jest.fn() as AnyMock;
@@ -33,6 +35,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockHostFindUnique,
 			updateMany: mockHostUpdateMany,
 			findMany: mockHostFindMany,
+			count: mockHostCount,
 		},
 		hydraLocalParticipant: { findUnique: mockParticipantFindUnique, findMany: mockParticipantFindMany },
 		hydraHeadInvite: { findMany: mockInviteFindMany },
@@ -117,11 +120,29 @@ async function stopsSentOnNextCycle(): Promise<number> {
 	return mockStopHostNode.mock.calls.length;
 }
 
+/** Run a lease-waiting call to its end on fake timers, so the test does not sleep for the whole wait. */
+async function afterLeaseWait<T>(call: Promise<T>): Promise<T> {
+	const settled = call.then(
+		(value) => ({ value }),
+		(error: unknown) => ({ error }),
+	);
+	await jest.advanceTimersByTimeAsync(pause.HOST_LEASE_WAIT_MS + 1_000);
+	const result = await settled;
+	if ('error' in result) throw result.error;
+	return result.value;
+}
+
+afterEach(() => {
+	jest.useRealTimers();
+});
+
 beforeEach(() => {
+	jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
 	jest.clearAllMocks();
 	pause.resetHydraHostPauseMemory();
 	setInFlight(0);
 	mockHostUpdateMany.mockResolvedValue({ count: 1 });
+	mockHostCount.mockResolvedValue(1);
 	mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }, { hostNodeId: 'node-b' }]);
 	mockInviteFindMany.mockResolvedValue([]);
 	mockStopHostNode.mockResolvedValue(undefined);
@@ -168,9 +189,9 @@ describe('pauseHydraHost', () => {
 		mockQueryRaw.mockResolvedValue([{ pausedAt: null, encryptedAdminToken: 'admin' }]);
 		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }]);
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
 
-		await expect(pause.pauseHydraHost('host-1', { force: true })).rejects.toMatchObject({
+		await expect(afterLeaseWait(pause.pauseHydraHost('host-1', { force: true }))).rejects.toMatchObject({
 			status: 409,
 			message: expect.stringMatching(/another pause action/),
 		});
@@ -375,13 +396,25 @@ describe('advanceHydraHostPause', () => {
 		expect(mockStopHostNode).not.toHaveBeenCalled();
 	});
 
-	// A dropped force would quietly wait for the in-flight work after all.
-	it('refuses a forced advance with 409 while another instance holds the lease', async () => {
-		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+	// A Resume that wins the lease first ends the pause; a 200 would read as a stopped Host.
+	it('refuses a forced advance whose pause a Resume ended while it waited', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow({ pausedAt: null, pausedNodeIds: [] }));
 
 		await expect(pause.advanceHydraHostPause('host-1', { force: true })).rejects.toMatchObject({ status: 409 });
 		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
+	// A dropped force would quietly wait for the in-flight work after all.
+	it('refuses a forced advance with 409 while another instance holds the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
+
+		await expect(afterLeaseWait(pause.advanceHydraHostPause('host-1', { force: true }))).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+		// Short actions poll for the lease; a single try here would lose to every one of them.
+		expect(mockHostUpdateMany.mock.calls.length).toBeGreaterThan(1);
 	});
 
 	// isClosing stays set after Final, so it must not hold a pause forever.
@@ -472,6 +505,19 @@ describe('advanceHydraHostPause', () => {
 });
 
 describe('getHydraHostPauseState', () => {
+	it('probes stopped nodes with a pending replacement user token', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
+		const pendingUserToken = 'n'.repeat(40);
+
+		expect((await pause.getHydraHostPauseState('host-1', pendingUserToken)).phase).toBe('Paused');
+		expect(mockFetchHostNodeHealth).toHaveBeenCalledWith(
+			'https://hydra1.example.com',
+			deriveHostNodeToken(pendingUserToken, 'node-a'),
+			'node-a',
+			{ allowInsecureHttp: false },
+		);
+	});
+
 	it('reports Paused only when the Host says every node is Stopped', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
 		mockFetchHostNodeHealth.mockResolvedValueOnce({ state: 'Stopped' }).mockResolvedValueOnce({ state: 'Running' });
@@ -514,17 +560,30 @@ describe('getHydraHostPauseState', () => {
 });
 
 describe('resumeHydraHost', () => {
-	it('starts the paused nodes, then clears the pause fenced on its timestamp', async () => {
+	it('starts the paused nodes, then clears the pause fenced on its timestamp and lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
 
 		await pause.resumeHydraHost('host-1');
 
 		expect(mockStartHostNode).toHaveBeenCalledTimes(2);
+		// Node starts can outlast the lease. A stop that took it meanwhile must win.
+		const leaseUntil = mockHostUpdateMany.mock.calls[0]?.[0]?.data?.pauseLeaseUntil;
+		expect(leaseUntil).toBeInstanceOf(Date);
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'host-1', pausedAt: PAUSED_AT },
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseLeaseUntil: leaseUntil },
 			// The redemption give-up counts from resumedAt, so a pause is not days of retries.
 			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: expect.any(Date) },
 		});
+	});
+
+	// Starts that outlast the lease let another holder take it. Resume must not
+	// report success for a pause it did not clear.
+	it('refuses when the fenced write no longer matches the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		// Lease claim, then the fenced Resume write, then the lease release.
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
 	});
 
 	// One node removed from the Host by hand must not keep the Host paused forever.
@@ -562,10 +621,11 @@ describe('resumeHydraHost', () => {
 
 	it('refuses with 409 while an advance holds the lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
 
-		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
+		await expect(afterLeaseWait(pause.resumeHydraHost('host-1'))).rejects.toMatchObject({ status: 409 });
 		expect(mockStartHostNode).not.toHaveBeenCalled();
+		expect(mockHostUpdateMany.mock.calls.length).toBeGreaterThan(1);
 	});
 });
 
@@ -613,5 +673,36 @@ describe('assertHydraHeadHostNotPaused', () => {
 
 		await expect(pause.assertHydraHeadHostNotPaused('head-1')).resolves.toBeUndefined();
 		await expect(pause.assertHydraHeadHostNotPaused('head-2')).resolves.toBeUndefined();
+	});
+});
+
+describe('withHostPauseLease', () => {
+	// Two invites provisioned on one Host at once must not refuse each other.
+	it('waits for a short holder to release the lease', async () => {
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValue({ count: 1 });
+		const action = jest.fn(async () => undefined);
+
+		await expect(afterLeaseWait(pause.withHostPauseLease('host-1', action, 1_000))).resolves.toBe(true);
+		expect(action).toHaveBeenCalledTimes(1);
+	});
+
+	it('gives up without acting when the lease stays held', async () => {
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
+		const action = jest.fn(async () => undefined);
+
+		await expect(afterLeaseWait(pause.withHostPauseLease('host-1', action, 300))).resolves.toBe(false);
+		expect(action).not.toHaveBeenCalled();
+	});
+
+	// The claim cannot tell a held lease from a missing Host; waiting would end in a false busy.
+	it('reports a deleted Host instead of waiting on it', async () => {
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
+		mockHostCount.mockResolvedValue(0);
+		const action = jest.fn(async () => undefined);
+
+		await expect(afterLeaseWait(pause.withHostPauseLease('host-1', action, 1_000))).rejects.toMatchObject({
+			status: 404,
+		});
+		expect(action).not.toHaveBeenCalled();
 	});
 });

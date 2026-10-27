@@ -5,10 +5,9 @@
  *
  * Everything here is re-derived per connection by design (ADR-0012): a
  * replacement history socket always scans from the beginning, signatures are
- * re-verified, and the anchor is re-earned — persisting yesterday's
- * verification would mean trusting it. The one durable input is the
- * reconciliation cursor the ledger carries; the one durable output is what
- * the connection manager persists from the events the session emits.
+ * re-verified, and the anchor is re-earned. The reconciliation cursor is a
+ * durable input. Verified signed snapshots are stored as recovery evidence,
+ * but replay never trusts those rows as a verification shortcut.
  *
  * The replay owns pass-local state only. Anything shared with the live
  * session — party identity, the finalized fanout map, held-back deposit and
@@ -57,6 +56,7 @@ import {
 } from './snapshot-verification';
 import { computeHydraAccumulatorHash } from './snapshot-accumulator';
 import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame-queue';
+import { assertSafeFirstHistorySnapshot, isIdenticalSignedSnapshotRedelivery } from './node-history-snapshot-guards';
 import { pageClosedBeforeHeadExisted } from './node-history-page';
 import type { HistoryReplayHost } from './node-history-replay-host';
 import { HydraTransaction } from './types';
@@ -335,7 +335,7 @@ export class HydraHistoryReplay {
 		this._queue.pushFront(bufferedFrames.map((rawMessage) => ({ rawMessage, pass: this._pass })));
 	}
 
-	/** Returns a promise only while the frame waits for its accumulator. */
+	/** Returns a promise while accumulator work or durable snapshot storage is pending. */
 	private processPinnedMessage(rawMessage: string, pass: number): Promise<void> | undefined {
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
@@ -570,14 +570,43 @@ export class HydraHistoryReplay {
 	private captureVerifiedFrame(
 		verifiedSnapshot: VerifiedHydraSnapshot,
 		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
-	): void {
-		this._verifiedSnapshot = verifiedSnapshot;
-		this._lastSequence = parsedMessage.seq;
-		this._lastVerifiedFrame = {
-			version: verifiedSnapshot.version,
-			accumulator: parsedMessage.snapshot.accumulator,
-			signatures: JSON.stringify(parsedMessage.signatures.multiSignature),
+		pass: number,
+	): Promise<boolean> | undefined {
+		const capture = () => {
+			if (pass !== this._pass || this._failed) return false;
+			this._verifiedSnapshot = verifiedSnapshot;
+			this._lastSequence = parsedMessage.seq;
+			this._lastVerifiedFrame = {
+				version: verifiedSnapshot.version,
+				accumulator: parsedMessage.snapshot.accumulator,
+				signatures: JSON.stringify(parsedMessage.signatures.multiSignature),
+			};
+			return true;
 		};
+		// Named here: fail() would report any other error as a frame that failed validation.
+		const pending = this.host.persistVerifiedSnapshot?.(parsedMessage).catch((error: unknown) => {
+			if (error instanceof HydraProtocolError) throw error;
+			throw new HydraProtocolError('Hydra verified snapshot could not be stored', { cause: error });
+		});
+		return pending ? pending.then(capture) : (capture(), undefined);
+	}
+
+	/**
+	 * Every party signed this snapshot, so it can win a contest even though this
+	 * replay rejects how the history reached it. The write is best effort: it
+	 * starts before the pass fails and ends after it. A later pass that reaches
+	 * the same rejection starts the write again.
+	 */
+	private storeRejectedSnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
+		// A synchronous throw must not replace the rejection that fails the pass.
+		new Promise<void>((resolve) => resolve(this.host.persistVerifiedSnapshot?.(parsedMessage))).catch(
+			(error: unknown) =>
+				logger.error('[HydraNode] Could not store a signed snapshot that this replay rejected', {
+					headId: parsedMessage.headId,
+					number: parsedMessage.snapshot.number,
+					error: error instanceof Error ? error.message : String(error),
+				}),
+		);
 	}
 
 	private recordHistorySnapshot(
@@ -597,63 +626,41 @@ export class HydraHistoryReplay {
 		const signed = verifyHydraSnapshotSignatures(parsedMessage, orderedKeys);
 		const computeAccumulator = this.host.computeSnapshotAccumulator ?? computeHydraAccumulatorHash;
 		const accumulator = computeAccumulator([...signed.outputs.values()]);
-		const adopt = (computedAccumulator: string) =>
-			this.adoptHistorySnapshot(parsedMessage, completeHydraSnapshotVerification(signed, computedAccumulator));
+		const adopt = (computedAccumulator: string) => {
+			const verifiedSnapshot = completeHydraSnapshotVerification(signed, computedAccumulator);
+			return this.adoptHistorySnapshot(parsedMessage, verifiedSnapshot, pass);
+		};
+		const failCurrent = (error: unknown) => {
+			if (pass === this._pass && !this._failed) this.fail(error);
+		};
 		if (typeof accumulator === 'string') {
-			adopt(accumulator);
-			return undefined;
+			return adopt(accumulator)?.catch(failCurrent);
 		}
 		// Judged only if its pass is still the one it arrived in: a reset while
 		// the accumulator was computed means this frame's socket is gone, and its
 		// verdict — acceptance or rejection — belongs to nobody.
-		return accumulator.then(
-			(computedAccumulator) => {
+		return accumulator
+			.then((computedAccumulator) => {
 				if (pass !== this._pass || this._failed) return;
 				try {
-					adopt(computedAccumulator);
+					return adopt(computedAccumulator);
 				} catch (error) {
-					this.fail(error);
+					failCurrent(error);
 				}
-			},
-			(error: unknown) => {
-				if (pass === this._pass && !this._failed) this.fail(error);
-			},
-		);
+			}, failCurrent)
+			.catch(failCurrent);
 	}
 
 	private adoptHistorySnapshot(
 		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
 		verifiedSnapshot: VerifiedHydraSnapshot,
-	): void {
+		pass: number,
+	): Promise<void> | undefined {
 		const previousSnapshot = this._verifiedSnapshot;
 		if (previousSnapshot && verifiedSnapshot.number <= previousSnapshot.number) {
-			// A node side-load (the documented recovery for a stranded snapshot
-			// round, ADR 0015 §4 level 2/3) re-emits the head's own already-verified
-			// snapshot with byte-identical multi-signed content. Verification above
-			// already re-proved every signature and the accumulator for THIS
-			// delivery, so an exact repeat of the last-verified payload at the same
-			// number is a duplicate frame, not a replay attack: accept it as a no-op
-			// (advance the sequence watermark, leave the anchor untouched) instead of
-			// failing the whole history closed. Anything else at an equal-or-lower
-			// number — a different payload, or a strictly lower number — is still a
-			// regression and stays rejected.
-			//
-			// The identity check below does not compare `parsedMessage.snapshot.confirmed`:
-			// Hydra's multi-signature covers the snapshot's number, version and
-			// accumulator, not its `confirmed` transaction list, so a re-delivery at
-			// the same number with a matching signed payload is accepted as identical
-			// even if `confirmed` differs. Safe here because the early return records
-			// nothing from this delivery either way — but that makes this fail-quiet
-			// rather than fail-closed: a re-delivery that changed only `confirmed`
-			// would not be caught by this check.
-			const lastVerified = this._lastVerifiedFrame;
-			const isIdenticalRedelivery =
-				lastVerified != null &&
-				verifiedSnapshot.number === previousSnapshot.number &&
-				verifiedSnapshot.version === lastVerified.version &&
-				parsedMessage.snapshot.accumulator === lastVerified.accumulator &&
-				JSON.stringify(parsedMessage.signatures.multiSignature) === lastVerified.signatures;
-			if (!isIdenticalRedelivery) {
+			if (
+				!isIdenticalSignedSnapshotRedelivery(previousSnapshot, this._lastVerifiedFrame, parsedMessage, verifiedSnapshot)
+			) {
 				throw new HydraProtocolError('Hydra signed snapshot number replayed or regressed');
 			}
 			logger.info('[HydraNode] Ignoring re-delivered signed snapshot', { number: verifiedSnapshot.number });
@@ -661,29 +668,13 @@ export class HydraHistoryReplay {
 			return;
 		}
 		if (previousSnapshot == null) {
-			// The first signed snapshot is adopted as the anchor, so nothing checks
-			// it — which is only sound while it cannot have moved value. Hydra 2.3's
-			// `HeadIsOpen` carries no `utxo`, so there is no earlier anchor to check
-			// it against, and the `Greetings.snapshotUtxo` one only arrives at the
-			// end of history.
-			//
-			// It holds here because every head this service opens opens EMPTY:
-			// `validateHydraCommitDraft` requires the deposit-script output shape,
-			// which hydra-node produces only for an Open head, so an initial commit
-			// is never signed. An empty head has nothing to spend, so snapshot 1 is
-			// always a deposit declaration with `confirmed: []`.
-			//
-			// Restoring initial commits — or peering with a counterparty that makes
-			// them — breaks that: the head's first escrow lock would land in
-			// snapshot 1's `confirmed` list and wedge its replay for good. Give
-			// replay a real anchor before relaxing this. See ADR 0012.
-			if (verifiedSnapshot.number > 1 || parsedMessage.snapshot.confirmed.length > 0) {
-				throw new HydraProtocolError(
-					'Hydra history began with transactions or a snapshot gap and no independently verified predecessor',
-				);
+			try {
+				assertSafeFirstHistorySnapshot(parsedMessage, verifiedSnapshot);
+			} catch (error) {
+				this.storeRejectedSnapshot(parsedMessage);
+				throw error;
 			}
-			this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
-			return;
+			return this.captureVerifiedFrame(verifiedSnapshot, parsedMessage, pass)?.then(() => undefined);
 		}
 		// A decommit is a state-changing transaction that Hydra reports outside the
 		// `confirmed` list, so the conservation walk has to be given it explicitly.
@@ -703,6 +694,7 @@ export class HydraHistoryReplay {
 			),
 		];
 		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
+			this.storeRejectedSnapshot(parsedMessage);
 			// Name the transition. This rejection stops the head forming a live
 			// session at all, so it is the last thing anyone hears before every L2
 			// operation starts failing closed; "somewhere in the history" is not
@@ -716,23 +708,29 @@ export class HydraHistoryReplay {
 					`${verifiedSnapshot.decommitOutputs.size} pending decommit output(s))`,
 			);
 		}
-		this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
-		l2Mint.recordL2TransactionMints(this._l2MintTally, transitionTransactions, verifiedSnapshot.number);
-		if (this._complete && this._l2MintTally.openedBy) this.host.reportL2MintOutstanding(this._l2MintTally.openedBy);
-		const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
-		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
-		// tx ids/CBOR therefore additionally relies on this explicitly configured
-		// local endpoint and the manager's per-action actor/body checks.
-		if (this.host.trustLocalNodeSnapshotMetadata && !this._truncated) {
-			const { truncated } = this.ledger.record(parsedMessage, {
-				emitEvent: this._complete,
-				replayComplete: this._complete,
-				protectedProducerTxIds,
-				onConfirmed: (txId, transaction) => this.host.emitTxConfirmed(txId, transaction),
+		const finish = () => {
+			l2Mint.recordL2TransactionMints(this._l2MintTally, transitionTransactions, verifiedSnapshot.number);
+			if (this._complete && this._l2MintTally.openedBy) this.host.reportL2MintOutstanding(this._l2MintTally.openedBy);
+			const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
+			// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
+			// tx ids/CBOR additionally relies on the configured local endpoint.
+			if (this.host.trustLocalNodeSnapshotMetadata && !this._truncated) {
+				const { truncated } = this.ledger.record(parsedMessage, {
+					emitEvent: this._complete,
+					replayComplete: this._complete,
+					protectedProducerTxIds,
+					onConfirmed: (txId, transaction) => this.host.emitTxConfirmed(txId, transaction),
+				});
+				if (truncated) this.truncatePage();
+			}
+			this.ledger.adoptSnapshotProducerTxIds(verifiedSnapshot, protectedProducerTxIds);
+		};
+		const pending = this.captureVerifiedFrame(verifiedSnapshot, parsedMessage, pass);
+		if (pending)
+			return pending.then((accepted) => {
+				if (accepted) finish();
 			});
-			if (truncated) this.truncatePage();
-		}
-		this.ledger.adoptSnapshotProducerTxIds(verifiedSnapshot, protectedProducerTxIds);
+		finish();
 	}
 
 	private truncatePage(): void {

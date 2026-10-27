@@ -79,9 +79,15 @@ head do this on their own service.
 | Variable                               | 2.4.1 value                                                                                                                                                                                                 |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `HYDRA_EXPECTED_VERSION`               | `2.4.1-<git sha>` as the node reports it under **Details → Version**. The 2.4.1 tag builds as `2.4.1-099f5dd775d8640047d0074edef294c1b39a600d` (VERIFIED, `hydra-node --version` on the tag's CI artifact). |
-| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH` | From **Details → Scripts** after **Check**, as in [hydra-operations.md §2b](hydra-operations.md).                                                                                                           |
+| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH` | `sha256:5dad151a3623da9c04a981971763164a18b58c44ac18963a7df814a56eadc14a`, recorded in `src/services/hydra-host/reviewed-catalogue.ts`. Do not copy a replacement value from the Host. |
 | `HYDRA_HEAD_SCRIPT_HASH`               | `1d511733200df551c8cd8cddb3160ed39087af815638be37a1b80ffd`                                                                                                                                                  |
 | `HYDRA_DEPOSIT_SCRIPT_HASH`            | `eafae2c32f99ab347c7bb15961e0e84c74305f9088c1a7b8abf88e7f`                                                                                                                                                  |
+
+VERIFIED: `docker run --rm --network none --entrypoint /usr/local/bin/hydra-node
+hydra-review-host:etcd-3.5.35 --hydra-script-catalogue` returned the eight
+catalogue fields recorded in `reviewed-catalogue.ts`. `JSON.stringify` of that
+parsed document hashes to the value above. The local image reports
+`2.4.1-099f5dd775d8640047d0074edef294c1b39a600d`.
 
 The two script hashes are the code defaults, so an `.env` that never set them
 needs no change. An `.env` that pinned the 2.3.0 values must update. A stale

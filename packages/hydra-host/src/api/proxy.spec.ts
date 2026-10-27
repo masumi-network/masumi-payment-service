@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
+import { PassThrough } from 'node:stream';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,7 +11,9 @@ import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
+import { proxyWebSocket } from './proxy.js';
 import { createControlPlane } from './server.js';
+import { deriveNodeToken } from './node-token.js';
 import type { ProvisionDeps } from './provision.js';
 
 const ADMIN = 'a'.repeat(40);
@@ -21,6 +24,9 @@ const CALLER_TIMEOUT_MS = 2_000;
 const NODE_RELEASE_WAIT_MS = 2_000;
 /** The proxy's own side of a hang-up can log after the node already saw its socket close. */
 const LATE_LOG_WAIT_MS = 100;
+const PONG_SETTLE_MS = 100;
+const SAFE_L2_PARAMETERS = { maxTxSize: 15_000, maxValueSize: 5_000, utxoCostPerByte: 4_310 };
+const SAFE_L1_PARAMETERS = { max_tx_size: 16_384, max_val_size: 5_000, coins_per_utxo_size: '4310' };
 
 const env: EnvSource = {
 	get: (key) =>
@@ -88,9 +94,15 @@ let node: FakeNode;
 let tickCalls: number;
 let releaseTick: () => void;
 let loggedErrors: string[];
+let chainParameters: unknown;
+let chainFailure: boolean;
+let chainReads: number;
 
 beforeEach(async () => {
 	loggedErrors = [];
+	chainParameters = SAFE_L1_PARAMETERS;
+	chainFailure = false;
+	chainReads = 0;
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-proxy-'));
 	node = await startFakeNode();
 	store = new NodeRegistryStore(dataDir);
@@ -124,6 +136,11 @@ beforeEach(async () => {
 			now: () => new Date(),
 		} as ProvisionDeps,
 		logger: { info: () => undefined, warn: () => undefined, error: (message) => loggedErrors.push(message) },
+		readCurrentL1Parameters: async () => {
+			chainReads += 1;
+			if (chainFailure) throw new Error('Blockfrost unavailable');
+			return chainParameters;
+		},
 	});
 	await new Promise<void>((resolve) => host.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(host.address() as AddressInfo).port}`;
@@ -190,6 +207,30 @@ describe('node api proxy', () => {
 		expect(response.status).toBe(200);
 		expect((await response.json()) as { ok: boolean }).toMatchObject({ ok: true });
 		expect(node.received[0]?.url).toBe('/snapshot/utxo');
+	});
+
+	it.each([
+		['GET', '/v1/nodes/node-1/api/head', { 'Transfer-Encoding': 'chunked' }, 'probe'],
+		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Transfer-Encoding': 'chunked' }, 'probe'],
+		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Content-Length': '5' }, 'probe'],
+	])('rejects a framed body on proxied %s before contacting the node', async (method, url, headers, body) => {
+		const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+			const request = httpRequest(
+				`${baseUrl}${url}`,
+				{ method, headers: { Authorization: `Bearer ${USER}`, ...headers } },
+				(reply) => {
+					let received = '';
+					reply.setEncoding('utf8');
+					reply.on('data', (chunk: string) => (received += chunk));
+					reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: received }));
+				},
+			);
+			request.on('error', reject);
+			request.end(body);
+		});
+		expect(response.status).toBe(400);
+		expect(response.body).toContain('body');
+		expect(node.received).toHaveLength(0);
 	});
 
 	// A same-name upstream header would beat the handler's setHeader in
@@ -461,34 +502,117 @@ describe('node api proxy', () => {
 
 describe('node api websocket proxy', () => {
 	/** Attach a real WebSocket server to the fake node, echoing what it receives. */
-	async function upgradeableNode(): Promise<{ server: Server; port: number; greeted: string[] }> {
+	async function upgradeableNode(
+		autoPong = true,
+		ledgerParams: unknown = SAFE_L2_PARAMETERS,
+	): Promise<{
+		server: Server;
+		port: number;
+		greeted: string[];
+		upgradeHeaders: IncomingMessage['headers'][];
+		commands: string[];
+		pings: string[];
+		pongs: string[];
+		binaryCommands: boolean[];
+		pingFromNode: () => void;
+		sendThenClose: (message: string) => void;
+	}> {
 		const { WebSocketServer } = await import('ws');
 		const greeted: string[] = [];
-		const server = createServer();
-		const wss = new WebSocketServer({ server });
+		const upgradeHeaders: IncomingMessage['headers'][] = [];
+		const commands: string[] = [];
+		const pings: string[] = [];
+		const pongs: string[] = [];
+		const binaryCommands: boolean[] = [];
+		let pingFromNode = (): void => {
+			throw new Error('node websocket has not opened');
+		};
+		let sendThenClose = (_message: string): void => {
+			throw new Error('node websocket has not opened');
+		};
+		const server = createServer((request, response) => {
+			if (request.url !== '/protocol-parameters') {
+				response.writeHead(404).end();
+				return;
+			}
+			response.writeHead(200, { 'Content-Type': 'application/json' });
+			response.end(JSON.stringify(ledgerParams));
+		});
+		const wss = new WebSocketServer({ server, autoPong });
 		wss.on(
 			'connection',
 			(
-				socket: { send: (d: string) => void; on: (e: string, cb: (d: Buffer) => void) => void },
-				request: { url?: string },
+				socket: {
+					send: (d: string) => void;
+					close: () => void;
+					ping: (d: string) => void;
+					on: (e: string, cb: (d: Buffer, isBinary: boolean) => void) => void;
+				},
+				request: { url?: string; headers: IncomingMessage['headers'] },
 			) => {
 				greeted.push(request.url ?? '');
+				upgradeHeaders.push(request.headers);
+				pingFromNode = () => socket.ping('node-ping');
+				sendThenClose = (message) => {
+					socket.send(message);
+					socket.close();
+				};
 				socket.send(JSON.stringify({ tag: 'Greetings' }));
-				socket.on('message', (data: Buffer) => socket.send(data.toString()));
+				socket.on('ping', (data: Buffer) => pings.push(data.toString()));
+				socket.on('pong', (data: Buffer) => pongs.push(data.toString()));
+				socket.on('message', (data: Buffer, isBinary: boolean) => {
+					commands.push(data.toString());
+					binaryCommands.push(isBinary);
+					socket.send(data.toString());
+				});
 			},
 		);
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-		return { server, port: (server.address() as AddressInfo).port, greeted };
+		return {
+			server,
+			port: (server.address() as AddressInfo).port,
+			greeted,
+			upgradeHeaders,
+			commands,
+			pings,
+			pongs,
+			binaryCommands,
+			pingFromNode: () => pingFromNode(),
+			sendThenClose: (message) => sendThenClose(message),
+		};
+	}
+
+	async function openNodeSocket(token: string, nodeId = 'node-1', compressed = false) {
+		const WebSocket = (await import('ws')).default;
+		const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}/v1/nodes/${nodeId}/api`, {
+			headers: { Authorization: `Bearer ${token}` },
+			perMessageDeflate: compressed,
+		} as never);
+		await new Promise<void>((resolve, reject) => {
+			socket.once('open', resolve);
+			socket.once('error', reject);
+		});
+		return socket;
+	}
+
+	async function waitForSocketClose(socket: { once: (event: string, listener: () => void) => void }): Promise<void> {
+		await Promise.race([
+			new Promise<void>((resolve) => socket.once('close', resolve)),
+			new Promise<never>((_resolve, reject) =>
+				setTimeout(() => reject(new Error('socket did not close')), CALLER_TIMEOUT_MS),
+			),
+		]);
 	}
 
 	const connect = async (
 		url: string,
 		token?: string,
+		extraHeaders: Record<string, string> = {},
 	): Promise<{ firstMessage: string | null; status: number | null }> => {
 		const WebSocket = (await import('ws')).default;
 		return new Promise((resolve) => {
 			const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}${url}`, {
-				headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
+				headers: { ...(token === undefined ? {} : { Authorization: `Bearer ${token}` }), ...extraHeaders },
 			} as never);
 			const done = (firstMessage: string | null, status: number | null): void => {
 				try {
@@ -516,6 +640,208 @@ describe('node api websocket proxy', () => {
 		expect(result.firstMessage).toContain('Greetings');
 		// The query string the payment service relies on must survive the tunnel.
 		expect(upstream.greeted[0]).toBe('/?history=no');
+
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('forwards an allowed text command to the node', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const socket = await openNodeSocket(USER);
+		const answer = new Promise<{ text: string; isBinary: boolean }>((resolve) =>
+			socket.on('message', (data: Buffer, isBinary: boolean) => {
+				if (data.toString().includes('Abort')) resolve({ text: data.toString(), isBinary });
+			}),
+		);
+		socket.send('{"tag":"Abort"}');
+		// The payment client refuses binary frames (src/lib/hydra/hydra/connection.ts).
+		expect(await answer).toEqual({ text: '{"tag":"Abort"}', isBinary: false });
+		expect(upstream.commands).toEqual(['{"tag":"Abort"}']);
+		expect(upstream.binaryCommands).toEqual([false]);
+		socket.close();
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('blocks direct Init from runtime and Host-wide user sessions, including fragmented and compression-offered frames', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		for (const [token, fragment, compressed] of [
+			[deriveNodeToken(USER, 'node-1'), false, false],
+			[USER, true, false],
+			[USER, false, true],
+			[ADMIN, false, false],
+		] as const) {
+			const socket = await openNodeSocket(token, 'node-1', compressed);
+			const closed = waitForSocketClose(socket);
+			if (fragment) {
+				const fragmented = socket as unknown as { send: (data: string, options: { fin: boolean }) => void };
+				fragmented.send('{"tag":"In', { fin: false });
+				fragmented.send('it"}', { fin: true });
+			} else {
+				socket.send('{"tag":"Init"}');
+			}
+			await closed;
+		}
+		expect(upstream.commands).toEqual([]);
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('forwards node pongs rather than answering payment client pings itself', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const socket = await openNodeSocket(USER);
+		const pong = new Promise<string>((resolve) => socket.once('pong', (data: Buffer) => resolve(data.toString())));
+		socket.ping('node-liveness');
+		expect(await pong).toBe('node-liveness');
+		expect(upstream.pings).toEqual(['node-liveness']);
+		socket.close();
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('does not synthesize a node pong when the upstream stops answering', async () => {
+		const upstream = await upgradeableNode(false);
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const socket = await openNodeSocket(USER);
+		let pongCount = 0;
+		socket.on('pong', () => {
+			pongCount += 1;
+		});
+		socket.ping('no-node-pong');
+		await new Promise<void>((resolve) => setTimeout(resolve, PONG_SETTLE_MS));
+		expect(upstream.pings).toEqual(['no-node-pong']);
+		expect(pongCount).toBe(0);
+		socket.close();
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('forwards node pings and returns exactly one payment-client pong', async () => {
+		const upstream = await upgradeableNode(false);
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const socket = await openNodeSocket(USER);
+		let clientPingCount = 0;
+		socket.on('ping', () => {
+			clientPingCount += 1;
+		});
+		upstream.pingFromNode();
+		await new Promise<void>((resolve) => setTimeout(resolve, PONG_SETTLE_MS));
+		expect(clientPingCount).toBe(1);
+		expect(upstream.pongs).toEqual(['node-ping']);
+		socket.close();
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('drains a final node event before ending the payment websocket', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const socket = await openNodeSocket(USER);
+		const finalFrame = new Promise<string>((resolve) =>
+			socket.on('message', (data: Buffer) => {
+				if (data.toString().includes('FinalEvent')) resolve(data.toString());
+			}),
+		);
+		upstream.sendThenClose('{"tag":"FinalEvent"}');
+		expect(await finalFrame).toBe('{"tag":"FinalEvent"}');
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	it('dispatches one privileged Init to its node, and ordinary sessions cannot replay it', async () => {
+		const upstream = await upgradeableNode();
+		const other = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		await store.write(record({ nodeId: 'node-2', apiPort: other.port }));
+		expect((await call('POST', '/v1/nodes/node-1/init', USER)).status).toBe(403);
+		expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(202);
+		const socket = await openNodeSocket(USER);
+		const closed = waitForSocketClose(socket);
+		socket.send('{"tag":"Init"}');
+		await closed;
+		expect(upstream.commands).toEqual(['{"tag":"Init"}']);
+		expect(chainReads).toBe(1);
+		expect(other.commands).toEqual([]);
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		await new Promise<void>((resolve) => other.server.close(() => resolve()));
+	});
+
+	it('rejects a direct admin Init when the node reports an unsafe L2 transaction size', async () => {
+		const upstream = await upgradeableNode(true, { ...SAFE_L2_PARAMETERS, maxTxSize: 15_001 });
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(upstream.commands).toEqual([]);
+			expect(chainReads).toBe(0);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('rejects a malformed node parameter before reading Blockfrost', async () => {
+		const upstream = await upgradeableNode(true, { ...SAFE_L2_PARAMETERS, maxValueSize: '5000' });
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(chainReads).toBe(0);
+			expect(upstream.commands).toEqual([]);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it.each([
+		['L1 transaction room', { ...SAFE_L1_PARAMETERS, max_tx_size: 16_383 }],
+		['L1 value size', { ...SAFE_L1_PARAMETERS, max_val_size: 4_999 }],
+		['L1 UTxO cost', { ...SAFE_L1_PARAMETERS, coins_per_utxo_size: '4311' }],
+	])('rejects direct admin Init with unsafe %s', async (_reason, l1Parameters) => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		chainParameters = l1Parameters;
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(upstream.commands).toEqual([]);
+			expect(chainReads).toBe(1);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it.each(['unavailable', 'malformed'])('does not dispatch Init when Blockfrost is %s', async (failure) => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		chainFailure = failure === 'unavailable';
+		if (failure === 'malformed') chainParameters = { max_tx_size: 16_384 };
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(503);
+			expect(upstream.commands).toEqual([]);
+			expect(chainReads).toBe(1);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('rejects a persisted node whose network differs from the Host', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, network: 'mainnet', apiPort: upstream.port }));
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(chainReads).toBe(0);
+			expect(upstream.commands).toEqual([]);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('does not forward a Content-Length on the bodyless upgrade request', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+
+		const result = await connect('/v1/nodes/node-1/api', USER, { 'Content-Length': '5' });
+
+		expect(result.firstMessage).toContain('Greetings');
+		expect(upstream.upgradeHeaders[0]?.['content-length']).toBeUndefined();
 
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
@@ -556,6 +882,31 @@ describe('node api websocket proxy', () => {
 
 		await closed;
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	// ws emits 'error' and then 'close' for a refused upgrade. A second end()
+	// raises write-after-end on a socket Node no longer guards.
+	it('answers a refused upgrade once', async () => {
+		const clientSocket = new PassThrough();
+		clientSocket.on('error', () => undefined);
+		const end = jest.spyOn(clientSocket, 'end');
+		const errors: string[] = [];
+		const request = { headers: {} } as IncomingMessage;
+		proxyWebSocket(request, clientSocket as never, Buffer.alloc(0), 1, '/', '', (message) => errors.push(message));
+		await new Promise<void>((resolve) => setTimeout(resolve, 200));
+
+		expect(end).toHaveBeenCalledTimes(1);
+		expect(errors).toHaveLength(1);
+		// A client that never half-closes must not keep the socket open.
+		expect(clientSocket.destroyed).toBe(true);
+	});
+
+	it('502s an upgrade the node refuses and keeps serving', async () => {
+		await store.update('node-1', (current) => ({ ...current, apiPort: 1 }));
+
+		expect((await connect('/v1/nodes/node-1/api', USER)).status).toBe(502);
+		await new Promise<void>((resolve) => setTimeout(resolve, 50));
+		expect((await call('GET', '/v1/nodes/node-1/api/head', USER)).status).toBe(502);
 	});
 
 	it('rejects an upgrade on any path other than the api root', async () => {

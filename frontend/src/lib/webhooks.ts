@@ -17,6 +17,7 @@ export const WEBHOOK_EVENTS = [
   'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK',
   'HYDRA_HEAD_POST_TX_FAILED',
   'HYDRA_HEAD_CONTEST_MISSING',
+  'HYDRA_HEAD_CONTEST_WATCH_ALERT',
 ] as const;
 
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
@@ -68,6 +69,7 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, string> = {
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK: 'Hydra snapshot round stuck',
   HYDRA_HEAD_POST_TX_FAILED: 'Hydra L1 transaction failed',
   HYDRA_HEAD_CONTEST_MISSING: 'Hydra head closed on an old snapshot',
+  HYDRA_HEAD_CONTEST_WATCH_ALERT: 'Hydra contest watch needs attention',
 };
 
 export function formatWebhookDate(value: Date | string | null | undefined) {

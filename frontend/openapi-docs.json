@@ -26703,7 +26703,8 @@
                                                                         "HYDRA_HEAD_LOW_BALANCE",
                                                                         "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                                         "HYDRA_HEAD_POST_TX_FAILED",
-                                                                        "HYDRA_HEAD_CONTEST_MISSING"
+                                                                        "HYDRA_HEAD_CONTEST_MISSING",
+                                                                        "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                                                     ]
                                                                 }
                                                             },
@@ -26884,11 +26885,12 @@
                                                 "HYDRA_HEAD_LOW_BALANCE",
                                                 "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                 "HYDRA_HEAD_POST_TX_FAILED",
-                                                "HYDRA_HEAD_CONTEST_MISSING"
+                                                "HYDRA_HEAD_CONTEST_MISSING",
+                                                "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                             ]
                                         },
                                         "minItems": 1,
-                                        "maxItems": 15,
+                                        "maxItems": 16,
                                         "description": "Array of event types to subscribe to"
                                     },
                                     "name": {
@@ -26968,7 +26970,8 @@
                                                             "HYDRA_HEAD_LOW_BALANCE",
                                                             "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                             "HYDRA_HEAD_POST_TX_FAILED",
-                                                            "HYDRA_HEAD_CONTEST_MISSING"
+                                                            "HYDRA_HEAD_CONTEST_MISSING",
+                                                            "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                                         ]
                                                     }
                                                 },
@@ -27104,11 +27107,12 @@
                                                 "HYDRA_HEAD_LOW_BALANCE",
                                                 "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                 "HYDRA_HEAD_POST_TX_FAILED",
-                                                "HYDRA_HEAD_CONTEST_MISSING"
+                                                "HYDRA_HEAD_CONTEST_MISSING",
+                                                "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                             ]
                                         },
                                         "minItems": 1,
-                                        "maxItems": 15,
+                                        "maxItems": 16,
                                         "description": "Array of event types to subscribe to"
                                     },
                                     "name": {
@@ -27186,7 +27190,8 @@
                                                             "HYDRA_HEAD_LOW_BALANCE",
                                                             "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                             "HYDRA_HEAD_POST_TX_FAILED",
-                                                            "HYDRA_HEAD_CONTEST_MISSING"
+                                                            "HYDRA_HEAD_CONTEST_MISSING",
+                                                            "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                                         ]
                                                     }
                                                 },
@@ -37394,7 +37399,8 @@
                                                                     "PostTxOnChainFailed",
                                                                     "TxInvalid",
                                                                     "InvalidInput",
-                                                                    "ContestMissing"
+                                                                    "ContestMissing",
+                                                                    "ContestWatchAlert"
                                                                 ]
                                                             },
                                                             "errorMessage": {

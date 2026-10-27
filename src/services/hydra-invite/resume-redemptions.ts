@@ -182,6 +182,7 @@ export async function resumeHydraRedemptions(
 				record: current,
 				transport: RESUME_TRANSPORT,
 				createHead: createHeadFromExchange,
+				leaseWaitMs: 0,
 			});
 			const result = await advanceRedemption(toRedemptionState(current), ports, { rowIsNew: false });
 			outcome.resumed += 1;

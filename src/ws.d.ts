@@ -23,13 +23,14 @@ declare module 'ws' {
 
 		readonly readyState: number;
 
-		send(data: string): void;
+		send(data: string | Buffer, callback?: (error?: Error) => void): void;
 		close(code?: number, data?: string | Buffer): void;
 		terminate(): void;
 		/** Stop reading from the socket; a no-op while connecting or closed. */
 		pause(): void;
 		resume(): void;
 		/** Send a ping control frame; the peer's websocket stack answers with a pong. */
-		ping(): void;
+		ping(data?: string | Buffer): void;
+		pong(data?: string | Buffer): void;
 	}
 }

@@ -127,6 +127,15 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		summary: 'Acknowledge the provisioning escrow',
 	},
 	{ path: '/v1/nodes/{nodeId}/start', method: 'post', kind: 'startNode', tier: 'admin', summary: 'Start the node' },
+	{
+		path: '/v1/nodes/{nodeId}/init',
+		method: 'post',
+		kind: 'initNode',
+		tier: 'admin',
+		summary: 'Dispatch one Init to this node',
+		description:
+			"Admin only. Before dispatch, the Host reads this node's live L2 parameters and current L1 parameters from Blockfrost. Init is refused when those checks fail.",
+	},
 	{ path: '/v1/nodes/{nodeId}/stop', method: 'post', kind: 'stopNode', tier: 'admin', summary: 'Stop the node' },
 	{
 		path: '/v1/nodes/{nodeId}/restart',
@@ -153,7 +162,7 @@ const PROXY_DESCRIPTION =
 	'Forwards to the supervised hydra-node’s own API, gated by an allow-list — ' +
 	'GET: /head, /snapshot, /snapshot/utxo, /snapshot/last-seen, /commits, /protocol-parameters; ' +
 	'POST: /snapshot, /commit, /decommit, /transaction, /cardano-transaction; ' +
-	'DELETE: /commits/{txId}. WebSocket upgrades on the same prefix carry the head’s event stream. ' +
+	'DELETE: /commits/{txId}. WebSocket upgrades on the same prefix carry the head’s event stream and block Init. ' +
 	'Requires the token derived for that node (or, while the Host still allows it, the Host-wide user token).';
 
 type ParameterObject = {

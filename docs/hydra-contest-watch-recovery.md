@@ -1,0 +1,64 @@
+# Respond to a Hydra contest watch alert
+
+VERIFIED: `HYDRA_HEAD_CONTEST_WATCH_ALERT` has three reasons. `HEAD_CLOSED`
+comes from an independent L1 state-token lookup. `NODE_UNOBSERVABLE` means the
+local node could not provide a usable Head state for more than one tenth of the
+contestation period, bounded to one through five minutes. `L1_OBSERVER_UNAVAILABLE`
+means the separate chain lookup
+failed for that long while the node remained observable.
+
+VERIFIED from `src/services/monitoring/scheduler/jobs.ts` and
+`src/utils/async-interval/index.ts`: each watch run starts 60 seconds after the
+previous run ends. A run with slow nodes or a slow chain lookup takes longer, so
+an alert can arrive more than one run after that bound. A run that finds no
+problem clears the clock.
+
+VERIFIED from `src/services/hydra-contest-watch/watch.ts` and
+`src/lib/hydra/hydra/head-init-validation.ts`: every run reads L1 for every
+Open, Closed or FanoutPossible Head, with two Blockfrost requests per Head
+(`assetsTransactions`, then `txsUtxos`). At one run per minute that is up to
+2,880 requests per Head per day, on the payment source's Blockfrost key, for
+each service instance that runs the job. Size the Blockfrost plan for it: a
+spent quota also fails the payment paths that use the same key.
+
+VERIFIED: the two outage reasons also add a `ContestWatchAlert` error to the
+Head's error list, so an operator without a webhook receiver still sees them.
+`HEAD_CLOSED` is only a webhook, because a planned Close is not an error.
+
+1. On `HEAD_CLOSED`, check the Head's current L1 state and contestation
+   deadline. Keep the local node running so it can post a Contest. Confirm on
+   L1 that a Contest with the latest signed snapshot lands before the deadline.
+   The first Close alert does not prove a Contest is missing. The separate
+   `HYDRA_HEAD_CONTEST_MISSING` event reports that gap after its grace period.
+2. On `NODE_UNOBSERVABLE`, check the Host, the node process, its persistent
+   volume, and the service's runtime token. Restore the existing node with its
+   original keys and volume. Do not create a new Head identity. Repeat the L1
+   check after the node reconnects. A restarted node may need time to replay
+   its history before it can compare snapshots.
+   A paused Host stops its nodes, so every Open Head on it raises this alert
+   once the pause outlasts the bound above.
+   Resume the Host before the contestation deadline.
+   A running node whose history replay keeps failing raises this alert too,
+   because the watch uses only a completed, verified replay. Before you restore
+   a node that is running, look for the replay failure. For an enabled Head
+   with a live connection, it is a `CommandFailed` entry with input
+   `HistoryReplay` in the Head's error list. A disabled Head is watched through
+   a read-only observer that records no such entry, so search the service log
+   for `[HydraNode] History replay rejected a protocol frame` instead.
+3. If node persistence is lost, use the stored `initChainSlot` and
+   `initChainHash` as the pre-Init replay point for `--start-chain-from`.
+   REPORTED: [the preprod recovery drill](hydra-persistence-recovery-verification.md)
+   rebuilt the last on-chain increment with this method. INFERRED: L2 activity
+   after that increment still needs a cooperative peer or a separate recovery
+   transaction path. Do not claim the old balance is restored from chain replay
+   alone.
+4. On `L1_OBSERVER_UNAVAILABLE`, restore the payment source's Blockfrost key
+   and chain access. The local node can still contest while it is healthy, but
+   the service has lost its separate view of a Close. Run the admin Head chain
+   check after access returns.
+
+INFERRED from `src/services/hydra-contest-watch/watch.ts`: the watch records
+alert claims and webhook delivery entries in the same database transaction.
+A failed enqueue should leave the alert unclaimed for a later tick. Monitor
+the webhook receiver and the Head's chain state until the contestation period
+ends.

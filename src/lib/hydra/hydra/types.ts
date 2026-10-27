@@ -1,5 +1,6 @@
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
+import type { HydraSnapshotVerificationFrame } from './snapshot-verification';
 
 export enum MessageTag {
 	Greetings = 'Greetings',
@@ -273,5 +274,10 @@ export type HydraNodeConfig = {
 	guardHostDestination?: boolean;
 	/** Computes history snapshot accumulators; defaults to the event loop. */
 	computeSnapshotAccumulator?: HydraAccumulatorComputer;
+	/**
+	 * Persist each verified signed snapshot before replay accepts it. Replay also
+	 * calls it, without waiting, for a signed snapshot it rejects.
+	 */
+	persistVerifiedSnapshot?: (frame: HydraSnapshotVerificationFrame) => Promise<void>;
 	walletId: string;
 };

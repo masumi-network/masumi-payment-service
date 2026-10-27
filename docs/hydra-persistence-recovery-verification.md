@@ -13,11 +13,15 @@ Yes, proven live, with one qualification.
 
 **Q2. What does the masumi node DB store? Is DB + ENCRYPTION_KEY enough to recover everything?**
 
-The DB stores every key: encrypted wallet mnemonics, the hydra signing key, the node cardano key, remote party verification keys, and head identity fields. VERIFIED by decrypting and re-deriving addresses (`96-derive-db-wallets.mts`). It stores NO snapshot bodies, NO multisignatures, and NO in-head UTxO set (`latestSnapshotNumber` is a bare counter). So DB + ENCRYPTION_KEY recovers keys and wallets, and (given the chain) everything up to the last increment. It does not recover post-increment L2 state, and it does not record the chain anchor needed for `--start-chain-from`. The snapshot-storage feature below closes both gaps.
+The DB stores every key: encrypted wallet mnemonics, the hydra signing key, the node cardano key, remote party verification keys, and head identity fields. VERIFIED by decrypting and re-deriving addresses (`96-derive-db-wallets.mts`). At the time of this drill, it stored NO snapshot bodies, NO multisignatures, NO in-head UTxO set, and no `--start-chain-from` anchor. DB + ENCRYPTION_KEY recovered keys and wallets, and chain replay recovered state up to the last increment. It did not recover post-increment L2 state.
+
+Correction on 2026-10-27. VERIFIED in `prisma/models/hydra-head.prisma:127-128`: the current `HydraHead` model stores `initChainSlot` and `initChainHash` as the block point before Init. `src/lib/hydra/hydra/head-init-validation.ts:336-379` resolves the point on a best-effort basis. `src/services/hydra-init-backfill/index.ts:27-61` retries missing anchors for eligible live heads. A null anchor still needs operator investigation.
+
+Correction to the correction. An earlier version of the paragraph above also said that signed snapshot bodies, multisignatures, and the in-head UTxO set remain absent from the payment DB. That sentence was later removed from the paragraph. It was wrong for this release: it was written before the snapshot store merged. VERIFIED in `prisma/models/hydra-stored-snapshot.prisma`: `HydraStoredSnapshot` stores each verified signed snapshot with its multisignature and UTxO partitions. See `docs/hydra-snapshot-evidence.md` for what the rows attest.
 
 **Q3. Should we store snapshots in the payment DB after each L1 hash and head change?**
 
-Yes. The live results narrow WHY: chain replay recovers more than expected (the last increment's certificate, with signatures), so the stored snapshot matters for exactly three things: (1) the L2 tail after the last increment, which is the part a counterparty who benefits from the rollback will refuse to re-sign; (2) a future unilateral close path at the true latest state (needs an external close builder, because sideload is rejected upstream); (3) the replay anchor and fanout proof material. Design in the second half of this document.
+Yes. The live results narrow WHY: chain replay recovers more than expected (the last increment's certificate, with signatures), so the stored snapshot matters for the L2 tail after that increment, a future unilateral close path at the true latest state, and fanout proof material. The current DB stores the replay anchor separately. An external close builder is still needed because stock hydra-node rejected sideload in this drill. Design in the second half of this document.
 
 ## Method
 
@@ -69,17 +73,20 @@ Method: code reading of the upstream 2.4.1 tag, which `packages/hydra-host/Docke
     - Persistence restore: a replayed or older node lags the peer's confirmed snapshot and cannot side-load it, because a side-load needs an equal `utxoToCommit` (`SideLoadUTxOToCommitInvalid`, `HeadLogic.hs:1363`). Same fork, same verdict.
     - Close: a closed head confirms no snapshots, and fanout leaves out a commit that never landed (finding 16). A recovery is safe, so the payment service skips the guard for a head whose recorded status is Closed or later.
 
-## What the DB stores today (origin/dev schema)
+## What the DB stores: drill and current schema
 
 - Encrypted with ENCRYPTION_KEY: `WalletSecret.encryptedMnemonic` (fund wallets), `HydraSecretKey` (hydra SK + node cardano SK), HydraHost tokens.
-- Plain: `headIdentifier`, `contestationPeriod`, remote party vkeys (`HydraVerificationKey`), advertise fields, `latestSnapshotNumber` (bare counter), reconciliation cursors.
-- Absent: signed snapshot bodies, multisignatures, in-head UTxO sets, the event log, and any chain anchor for `--start-chain-from`.
+- Plain at the time of the drill: `headIdentifier`, `contestationPeriod`, remote party vkeys (`HydraVerificationKey`), advertise fields, `latestSnapshotNumber` (bare counter), reconciliation cursors.
+- VERIFIED current schema: `HydraHead.initChainSlot` and `HydraHead.initChainHash` can store the pre-Init replay anchor. Both fields are nullable. Anchor observation and backfill are best effort, so inspect each Head before a restore.
+- VERIFIED current schema: `HydraStoredSnapshot` stores each verified signed snapshot body, its multisignature, and its UTxO partitions.
+- Absent from the current payment DB: the node event log.
 
 ## Feature design: snapshot storage in the payment DB
 
 ### What to store
 
-One append-only table, one row per confirmed snapshot, plus one anchor row per head.
+One append-only table with one row per confirmed snapshot. The current schema
+already has nullable anchor columns on each `HydraHead` row.
 
 ```prisma
 model HydraStoredSnapshot {
@@ -97,16 +104,15 @@ model HydraStoredSnapshot {
   @@index([hydraHeadId, snapshotNumber(sort: Desc)])
 }
 
-// On HydraHead (new columns):
-//   initTxChainSlot  BigInt?  // slot of the block BEFORE the observed InitTx
-//   initTxChainHash  String?  // its block hash -> the --start-chain-from anchor
+// Implemented on HydraHead as initChainSlot and initChainHash:
+// nullable slot and hash of the block before the observed InitTx.
 ```
 
 Write triggers, in the existing L2 sync path (the service already receives and verifies every `SnapshotConfirmed`; `VerifiedHydraSnapshot` already carries canonical TxOut bytes):
 
 1. After every verified `SnapshotConfirmed`: upsert the row. This covers the user's "after each head change".
 2. After every observed L1 head transition (increment, decrement, close, contest): re-assert that the latest stored row is the one the transition references, and mark `kind`. This covers "after each L1 hash".
-3. On head creation: store the pre-init chain point (slot + hash of the tip just before posting InitTx) on the head row. Without this anchor, replay-based recovery cannot start.
+3. Existing code: when it verifies InitTx on chain, record the parent block point in `HydraHead.initChainSlot` and `initChainHash` when available. The scheduled backfill retries a missing point for eligible live Heads. Check that both fields are set before a replay-based restore.
 
 Retention: keep at least the latest CONFIRMED row, the latest INCREMENT_ACK row per version, and every row not yet superseded by an on-chain transition. Older rows can be pruned; append-only until a pruning job exists is fine at masumi volumes.
 
@@ -114,7 +120,7 @@ Retention: keep at least the latest CONFIRMED row, the latest INCREMENT_ACK row 
 
 R1. Peer intact (today's common case). Nothing needed from the store: the peer closes at the latest snapshot. VERIFIED live (head 1).
 
-R2. Both sides wiped, counterparty cooperative. Restart both nodes with `--wipe`-equivalent fresh dirs and `--start-chain-from` = stored anchor. Replay rebuilds the last increment certificate (VERIFIED, finding 5). Re-submit the rolled-back L2 tail: the stored `snapshotJson` rows tell you exactly which txs are missing (diff stored latest utxo vs reconstructed utxo). After re-signing, close and fan out normally (VERIFIED, findings 6 and 7).
+R2. Both sides wiped, counterparty cooperative. Restart both nodes with `--wipe`-equivalent fresh dirs and `--start-chain-from` = the verified anchor. Replay rebuilds the last increment certificate (VERIFIED, finding 5). The stored `HydraStoredSnapshot.signedSnapshotJson` rows can identify the rolled-back L2 tail (diff stored latest utxo vs reconstructed utxo). Re-submit those transactions. After re-signing, close and fan out normally (VERIFIED, findings 6 and 7).
 
 R3. Both sides wiped, counterparty gone or hostile. Stock node closes at the reconstructed last-increment state (INFERRED, finding 9), which already recovers ALL funds at their positions as of the last increment. To close at the true latest state instead, build the close tx externally from the stored snapshot: the row holds the snapshot body and both multisignatures; the accumulator commitment is recomputable from the stored canonical TxOut bytes (the service already has the KZG code); the head validator is a published reference script. This is the only path that needs new tx-building code, and it is needed only when the rolled-back tail materially favors the counterparty.
 

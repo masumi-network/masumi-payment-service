@@ -26,6 +26,7 @@ import {
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
 import type { L2MintIncident } from './l2-mint-tally';
+import { stringifyHydraJson } from './json';
 import {
 	HydraCommandRefusedUnsyncedError,
 	HydraProtocolError,
@@ -978,6 +979,74 @@ describe('HydraNode', () => {
 	});
 
 	describe('signed bounded history replay', () => {
+		it('waits for durable snapshot storage before accepting each signed frame', async () => {
+			let releaseFirst!: () => void;
+			const firstStored = new Promise<void>((resolve) => {
+				releaseFirst = resolve;
+			});
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+					if (frame.snapshot.number === 1) await firstStored;
+				},
+			});
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+
+			expect(persisted).toEqual([1]);
+			expect(node.verifiedSnapshotNumber).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(false);
+
+			releaseFirst();
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(persisted).toEqual([1, 2, 3]);
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+			expect(node.verifiedSnapshotNumber).toBe(3n);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+		});
+
+		it('fails replay when the verified snapshot cannot be stored', async () => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async () => {
+					throw new Error('snapshot database unavailable');
+				},
+			});
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+			// The recorded head error must say storage failed, not that a frame was invalid.
+			expect(node.confirmedTransactionHistoryError?.message).toBe('Hydra verified snapshot could not be stored');
+			expect((node.confirmedTransactionHistoryError as HydraProtocolError & { cause: Error })?.cause).toEqual(
+				expect.objectContaining({
+					message: 'snapshot database unavailable',
+				}),
+			);
+			expect(node.verifiedSnapshotNumber).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(false);
+		});
+
+		it('ignores a late storage failure from a closed history pass', async () => {
+			let rejectStorage!: (error: Error) => void;
+			const pendingStorage = new Promise<void>((_resolve, reject) => {
+				rejectStorage = reject;
+			});
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: () => pendingStorage,
+			});
+			historyConnection.emit('message', JSON.stringify(signedHistoryChain().frames[0]));
+			historyConnection.emit('close');
+			rejectStorage(new Error('old database write failed'));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+		});
+
 		it('retains finalized fanout evidence across non-status frames and clears it on a live regression', async () => {
 			const { node, historyConnection, liveConnection } = await startSignedNode();
 			const chain = signedHistoryChain();
@@ -1897,6 +1966,102 @@ describe('HydraNode', () => {
 			},
 		);
 
+		it('stores each verified snapshot, and no forged one', async () => {
+			const persisted: unknown[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(JSON.parse(stringifyHydraJson({ snapshot: frame.snapshot, signatures: frame.signatures })));
+				},
+			});
+			const { frames } = signedHistoryChain();
+			const [first, second, third] = frames;
+			const forged = structuredClone(third);
+			forged.signatures.multiSignature[1] = forged.signatures.multiSignature[0];
+
+			for (const frame of [first, second, forged]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError).toBeDefined();
+			expect(persisted).toEqual([
+				{ snapshot: first.snapshot, signatures: first.signatures },
+				{ snapshot: second.snapshot, signatures: second.signatures },
+			]);
+		});
+
+		it('stores a signed snapshot even when its transition fails the replay', async () => {
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+				},
+			});
+			const [first, , third] = signedHistoryChain().frames;
+
+			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError).toBeDefined();
+			expect(persisted).toEqual([first.snapshot.number, third.snapshot.number]);
+		});
+
+		it('stores a signed first snapshot that the first-snapshot guard rejects', async () => {
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+				},
+			});
+			const [, second] = signedHistoryChain().frames;
+
+			historyConnection.emit('message', JSON.stringify(second));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/snapshot gap/);
+			expect(persisted).toEqual([second.snapshot.number]);
+		});
+
+		it('fails the pass without waiting for the rejected snapshot write', async () => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: () => new Promise<void>(() => undefined),
+			});
+			const [, second] = signedHistoryChain().frames;
+
+			historyConnection.emit('message', JSON.stringify(second));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/snapshot gap/);
+		});
+
+		it.each([
+			{
+				label: 'rejects',
+				persist: async (number: number) => {
+					if (number > 1) throw new Error('database down');
+				},
+			},
+			{
+				label: 'throws',
+				persist: (number: number) => {
+					if (number > 1) throw new Error('database down');
+					return Promise.resolve();
+				},
+			},
+		])('keeps the transition error and logs when storing the rejected snapshot $label', async ({ persist }) => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: (frame) => persist(frame.snapshot.number),
+			});
+			const [first, , third] = signedHistoryChain().frames;
+
+			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/inconsistent signed-state transition/);
+			expect(mockLoggerError).toHaveBeenCalledWith(
+				'[HydraNode] Could not store a signed snapshot that this replay rejected',
+				expect.objectContaining({ headId: third.headId, number: third.snapshot.number, error: 'database down' }),
+			);
+		});
+
 		it('pages a large replay without trusting a partial prefix as complete', async () => {
 			const { node, historyConnection } = await startSignedNode({ maxUnreconciledTransactions: 1 });
 			const { frames, transactions } = signedHistoryChain();
@@ -2692,6 +2857,17 @@ describe('HydraNode', () => {
 	});
 
 	describe('init()', () => {
+		it('uses admitted Init dispatch while the verified live socket observes the answer', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const dispatch = jest.fn(async () => undefined);
+			const initPromise = node.init(1000, dispatch);
+			expect(dispatch).toHaveBeenCalledTimes(1);
+			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
+			await expect(initPromise).resolves.toBeUndefined();
+		});
+
 		it('sends Init and resolves when HeadIsInitializing is received', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();

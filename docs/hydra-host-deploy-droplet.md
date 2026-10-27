@@ -25,7 +25,7 @@ exactly the head state whose loss is unrecoverable. See
 | Requirement                           | Why                                                                                                                                                                             |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **amd64 CPU**                         | The image bakes `hydra-node`, and upstream publishes no `aarch64-linux` build. An arm64 droplet has nothing to run. See [hydra-host-native-mode.md](hydra-host-native-mode.md). |
-| **A block-storage volume**            | Not the droplet's own disk if you want the head to survive rebuilding the droplet. Never a network filesystem.                                                                  |
+| **An encrypted block-storage volume** | Keep head state across droplet rebuilds. The volume holds plaintext node signing-key files while mounted. Use local block storage with LUKS2; never a network filesystem.       |
 | **A stable public hostname or IP**    | It becomes each node's advertise identity and must not change for a head's lifetime.                                                                                            |
 | **A Blockfrost project id in a file** | Every node follows the chain through it.                                                                                                                                        |
 | **A cloud firewall**                  | The peer plane cannot authenticate its callers.                                                                                                                                 |
@@ -53,31 +53,68 @@ unverified.
 
 Losing this volume loses the heads. Recovering one needs the escrowed keys plus
 a snapshot, so treat the volume as the primary copy of something irreplaceable.
+VERIFIED (`packages/hydra-host/src/api/provision.ts`): the Host writes node
+signing keys as mode 0600 files under `keys/`. File permissions do not protect
+an offline copy of the volume. Encrypt the block device before putting a Host
+on it, and keep the unlock secret outside the droplet and its snapshots. LUKS2
+protects an unmounted volume; the running Host can still read its keys.
 
-### Attach, format, mount
+### Attach, encrypt, format, mount
 
 DigitalOcean's control panel prints the exact device path and commands when you
 attach a volume. The device follows the pattern
 `/dev/disk/by-id/scsi-0DO_Volume_<volume-name>`.
+These commands are for a **new, empty volume only**. `luksFormat` and `mkfs.ext4`
+destroy existing data. Do not run them on a volume that holds a live head. For
+an existing plaintext Host, keep the volume and snapshots protected until its
+heads are finalised and an encrypted replacement can be built.
 
 ```bash
 VOLUME=/dev/disk/by-id/scsi-0DO_Volume_hydra-data
-mkfs.ext4 -F "$VOLUME"
+cryptsetup luksFormat --type luks2 "$VOLUME"
+cryptsetup open "$VOLUME" hydra_data
+mkfs.ext4 /dev/mapper/hydra_data
 mkdir -p /mnt/hydra_data
-mount -o defaults,discard,noatime "$VOLUME" /mnt/hydra_data
+mount -o defaults,noatime /dev/mapper/hydra_data /mnt/hydra_data
+cryptsetup status hydra_data
+findmnt -no SOURCE /mnt/hydra_data
 ```
 
-Persist it in `/etc/fstab`:
+The status check must show an active LUKS2 mapping. The mount source must be
+`/dev/mapper/hydra_data`. Store the passphrase in an operator secret store.
+Configure an unlock method that survives droplet rebuilds before enabling the
+Host. A manual unlock requires an operator at each boot; an unattended unlock
+requires an external key service. Do not put the unlock key on the same droplet
+or in a snapshot of it.
+
+Add this entry to `/etc/crypttab` so systemd knows the mapping:
 
 ```
-/dev/disk/by-id/scsi-0DO_Volume_hydra-data /mnt/hydra_data ext4 defaults,nofail,discard,noatime 0 0
+hydra_data /dev/disk/by-id/scsi-0DO_Volume_hydra-data none luks,nofail
 ```
 
-`nofail` lets the droplet finish booting when the volume is missing. That is
-safe here **only because the systemd unit below refuses to start without the
-mount**. Without that guard, `nofail` plus a Docker restart policy is how a Host
-boots on an empty directory, finds no node records, and supervises nothing while
-every head sits unattended.
+Keep `nofail` in this entry. Without it, systemd makes the unlock a hard
+boot dependency and waits at the console for the passphrase with no timeout.
+SSH does not start, so the Host stays offline until someone types the
+passphrase in the DigitalOcean console. With `nofail`, the droplet boots with
+the volume locked. Unlock it over SSH with
+`systemctl start systemd-cryptsetup@hydra_data`, then run
+`systemctl start hydra-host`. The Host unit failed at boot on its missing mount,
+and `Restart=always` does not retry a failed dependency. Starting the unit
+mounts the volume through `RequiresMountsFor`.
+
+Persist the mapped filesystem in `/etc/fstab`:
+
+```
+/dev/mapper/hydra_data /mnt/hydra_data ext4 defaults,nofail,noatime 0 0
+```
+
+`nofail` in `/etc/crypttab` and `/etc/fstab` lets the droplet finish booting
+when the encrypted volume is locked or missing. That is safe here **only because the systemd unit below refuses to
+start without the mount**. After every reboot, confirm `cryptsetup status
+hydra_data`, `findmnt -no SOURCE /mnt/hydra_data`, and the Host service state.
+Without that guard, `nofail` plus a Docker restart policy is how a Host boots
+on an empty directory while every head sits unattended.
 
 ### Ownership
 
@@ -93,9 +130,12 @@ chmod 700 /mnt/hydra_data
 ### The Blockfrost file
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file containing the project id**, not
-the id itself. It is handed to `hydra-node` as `--blockfrost`, and the node opens
-it. A Host with no such file starts fine and then every node it spawns dies,
-which reads as a node problem rather than a missing secret.
+the id itself. VERIFIED (`packages/hydra-host/src/supervisor/args.ts:194-195`,
+`packages/hydra-host/src/api/init-admission.ts:28-69,96-135`): Both the Host and
+`hydra-node` read this file. Before each Init, the Host uses the key to read
+current L1 parameters from Blockfrost. If the file or the Blockfrost response
+is unavailable, the Host refuses Init. A Host
+with no such file starts fine, but every node it spawns also fails to start.
 
 ```bash
 mkdir -p /srv/hydra
@@ -129,6 +169,11 @@ Docker reads each line literally. Do not put quotes around a value, because the
 quotes become part of the token.
 
 ## 2. Run the container
+
+Verify the signed Host release and set `HYDRA_HOST_IMAGE` to its immutable
+reference before creating the container. Use the procedure in
+[hydra-host-upgrade.md](hydra-host-upgrade.md#release-integrity). Keep the
+trusted public key outside the downloaded release assets.
 
 Use `--network host`. Publishing 32 peer ports individually spawns 32 userland
 proxies and caps how many heads one Host can carry. Under host networking the
@@ -172,7 +217,7 @@ docker create --name hydra-host \
   -e HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true \
   -e HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL=true \
   -e HYDRA_HOST_MONITORING_ENABLED=false \
-  ghcr.io/example/hydra-host@sha256:...
+  "${HYDRA_HOST_IMAGE:?verify the signed release first}"
 ```
 
 `HYDRA_HOST_SCRIPTS_TX_IDS` holds the comma-separated transaction ids of a
@@ -655,6 +700,58 @@ The peer plane bypasses the load balancer entirely. It has no TLS upstream, and
 per-head dynamic TCP ports behind a managed load balancer are unworkable, so
 peer ports sit directly on the droplet IP under the allow-list above.
 
+### Control Plane traffic limits
+
+VERIFIED (`packages/hydra-host/src/api/server.ts`,
+`packages/hydra-host/src/api/server-limits.ts`): the Host caps JSON request
+bodies at 256 KiB and bounds header and request read time. It closes a socket
+that moves no bytes for 60 seconds. Authenticated node proxy requests and
+proxied WebSockets opt out of that idle timeout. Its control socket cap is the
+greater of 256 and eight times `HYDRA_HOST_PEER_PORT_COUNT`. The default 32
+Head slots get 256 sockets. A Host configured for more Heads gets a larger
+finite cap. This formula is a guard, not a measured capacity claim. When the
+cap refuses a connection, the Host logs `control plane is at its N-connection
+cap`, at once and then at most once a minute while drops continue. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
+the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
+authenticated caller reaches it. The proxy caps each WebSocket message at
+4 MiB in both directions (`MAX_WS_MESSAGE_BYTES`), the same as the payment
+client's own frame cap. The Host does not bound request rate or proxy HTTP
+byte volume.
+
+The Control Plane ingress must enforce these limits before forwarding to port
+`8443`:
+
+- **Connections:** Set a total cap below the Host's capacity-derived socket
+  cap and a per-source cap. Without a per-source cap, one client that keeps
+  opening connections can fill the Host cap, and the Host then drops new
+  service calls and WebSocket reconnects. Alert on the Host's
+  `connection cap` warning. Count WebSocket upgrades for the life of each
+  session. Leave room for one live session per Head and normal control
+  requests. Check OS file descriptor and memory limits at the chosen cap.
+- **HTTP rate:** Set per-source and total request budgets with a short burst
+  allowance. Reject excess requests with `429` before they reach the Host.
+  Apply this to public docs routes as well as token routes.
+- **HTTP bodies:** Reject Host JSON bodies over 256 KiB. Give proxied node
+  `POST` routes a separate finite byte cap, based on the largest valid request
+  measured in staging. Reject over-limit bodies before forwarding.
+- **WebSocket messages:** Cap each reassembled client-to-Host message, including
+  fragmented frames. Do not apply that cap to the Host-to-client history replay.
+  Close an over-limit client message before it reaches a node.
+
+Record the numeric limits in the ingress configuration. Size the proxy body,
+WebSocket message, rate, and burst limits from a staging run with the maximum
+configured Heads and a full `?history=yes` replay. Do not assume the load
+balancer from section 5 enforces any of these rules. Check each rule against
+its current documentation. If it cannot enforce a rule, put a capable ingress
+between it and the Host. Keep the backend firewall restricted to that ingress.
+
+Before production, verify the ingress rejects an over-rate request with `429`,
+an oversized proxied body before it reaches the node, and an oversized client
+WebSocket message before it reaches the node. Hold connections up to the chosen
+cap and confirm that the next one is refused. Then confirm normal provisioning,
+node transactions, and full history replay still complete. This checks both
+the limits and the capacity left for valid traffic.
+
 ## 6. Health
 
 The control plane deliberately has no unauthenticated health route. Probe an
@@ -723,6 +820,10 @@ advertise identity, and a counterparty dials it.
 ## 8. Backups
 
 Take DigitalOcean volume snapshots on a schedule.
+Keep the LUKS unlock secret outside both the droplet and its snapshots. Test a
+restore by unlocking a snapshot on an isolated machine before relying on it.
+Deleting a key file is not secure erasure on block storage or in old snapshots;
+retain and retire snapshots under the same secret-handling policy as the volume.
 
 A snapshot of a mounted volume is a crash-consistent image, not a clean copy: it
 catches the event store and the raft WAL mid-write. That is the same class of
@@ -748,33 +849,48 @@ coordinated change, not a rolling one. Close and fan out every open head
 first: an upgraded node cannot use a head opened by the previous version. The
 2.3.0 to 2.4.1 move has its own steps in
 [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
+Verify the new signed release before stopping the current Host. Follow
+[hydra-host-upgrade.md](hydra-host-upgrade.md#release-integrity) and set
+`HYDRA_HOST_IMAGE` to the verified digest.
 
 ```bash
 systemctl stop hydra-host                          # drains, up to 250s
 docker rm hydra-host
-docker create --name hydra-host ... <new digest>   # same flags, same volume
+docker create --name hydra-host ... "$HYDRA_HOST_IMAGE" # same flags and volume
 systemctl start hydra-host
 ```
 
-After any change to the running version or scripts, press **Check** on the node in
-the admin UI and re-pin `HYDRA_EXPECTED_VERSION` and
-`HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH` in your payment service. See
+After any change to the running version or scripts, review the binary and
+update `src/services/hydra-host/reviewed-catalogue.ts` before placement. Press
+**Check** on the node and confirm that its values match the reviewed record. See
 [hydra-operations.md §2b](hydra-operations.md).
 
 ## Checklist
 
-1. amd64 droplet, block-storage volume mounted at `/mnt/hydra_data`, owned by
-   `10001:10001`.
+1. amd64 droplet, LUKS2 block-storage volume unlocked and mounted at
+   `/mnt/hydra_data`, owned by `10001:10001`; unlock secret stored separately.
 2. Blockfrost project id in a file, mode 600, owned by `10001:10001`. Host
    tokens in `/srv/hydra/host.env`, mode 600, owned by root.
 3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`.
 4. systemd unit with `RequiresMountsFor` and `TimeoutStopSec=270`, enabled.
-5. Cloud firewall: 8443 restricted, 8444 open, 5001-5032 to counterparties, 22 to
-   you.
-6. `/usr/local/sbin/hydra-peer-rules` installed, run once, and re-run on every
-   membership or DNS change.
-7. Load balancer terminating TLS in front of 8443, health check expecting 401.
-8. Volume snapshots scheduled; escrowed keys stored separately.
+5. Cloud firewall: 8443 from the Control Plane load balancer, 8444 from the
+   Exchange Plane load balancer, 5001-5032 from counterparties, and 22 from
+   your administrative range.
+6. Install `/usr/local/sbin/hydra-peer-firewall`. Run `baseline` before the
+   Host starts. Run `refresh` on its timer and after membership changes.
+7. Enable `hydra-peer-firewall-baseline.service`.
+8. Install `/usr/local/sbin/hydra-peer-egress` and
+   `/etc/default/hydra-peer-egress`. Run `baseline`, then `verify`.
+9. Include `/etc/nftables.d/hydra-peer.nft` and
+   `/etc/nftables.d/hydra-peer-egress.nft` from `/etc/nftables.conf`, after
+   `flush ruleset`.
+10. The Host unit runs `hydra-peer-firewall baseline` and
+    `hydra-peer-egress baseline` as `ExecStartPre`.
+11. Use separate TLS Control and Exchange Plane load balancers. Set TCP health
+    checks on backend ports 8443 and 8444. Keep the local 401 request as a
+    manual check.
+12. Volume snapshots scheduled and restore tested; unlock secret and escrowed
+    keys stored separately.
 
 ## Related
 

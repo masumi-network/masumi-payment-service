@@ -34,6 +34,9 @@ export const L1_MAX_TX_SIZE = 16_384;
  */
 export const FANOUT_ENVELOPE_BYTES = 917;
 
+/** Extra room for a larger change output and fee inputs during fanout. */
+export const FANOUT_SAFETY_MARGIN_BYTES = 467;
+
 /**
  * Largest L2 `maxTxSize` a Host runs. 467 bytes of the L1 limit stay free for
  * what the measurement could not fix. The payment service expects the same

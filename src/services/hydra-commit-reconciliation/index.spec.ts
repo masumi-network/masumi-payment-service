@@ -9,11 +9,12 @@ const mockBlocksLatest = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockFindMany = jest.fn() as AnyMock;
 const mockCreateRecovery = jest.fn() as AnyMock;
+const mockFindTopup = jest.fn() as AnyMock;
 const mockTransaction = jest.fn() as AnyMock;
 const transactionClient = {
 	$queryRaw: (...args: any[]) => mockQueryRaw(...args),
 	hydraLocalParticipant: { findMany: mockFindMany, updateMany: mockUpdateMany },
-	hydraTopup: { create: mockCreateRecovery },
+	hydraTopup: { create: mockCreateRecovery, findFirst: mockFindTopup, updateMany: jest.fn() },
 };
 
 jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
@@ -57,6 +58,20 @@ beforeAll(async () => {
 });
 
 const COMMIT_TX_HASH = 'a'.repeat(64);
+
+type StoredTopup = {
+	id: string;
+	hydraLocalParticipantId: string;
+	status: string;
+	isInitialCommit: boolean;
+	createdAt: Date;
+};
+type TopupWhere = {
+	hydraLocalParticipantId: string;
+	isInitialCommit?: boolean;
+	status: string | { in: string[] };
+};
+let storedTopups: StoredTopup[] = [];
 const INVALID_HEREAFTER_SLOT = 1_000n;
 
 function candidate(
@@ -83,6 +98,18 @@ beforeEach(() => {
 	mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: false }]);
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 	mockFindMany.mockResolvedValue([]);
+	storedTopups = [];
+	mockFindTopup.mockImplementation(async ({ where }: { where: TopupWhere }) => {
+		const statuses = typeof where.status === 'string' ? [where.status] : where.status.in;
+		return (
+			storedTopups.find(
+				(row) =>
+					row.hydraLocalParticipantId === where.hydraLocalParticipantId &&
+					statuses.includes(row.status) &&
+					(where.isInitialCommit === undefined || row.isInitialCommit === where.isInitialCommit),
+			) ?? null
+		);
+	});
 	mockLookupConfirmedChainTx.mockResolvedValue('confirmed-valid');
 	mockBlocksLatest.mockResolvedValue({ slot: Number(INVALID_HEREAFTER_SLOT + 10_000n) });
 });
@@ -167,6 +194,50 @@ describe('reserveAndSubmitHydraCommit', () => {
 
 		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toMatchObject({ status: 409 });
 		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(submit).not.toHaveBeenCalled();
+	});
+
+	// A top-up confirmed on L1 has not reached the Head yet. A commit admitted
+	// next to it would put two deposits in flight, which the top-up path refuses.
+	it('does not reserve or submit while a top-up is unabsorbed', async () => {
+		storedTopups = [
+			{
+				id: 'topup-1',
+				hydraLocalParticipantId: 'participant-1',
+				status: 'Confirmed',
+				isInitialCommit: false,
+				createdAt: new Date(),
+			},
+		];
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringMatching(/not been absorbed/),
+		});
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockCreateRecovery).not.toHaveBeenCalled();
+		expect(submit).not.toHaveBeenCalled();
+	});
+
+	// An earlier commit's own row is Pending too. Its refusal must name the
+	// pending commit, which the route's wallet hand-over relies on, not a top-up.
+	it('reports a pending earlier commit as a commit conflict', async () => {
+		storedTopups = [
+			{
+				id: 'commit-row-1',
+				hydraLocalParticipantId: 'participant-1',
+				status: 'Pending',
+				isInitialCommit: true,
+				createdAt: new Date(),
+			},
+		];
+		mockUpdateMany.mockResolvedValue({ count: 0 });
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toBeInstanceOf(
+			HydraCommitReservationConflictError,
+		);
 		expect(submit).not.toHaveBeenCalled();
 	});
 

@@ -8,6 +8,8 @@ import {
 	HydraProtocolError,
 	HydraTransportError,
 } from '@/lib/hydra';
+import { encrypt } from '@/utils/security/encryption';
+import { HydraHostRequestError } from '@/services/hydra-host/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -81,7 +83,15 @@ const idleHead = {
 	id: 'head-1',
 	status: HydraHeadStatus.Idle,
 	isEnabled: true,
-	LocalParticipant: { id: 'participant-1' },
+	LocalParticipant: {
+		id: 'participant-1',
+		hostNodeId: 'node-1',
+		HydraHost: {
+			baseUrl: 'https://hydra.example.com',
+			encryptedAdminToken: encrypt('admin-token'),
+			allowInsecureHttp: false,
+		},
+	},
 	HydraRelation: {
 		network: Network.Preprod,
 		LocalHotWallet: { PaymentSource: { PaymentSourceConfig: { rpcProviderApiKey: 'preprod-test-key' } } },
@@ -202,6 +212,30 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 		await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
 		expect(mockLatestChainParameters).toHaveBeenCalledTimes(1);
 		expect(mockInit).toHaveBeenCalledTimes(1);
+		expect(mockInit).toHaveBeenCalledWith(undefined, expect.any(Function));
+	});
+
+	it('refuses Init before dispatch if the registered Host no longer has an admin credential', async () => {
+		mockFindHead.mockResolvedValue({
+			...idleHead,
+			LocalParticipant: {
+				...idleHead.LocalParticipant,
+				HydraHost: { ...idleHead.LocalParticipant.HydraHost, encryptedAdminToken: null },
+			},
+		});
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockInit).not.toHaveBeenCalled();
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	it('reports a Host pre-dispatch refusal without treating Init as posted', async () => {
+		mockInit.mockRejectedValueOnce(new HydraHostRequestError('node cannot accept commands', 409));
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 503,
+			message: expect.stringContaining('Init was not sent'),
+		});
+		expect(mockReadNodeState).not.toHaveBeenCalled();
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
 	});
 
 	it('fails closed when current L1 parameters cannot be read', async () => {

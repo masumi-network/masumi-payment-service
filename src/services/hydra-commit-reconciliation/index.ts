@@ -1,3 +1,4 @@
+import createHttpError from 'http-errors';
 import { HydraTopupStatus, type Network, Prisma } from '@/generated/prisma/client';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -8,6 +9,7 @@ import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-sem
 import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
+import { blockingHydraTopupMessage, claimBlockingHydraTopup } from '@/services/hydra-topup/blocking';
 
 /**
  * Wait beyond invalid-hereafter before declaring an absent commit impossible.
@@ -65,6 +67,10 @@ export async function reserveAndSubmitHydraCommit<T>(
 			prisma.$transaction(
 				async (tx) => {
 					await lockOpenHydraHeadForDeposit(tx, reservation.hydraHeadId);
+					// A top-up that has not reached the Head yet: a commit now would put
+					// two deposits in flight at once, which the top-up path refuses too.
+					const topup = await claimBlockingHydraTopup(tx, reservation.participantId, { ignoreCommits: true });
+					if (topup !== null) throw createHttpError(409, blockingHydraTopupMessage(topup.status));
 					const reserved = await tx.hydraLocalParticipant.updateMany({
 						where: {
 							id: reservation.participantId,

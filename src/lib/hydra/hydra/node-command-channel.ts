@@ -21,6 +21,8 @@ import { HydraTransaction, type PostTxFailure } from './types';
 export interface HydraCommandOptions {
 	command: string;
 	payload: unknown;
+	/** Privileged Init dispatch; the live connection still observes the answer. */
+	dispatch?: () => Promise<void>;
 	timeoutMs: number;
 	transactionHash?: string;
 	isComplete: (message: HydraResponseMessage) => boolean;
@@ -156,6 +158,13 @@ export function sendHydraCommandAndWait(
 			});
 		};
 		const send = () => {
+			if (options.dispatch) {
+				// A failed HTTP reply may follow a queued Init. Hold the outcome as
+				// ambiguous unless the dispatch callback proves a pre-dispatch refusal.
+				wasQueued = true;
+				void options.dispatch().catch((error: unknown) => settleReject(error));
+				return;
+			}
 			void connection
 				.send(payload, {
 					signal: pendingSend.signal,

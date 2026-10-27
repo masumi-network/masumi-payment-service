@@ -19,6 +19,8 @@ import { expectedHostCapabilitiesForNetwork } from './compatibility';
 import { assertHostDestinationAllowed } from './destination';
 import { listHostIncompatibilities, oneLine } from './placement';
 import { describeRelease, type DescribedRelease } from '@/services/release/release-info';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { getHydraHostPauseState, HOST_LEASE_WAIT_MS, withHostPauseLease } from './pause';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
 export type PublicHydraHost = {
@@ -342,33 +344,114 @@ export async function updateHydraHost(
 		normalizeHostBaseUrl(existing.baseUrl, true);
 	}
 	const runsOnAdminToken = willRunOnAdminToken(existing, input);
-
-	const updated = await prisma.hydraHost.update({
-		where: { id },
-		data: {
-			...(input.name === undefined ? {} : { name: input.name }),
-			...(input.status === undefined ? {} : { status: input.status }),
-			...(input.allowInsecureHttp === undefined
-				? {}
-				: {
-						allowInsecureHttp: new URL(existing.baseUrl).protocol === 'http:' && input.allowInsecureHttp,
-					}),
-			...(input.userToken === undefined ? {} : { encryptedUserToken: validateToken(input.userToken, 'userToken') }),
-			...(input.adminToken === undefined
-				? {}
-				: { encryptedAdminToken: input.adminToken === null ? null : validateToken(input.adminToken, 'adminToken') }),
+	const updateAndDisconnect = async (leaseUntil?: Date): Promise<PublicHydraHost> => {
+		// Read under the lease. A redemption may have linked a participant after
+		// the first Host read, while a provisioning call was still in progress.
+		const participants =
+			input.userToken === undefined
+				? []
+				: await prisma.hydraLocalParticipant.findMany({
+						where: { hydraHostId: id },
+						select: {
+							hydraHeadId: true,
+							HydraHead: { select: { isEnabled: true, reconciliationCompletedAt: true } },
+						},
+					});
+		// The write is fenced on the pause this rotation checks. Read it under the
+		// lease, not before the wait: a Resume and a new pause in between would
+		// otherwise refuse a valid rotation.
+		const pauseFence =
+			participants.length === 0
+				? null
+				: await prisma.hydraHost.findUnique({
+						where: { id },
+						select: { pausedAt: true, pauseStopRequestedAt: true },
+					});
+		if (participants.length > 0) {
+			const pendingUserToken = normalizeHostToken(input.userToken ?? '', 'userToken');
+			const pause = await getHydraHostPauseState(id, pendingUserToken);
+			if (pause.phase !== 'Paused') {
+				throw createHttpError(
+					409,
+					'pause the Host and wait for every node to report Stopped before rotating its user token',
+				);
+			}
+			// Close every session while the old secret is still durable. A status
+			// flush can fail before the socket closes; in that case the operator can
+			// retry without leaving a saved new secret and a live old session.
+			const manager = getHydraConnectionManager();
+			const results = await Promise.allSettled(
+				participants.map(async ({ hydraHeadId, HydraHead }) => {
+					if (hydraHeadId !== null && HydraHead?.isEnabled && HydraHead.reconciliationCompletedAt === null) {
+						await manager.queueDisconnect(hydraHeadId);
+					}
+				}),
+			);
+			const failed = results.filter((result) => result.status === 'rejected');
+			if (failed.length > 0) {
+				logger.warn('[HydraHost] Some head sessions could not disconnect before token rotation', {
+					hydraHostId: id,
+					failed: failed.map((result) =>
+						result.status === 'rejected' && result.reason instanceof Error ? result.reason.message : 'Unknown error',
+					),
+				});
+				throw createHttpError(503, 'Host token was not saved because some old head sessions could not be closed');
+			}
+		}
+		const updated = await prisma.hydraHost
+			.update({
+				where: {
+					id,
+					...(leaseUntil === undefined ? {} : { pauseLeaseUntil: leaseUntil }),
+					...(pauseFence === null
+						? {}
+						: { pausedAt: pauseFence.pausedAt, pauseStopRequestedAt: pauseFence.pauseStopRequestedAt }),
+				},
+				data: {
+					...(input.name === undefined ? {} : { name: input.name }),
+					...(input.status === undefined ? {} : { status: input.status }),
+					...(input.allowInsecureHttp === undefined
+						? {}
+						: {
+								allowInsecureHttp: new URL(existing.baseUrl).protocol === 'http:' && input.allowInsecureHttp,
+							}),
+					...(input.userToken === undefined ? {} : { encryptedUserToken: validateToken(input.userToken, 'userToken') }),
+					...(input.adminToken === undefined
+						? {}
+						: {
+								encryptedAdminToken: input.adminToken === null ? null : validateToken(input.adminToken, 'adminToken'),
+							}),
+				},
+				include: { _count: { select: { Participants: true } } },
+			})
+			.catch((error: unknown) => {
+				if (leaseUntil !== undefined && isPlainObject(error) && getOwnString(error, 'code') === 'P2025') {
+					throw createHttpError(409, 'Host pause or lease changed during token rotation; pause it and retry');
+				}
+				throw error;
+			});
+		if (input.allowInsecureHttp === true && updated.allowInsecureHttp) {
+			logger.warn(
+				`hydra: HTTP explicitly enabled for ${updated.name} at ${updated.baseUrl}; bearer tokens are not transport-encrypted`,
+			);
+		}
+		if (updated.allowInsecureHttp && runsOnAdminToken) {
+			warnAdminTokenAsRuntimeTokenOverHttp(updated.name, updated.baseUrl);
+		}
+		return toPublicHydraHost(updated);
+	};
+	if (input.userToken === undefined) return updateAndDisconnect();
+	let result: PublicHydraHost | null = null;
+	const acted = await withHostPauseLease(
+		id,
+		async (leaseUntil) => {
+			result = await updateAndDisconnect(leaseUntil);
 		},
-		include: { _count: { select: { Participants: true } } },
-	});
-	if (input.allowInsecureHttp === true && updated.allowInsecureHttp) {
-		logger.warn(
-			`hydra: HTTP explicitly enabled for ${updated.name} at ${updated.baseUrl}; bearer tokens are not transport-encrypted`,
-		);
-	}
-	if (updated.allowInsecureHttp && runsOnAdminToken) {
-		warnAdminTokenAsRuntimeTokenOverHttp(updated.name, updated.baseUrl);
-	}
-	return toPublicHydraHost(updated);
+		HOST_LEASE_WAIT_MS,
+	);
+	if (!acted) throw createHttpError(409, 'another Host pause action is running; retry the token update shortly');
+	if (result === null) throw createHttpError(503, 'Host token update did not complete');
+	return result;
 }
 
 export async function deleteHydraHost(id: string): Promise<void> {
