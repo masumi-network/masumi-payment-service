@@ -25,6 +25,8 @@ const NODE_RELEASE_WAIT_MS = 2_000;
 /** The proxy's own side of a hang-up can log after the node already saw its socket close. */
 const LATE_LOG_WAIT_MS = 100;
 const PONG_SETTLE_MS = 100;
+const SAFE_L2_PARAMETERS = { maxTxSize: 15_000, maxValueSize: 5_000, utxoCostPerByte: 4_310 };
+const SAFE_L1_PARAMETERS = { max_tx_size: 16_384, max_val_size: 5_000, coins_per_utxo_size: '4310' };
 
 const env: EnvSource = {
 	get: (key) =>
@@ -92,9 +94,15 @@ let node: FakeNode;
 let tickCalls: number;
 let releaseTick: () => void;
 let loggedErrors: string[];
+let chainParameters: unknown;
+let chainFailure: boolean;
+let chainReads: number;
 
 beforeEach(async () => {
 	loggedErrors = [];
+	chainParameters = SAFE_L1_PARAMETERS;
+	chainFailure = false;
+	chainReads = 0;
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-proxy-'));
 	node = await startFakeNode();
 	store = new NodeRegistryStore(dataDir);
@@ -128,6 +136,11 @@ beforeEach(async () => {
 			now: () => new Date(),
 		} as ProvisionDeps,
 		logger: { info: () => undefined, warn: () => undefined, error: (message) => loggedErrors.push(message) },
+		readCurrentL1Parameters: async () => {
+			chainReads += 1;
+			if (chainFailure) throw new Error('Blockfrost unavailable');
+			return chainParameters;
+		},
 	});
 	await new Promise<void>((resolve) => host.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(host.address() as AddressInfo).port}`;
@@ -489,7 +502,10 @@ describe('node api proxy', () => {
 
 describe('node api websocket proxy', () => {
 	/** Attach a real WebSocket server to the fake node, echoing what it receives. */
-	async function upgradeableNode(autoPong = true): Promise<{
+	async function upgradeableNode(
+		autoPong = true,
+		ledgerParams: unknown = SAFE_L2_PARAMETERS,
+	): Promise<{
 		server: Server;
 		port: number;
 		greeted: string[];
@@ -514,7 +530,14 @@ describe('node api websocket proxy', () => {
 		let sendThenClose = (_message: string): void => {
 			throw new Error('node websocket has not opened');
 		};
-		const server = createServer();
+		const server = createServer((request, response) => {
+			if (request.url !== '/protocol-parameters') {
+				response.writeHead(404).end();
+				return;
+			}
+			response.writeHead(200, { 'Content-Type': 'application/json' });
+			response.end(JSON.stringify(ledgerParams));
+		});
 		const wss = new WebSocketServer({ server, autoPong });
 		wss.on(
 			'connection',
@@ -733,9 +756,82 @@ describe('node api websocket proxy', () => {
 		socket.send('{"tag":"Init"}');
 		await closed;
 		expect(upstream.commands).toEqual(['{"tag":"Init"}']);
+		expect(chainReads).toBe(1);
 		expect(other.commands).toEqual([]);
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 		await new Promise<void>((resolve) => other.server.close(() => resolve()));
+	});
+
+	it('rejects a direct admin Init when the node reports an unsafe L2 transaction size', async () => {
+		const upstream = await upgradeableNode(true, { ...SAFE_L2_PARAMETERS, maxTxSize: 15_001 });
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(upstream.commands).toEqual([]);
+			expect(chainReads).toBe(0);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('rejects a malformed node parameter before reading Blockfrost', async () => {
+		const upstream = await upgradeableNode(true, { ...SAFE_L2_PARAMETERS, maxValueSize: '5000' });
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(chainReads).toBe(0);
+			expect(upstream.commands).toEqual([]);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it.each([
+		['L1 transaction room', { ...SAFE_L1_PARAMETERS, max_tx_size: 16_383 }],
+		['L1 value size', { ...SAFE_L1_PARAMETERS, max_val_size: 4_999 }],
+		['L1 UTxO cost', { ...SAFE_L1_PARAMETERS, coins_per_utxo_size: '4311' }],
+	])('rejects direct admin Init with unsafe %s', async (_reason, l1Parameters) => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		chainParameters = l1Parameters;
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(upstream.commands).toEqual([]);
+			expect(chainReads).toBe(1);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it.each(['unavailable', 'malformed'])('does not dispatch Init when Blockfrost is %s', async (failure) => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		chainFailure = failure === 'unavailable';
+		if (failure === 'malformed') chainParameters = { max_tx_size: 16_384 };
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(503);
+			expect(upstream.commands).toEqual([]);
+			expect(chainReads).toBe(1);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('rejects a persisted node whose network differs from the Host', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, network: 'mainnet', apiPort: upstream.port }));
+		try {
+			const response = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(response.status).toBe(409);
+			expect(chainReads).toBe(0);
+			expect(upstream.commands).toEqual([]);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
 	});
 
 	it('does not forward a Content-Length on the bodyless upgrade request', async () => {
