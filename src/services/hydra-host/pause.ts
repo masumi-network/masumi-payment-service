@@ -77,6 +77,8 @@ const PAUSE_LEASE_MS = 15 * 60_000;
  * How long a short Host action, such as provisioning a node or starting one,
  * waits for the lease. Two such actions on one Host otherwise refuse each
  * other, although only a pause, Resume or token rotation must exclude them.
+ * This covers a Host at normal latency. A holder can keep the lease for up to
+ * three Host timeouts, so on a slow Host the waiter can still get the busy 409.
  */
 export const SHORT_HOST_ACTION_LEASE_WAIT_MS = 10_000;
 const LEASE_RETRY_INTERVAL_MS = 250;
