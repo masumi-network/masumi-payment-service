@@ -11,7 +11,6 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
 import type { Duplex } from 'node:stream';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
@@ -29,6 +28,7 @@ import { nonceLogRef } from './nonce-log-ref.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
 import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
+import { serveDocsAsset } from './docs-assets.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
@@ -255,14 +255,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 						sendNotFound(request, response);
 						return;
 					}
-					const body = await readFile(asset.filePath);
-					response.writeHead(200, {
-						'Content-Type': asset.contentType,
-						'Content-Length': body.byteLength,
-						'Cache-Control': 'public, max-age=300',
-						'X-Content-Type-Options': 'nosniff',
-					});
-					response.end(method === 'HEAD' ? undefined : body);
+					await serveDocsAsset(response, asset, method === 'HEAD', (error) =>
+						logger.error(`[api] docs asset stream failed: ${error.message}`),
+					);
 					return;
 				}
 			}
