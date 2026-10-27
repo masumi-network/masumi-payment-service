@@ -43,7 +43,11 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 }));
 
 jest.unstable_mockModule('./client', () => ({
+	HydraHostRequestError: class extends Error {},
 	fetchHostCapabilities: mockFetchCapabilities,
+	fetchHostNodeHealth: jest.fn(),
+	startHostNode: jest.fn(),
+	stopHostNode: jest.fn(),
 	truncateError: (message: string, limit = 500) => (message.length <= limit ? message : message.slice(0, limit)),
 }));
 

@@ -535,12 +535,16 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// remove a node it has set peers on — and leave them with a live head
 		// whose peer can never join and us with nothing to reconstruct it from.
 		const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
-		if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+		const isUnreadable = held.unreadableNonces.includes(invite.nonce);
+		if (isUnreadable || held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
 			if (input.discardRedemption !== true) {
 				throw createHttpError(
 					409,
-					'this invite has already been redeemed by the counterparty; it becomes a head within seconds and can be closed from there. ' +
-						'If it never becomes one, revoke it again with discardRedemption set',
+					isUnreadable
+						? 'its host holds a redemption of this invite in a form this service cannot read, so it cannot become a head until this service or its host is upgraded. ' +
+								'To give it up instead, revoke it again with discardRedemption set'
+						: 'this invite has already been redeemed by the counterparty; it becomes a head within seconds and can be closed from there. ' +
+								'If it never becomes one, revoke it again with discardRedemption set',
 				);
 			}
 			// Force skips the Host's head-state guard, so a node a head here

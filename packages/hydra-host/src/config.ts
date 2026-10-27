@@ -129,6 +129,38 @@ export class ConfigError extends Error {
 	}
 }
 
+/** Give an operator time to detect and contest a stale Close on mainnet. */
+export const MAINNET_MIN_CONTESTATION_PERIOD_SECONDS = 43_200;
+/**
+ * The payment service's lowest deposit period. A shorter deposit period, or a
+ * shorter activation wait, counts a deposit on L2 before an L1 rollback is
+ * unlikely.
+ */
+export const MAINNET_MIN_DEPOSIT_PERIOD_SECONDS = 300;
+const MAINNET_DEFAULT_CONTESTATION_PERIOD_SECONDS = 5 * 24 * 3600;
+const MAINNET_DEFAULT_DEPOSIT_PERIOD_SECONDS = 1_200;
+
+/** Why these head periods are unsafe on mainnet, or null when they are not. */
+export function mainnetPeriodFloorViolation(periods: {
+	contestationPeriodSeconds: number;
+	depositPeriodSeconds: number;
+	depositActivationSeconds?: number;
+}): string | null {
+	if (periods.contestationPeriodSeconds < MAINNET_MIN_CONTESTATION_PERIOD_SECONDS) {
+		return `mainnet contestation period must be at least ${MAINNET_MIN_CONTESTATION_PERIOD_SECONDS} seconds`;
+	}
+	if (periods.depositPeriodSeconds < MAINNET_MIN_DEPOSIT_PERIOD_SECONDS) {
+		return `mainnet deposit period must be at least ${MAINNET_MIN_DEPOSIT_PERIOD_SECONDS} seconds`;
+	}
+	if (
+		periods.depositActivationSeconds !== undefined &&
+		periods.depositActivationSeconds < MAINNET_MIN_DEPOSIT_PERIOD_SECONDS
+	) {
+		return `mainnet deposit activation must be at least ${MAINNET_MIN_DEPOSIT_PERIOD_SECONDS} seconds`;
+	}
+	return null;
+}
+
 export type EnvSource = { get(key: string): string | undefined };
 
 export const processEnv: EnvSource = { get: (key) => process.env[key] };
@@ -297,7 +329,28 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	}
 
 	const defaultUnsyncedPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
-	const defaultDepositPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300);
+	const defaultDepositPeriodSeconds = positiveInteger(
+		env,
+		'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS',
+		network === 'mainnet' ? MAINNET_DEFAULT_DEPOSIT_PERIOD_SECONDS : 300,
+	);
+	const defaultContestationPeriodSeconds = positiveInteger(
+		env,
+		'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS',
+		network === 'mainnet' ? MAINNET_DEFAULT_CONTESTATION_PERIOD_SECONDS : 220,
+	);
+	const depositActivationSecondsOverride = env.get('HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS')?.trim()
+		? positiveInteger(env, 'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS', defaultDepositPeriodSeconds)
+		: undefined;
+	const periodViolation =
+		network === 'mainnet'
+			? mainnetPeriodFloorViolation({
+					contestationPeriodSeconds: defaultContestationPeriodSeconds,
+					depositPeriodSeconds: defaultDepositPeriodSeconds,
+					depositActivationSeconds: depositActivationSecondsOverride,
+				})
+			: null;
+	if (periodViolation) throw new ConfigError(periodViolation);
 	// An override, not a default. Thresholds are derived per node from that
 	// node's own unsynced period, because that is the value they have to stay
 	// below and it is per node — a host-wide default that suits an 1800s node
@@ -335,7 +388,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		// so the node burns its whole start budget and lands `Failed` with
 		// "failed to stay up after 5 attempts", while the reason it could never
 		// start only ever reached the log.
-		defaultContestationPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
+		defaultContestationPeriodSeconds,
 		defaultDepositPeriodSeconds,
 		defaultUnsyncedPeriodSeconds,
 		// An override, not a default. Unset means the provision request decides,
@@ -345,9 +398,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		// payment-service build that omits the field entirely must not silently
 		// break that invariant by pairing a Host-wide activation against whatever
 		// deposit period that request actually asked for.
-		depositActivationSecondsOverride: env.get('HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS')?.trim()
-			? positiveInteger(env, 'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS', defaultDepositPeriodSeconds)
-			: undefined,
+		depositActivationSecondsOverride,
 		escrowTtlSeconds: positiveInteger(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
 		drainTimeoutMs: positiveInteger(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',

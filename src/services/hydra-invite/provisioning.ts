@@ -26,6 +26,7 @@ import {
 } from '@/services/hydra-host/client';
 import { HostIncompatibleError, assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
 import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
+import { withHostPauseLease } from '@/services/hydra-host/pause';
 import { deriveNodeCardanoVkey } from './node-keys';
 
 /** The Host's answer when every node slot is in use (`PortExhaustedError`). */
@@ -360,7 +361,28 @@ export async function reserveNodeForExchange(
 	autoFund = true,
 ): Promise<ReservedNode> {
 	const host = await selectHostForNetwork(network);
+	let reserved: ReservedNode | null = null;
+	const acted = await withHostPauseLease(host.id, async () => {
+		const current = await prisma.hydraHost.findUnique({ where: { id: host.id }, select: { pausedAt: true } });
+		if (!current) throw createHttpError(404, 'the selected hydra host no longer exists');
+		if (current.pausedAt !== null) {
+			throw createHttpError(409, 'the selected hydra host is paused; resume it before provisioning a node');
+		}
+		reserved = await reserveNodeOnSelectedHost(host, network, localHotWalletId, nonce, periods, autoFund);
+	});
+	if (!acted) throw createHttpError(409, 'another Host pause action is running; retry provisioning shortly');
+	if (reserved === null) throw createHttpError(503, 'Hydra node reservation did not complete');
+	return reserved;
+}
 
+async function reserveNodeOnSelectedHost(
+	host: Awaited<ReturnType<typeof selectHostForNetwork>>,
+	network: Network,
+	localHotWalletId: string,
+	nonce: string,
+	periods: HeadPeriods,
+	autoFund: boolean,
+): Promise<ReservedNode> {
 	// Checked before provisioning, not at first use: a head placed on a host
 	// whose ledger differs fails at commit time, far from the cause.
 	//

@@ -216,9 +216,8 @@ export const decommitFinalizedMessageSchema = z.looseObject({
 		.record(z.string(), z.looseObject({ address: z.string(), value: hydraOutputValueSchema }))
 		.optional(),
 	/**
-	 * When the head produced this. Load-bearing, not decoration: the whole
-	 * history replays on every reconnection, so an old finalization must not be
-	 * attributed to a withdrawal that was requested after it.
+	 * When the head produced this. The correlator drops a finalization older
+	 * than its approval, and the first observation records this time, not receipt time.
 	 */
 	timestamp: z.string().optional(),
 	headId: canonicalHydraHeadIdSchema,
