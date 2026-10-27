@@ -576,6 +576,16 @@ describe('resumeHydraHost', () => {
 		});
 	});
 
+	// Starts that outlast the lease let another holder take it. Resume must not
+	// report success for a pause it did not clear.
+	it('refuses when the fenced write no longer matches the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		// Lease claim, then the fenced Resume write, then the lease release.
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
+	});
+
 	// One node removed from the Host by hand must not keep the Host paused forever.
 	it('skips a paused node the host no longer has', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());

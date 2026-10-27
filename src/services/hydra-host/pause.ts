@@ -495,10 +495,16 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 			}
 			// Fenced on the lease: node starts can outlast it, and a stop that took
 			// the expired lease meanwhile must not be followed by a cleared pause.
-			await prisma.hydraHost.updateMany({
+			const resumed = await prisma.hydraHost.updateMany({
 				where: { id: hostId, pausedAt: host.pausedAt, pauseLeaseUntil: leaseUntil },
 				data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: new Date() },
 			});
+			if (resumed.count === 0) {
+				throw createHttpError(
+					409,
+					'the pause lease expired or the pause changed while nodes started; check the Host and send Resume again',
+				);
+			}
 		},
 		HOST_LEASE_WAIT_MS,
 	);
