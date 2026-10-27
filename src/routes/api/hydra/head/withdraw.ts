@@ -4,6 +4,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { HydraTransportAmbiguousError } from '@/lib/hydra';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
 import { countLiveInHeadEscrows } from '@/services/hydra-decommit/live-escrows';
 import {
@@ -198,7 +199,7 @@ export function assertWithdrawAmountShape(input: {
  * exact amount is split inside the head, the decommit is proposed, and the head
  * then has to sign a snapshot removing it before its node posts the L1
  * transaction. The request waits only until the withdrawal is built, signed and
- * recorded Pending — the split takes about a second — so every refusal up to
+ * recorded Pending (the split takes about a second), so every refusal up to
  * there is the answer. What the node and the head decide afterwards lands on the
  * row, readable through listWithdrawalsGet.
  */
@@ -301,7 +302,14 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 					reject(
 						createHttpError.isHttpError(error)
 							? Object.assign(error, { expose: true })
-							: createHttpError(500, describeErrorForOperator(error), { expose: true }),
+							: // The node did not answer the in-head split: it may still apply.
+								createHttpError(
+									error instanceof HydraTransportAmbiguousError ? 504 : 500,
+									describeErrorForOperator(error),
+									{
+										expose: true,
+									},
+								),
 					);
 				},
 			);

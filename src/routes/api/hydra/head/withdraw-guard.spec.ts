@@ -18,6 +18,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import createHttpError from 'http-errors';
+import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 
@@ -261,6 +262,13 @@ describe('withdrawHeadPost answers on acceptance', () => {
 	// In production an unexposed 5xx answers with only its default message.
 	it('W-R1b shows the reason of a 5xx refusal before accepting', async () => {
 		mockExecute.mockRejectedValue(createHttpError(504, 'The in-head split abc was not confirmed within 60s'));
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 504, expose: true });
+	});
+
+	it('W-R1d answers a split the node never answered as 504, not as a refusal', async () => {
+		mockExecute.mockRejectedValue(
+			new HydraTransportAmbiguousError('Hydra did not report an outcome for transaction abc'),
+		);
 		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 504, expose: true });
 	});
 

@@ -14896,7 +14896,7 @@ export type PostHydraHeadWithdrawErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, not yet identified on chain, no longer matching its on-chain participants or network, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up; its participants, payment sources or network no longer valid, or the head changed during on-chain verification; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
      */
     409: unknown;
     /**
@@ -14912,7 +14912,11 @@ export type PostHydraHeadWithdrawErrors = {
      */
     502: unknown;
     /**
-     * The in-head split was not confirmed in time; nothing has left the head
+     * The Hydra Host has not recently confirmed the node's chain state; retry shortly
+     */
+    503: unknown;
+    /**
+     * The node did not answer the in-head split, or the head did not confirm it in time. Nothing has left the head, but the split may still apply, so the wallet can stay busy until it settles
      */
     504: unknown;
 };
