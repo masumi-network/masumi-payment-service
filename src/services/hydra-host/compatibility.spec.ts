@@ -1,62 +1,62 @@
 import { describe, expect, it } from '@jest/globals';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Network } from '@/generated/prisma/client';
+import { DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH } from '@/lib/hydra/hydra/commit-draft-validation';
+import { DEFAULT_HYDRA_HEAD_SCRIPT_HASH } from '@/lib/hydra/hydra/head-init-validation';
 import {
 	DEFAULT_EXPECTED_HYDRA_VERSION,
+	DEFAULT_EXPECTED_SCRIPT_CATALOGUE_HASH,
 	DEFAULT_PREPROD_LEDGER_PARAMS_HASH,
 	expectedHostCapabilitiesForNetwork,
 } from './compatibility';
-
-const CATALOGUE_HASH = `sha256:${'a'.repeat(64)}`;
+import { REVIEWED_HYDRA_RELEASE } from './reviewed-catalogue';
 
 describe('expectedHostCapabilitiesForNetwork', () => {
-	it('uses the reviewed version and committed preprod ledger fingerprint', () => {
-		expect(
-			expectedHostCapabilitiesForNetwork(Network.Preprod, {
-				HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: CATALOGUE_HASH,
-			}),
-		).toEqual({
+	it('uses the reviewed version, catalogue and committed preprod ledger fingerprint', () => {
+		expect(expectedHostCapabilitiesForNetwork(Network.Preprod, {})).toEqual({
 			network: 'preprod',
 			hydraVersion: DEFAULT_EXPECTED_HYDRA_VERSION,
-			scriptCatalogueHash: CATALOGUE_HASH,
+			scriptCatalogueHash: DEFAULT_EXPECTED_SCRIPT_CATALOGUE_HASH,
 			ledgerParamsHash: DEFAULT_PREPROD_LEDGER_PARAMS_HASH,
 		});
 	});
 
-	it('fails closed when no reviewed script catalogue fingerprint is configured', () => {
-		expect(() => expectedHostCapabilitiesForNetwork(Network.Preprod, {})).toThrow(
-			/HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH/,
-		);
+	it('publishes the hash of the reviewed catalogue in the release record', () => {
+		const digest = createHash('sha256').update(JSON.stringify(REVIEWED_HYDRA_RELEASE.catalogue)).digest('hex');
+		expect(REVIEWED_HYDRA_RELEASE.catalogueHash).toBe(`sha256:${digest}`);
+		expect(REVIEWED_HYDRA_RELEASE.version).toBe(DEFAULT_EXPECTED_HYDRA_VERSION);
+		const dockerfile = readFileSync('packages/hydra-host/Dockerfile', 'utf8');
+		expect(dockerfile).toContain(`ARG HYDRA_IMAGE_DIGEST=${REVIEWED_HYDRA_RELEASE.upstreamImageDigest}`);
+		expect(REVIEWED_HYDRA_RELEASE.catalogue.headScriptHash).toBe(DEFAULT_HYDRA_HEAD_SCRIPT_HASH);
+		expect(REVIEWED_HYDRA_RELEASE.catalogue.depositScriptHash).toBe(DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH);
 	});
 
 	it('requires an independently configured mainnet ledger fingerprint', () => {
-		expect(() =>
-			expectedHostCapabilitiesForNetwork(Network.Mainnet, {
-				HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: CATALOGUE_HASH,
-			}),
-		).toThrow(/HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET/);
+		expect(() => expectedHostCapabilitiesForNetwork(Network.Mainnet, {})).toThrow(
+			/HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET/,
+		);
 	});
 
-	it('rejects malformed expected fingerprints', () => {
+	it('rejects a catalogue hash copied from an unreviewed Host', () => {
 		expect(() =>
 			expectedHostCapabilitiesForNetwork(Network.Preprod, {
-				HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: 'catalogue-hash',
+				HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: `sha256:${'a'.repeat(64)}`,
 			}),
-		).toThrow(/sha256/);
+		).toThrow(/differs from the reviewed catalogue/);
 	});
 
-	// The fingerprint cannot be derived from the hydra-node CLI, so an error
-	// that only names the variable strands the operator. It has to say where the
-	// value comes from, and warn off the recipe that looks obvious.
-	it('says where the catalogue fingerprint comes from', () => {
-		expect(() => expectedHostCapabilitiesForNetwork(Network.Preprod, {})).toThrow(/node details/);
-		expect(() => expectedHostCapabilitiesForNetwork(Network.Preprod, {})).toThrow(/cannot be reproduced by hashing/);
+	it('rejects an unreviewed Hydra version', () => {
+		expect(() =>
+			expectedHostCapabilitiesForNetwork(Network.Preprod, {
+				HYDRA_EXPECTED_VERSION: '2.4.2-deadbeef',
+			}),
+		).toThrow(/not the reviewed Hydra binary/);
 	});
 
 	it('says where the ledger params fingerprint comes from', () => {
-		expect(() =>
-			expectedHostCapabilitiesForNetwork(Network.Mainnet, {
-				HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: CATALOGUE_HASH,
-			}),
-		).toThrow(/packages\/hydra-host\/params\/mainnet\.json/);
+		expect(() => expectedHostCapabilitiesForNetwork(Network.Mainnet, {})).toThrow(
+			/packages\/hydra-host\/params\/mainnet\.json/,
+		);
 	});
 });

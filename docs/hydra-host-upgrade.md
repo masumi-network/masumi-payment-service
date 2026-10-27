@@ -123,9 +123,12 @@ Host remembers that on its volume.
 ### 5. Check the Host
 
 Press **Check** on the Host. Confirm that the release shows the new version and
-that the Host status is `Active`. If the `hydra-node` version changed, also
-re-pin `HYDRA_EXPECTED_VERSION` and `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH` in
-the payment service. See [hydra-operations.md](hydra-operations.md).
+that the Host status is `Active`. If the `hydra-node` version changed, record
+the reviewed binary version and full script catalogue in
+`src/services/hydra-host/reviewed-catalogue.ts` before using the Host. Its
+hash must match the parsed catalogue from the reviewed binary. Do not copy a
+fingerprint from the Host to make a failed compatibility check pass. See
+[hydra-operations.md](hydra-operations.md).
 
 ### 6. Resume
 
