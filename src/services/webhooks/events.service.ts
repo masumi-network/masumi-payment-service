@@ -20,6 +20,7 @@ type HydraHeadLowBalanceWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_LOW_
 type HydraHeadSnapshotRoundStuckWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
 type HydraHeadPostTxFailedWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_POST_TX_FAILED'>;
 type HydraHeadContestMissingWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_CONTEST_MISSING'>;
+type HydraHeadContestWatchAlertWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_CONTEST_WATCH_ALERT'>;
 type PaymentWebhookQueryClient = Pick<Prisma.TransactionClient, 'paymentRequest'>;
 type PurchaseWebhookQueryClient = Pick<Prisma.TransactionClient, 'purchaseRequest'>;
 
@@ -486,6 +487,20 @@ class WebhookEventsService {
 		await webhookQueueService.queueWebhookInTransaction(
 			tx,
 			WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
+			payload,
+			payload.hydraHeadId,
+			paymentSourceId,
+		);
+	}
+
+	async queueHydraHeadContestWatchAlertInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadContestWatchAlertWebhookData,
+	): Promise<void> {
+		const paymentSourceId = await getHydraHeadPaymentSourceId(payload.hydraHeadId, tx);
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_CONTEST_WATCH_ALERT,
 			payload,
 			payload.hydraHeadId,
 			paymentSourceId,

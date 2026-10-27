@@ -233,6 +233,20 @@ const hydraHeadContestMissingPayloadSchema = createWebhookPayloadSchema(
 	'Emitted once per gap when a closed Hydra head holds an older snapshot on chain than one every party signed, and no contest closed the gap within the grace period. A fanout from that state pays out the older snapshot.',
 );
 
+const hydraHeadContestWatchAlertPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_CONTEST_WATCH_ALERT'),
+	z.object({
+		hydraHeadId: z.string(),
+		headStatus: z.string(),
+		reason: z.enum(['HEAD_CLOSED', 'NODE_UNOBSERVABLE', 'L1_OBSERVER_UNAVAILABLE']),
+		chainState: z.enum(['open', 'closed', 'gone']).nullable(),
+		chainTxHash: z.string().nullable(),
+		unavailableSince: z.string().datetime().nullable(),
+		checkedAt: z.string().datetime(),
+	}),
+	'Independent L1 Close or contest-watch availability alert. Restore a disconnected node before the contestation deadline.',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -250,6 +264,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	hydraHeadSnapshotRoundStuckPayloadSchema,
 	hydraHeadPostTxFailedPayloadSchema,
 	hydraHeadContestMissingPayloadSchema,
+	hydraHeadContestWatchAlertPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;
