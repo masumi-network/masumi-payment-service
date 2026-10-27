@@ -256,7 +256,15 @@ export async function carveExactUtxo(params: {
 	// Normally already reported, from inside the submit. An injected submitter or
 	// a node that answers with a different hash than the one signed is the
 	// exception, and the row should name what actually went out.
-	if (!reportedHashes.has(txHash.toLowerCase())) await reportHash(txHash);
+	if (!reportedHashes.has(txHash.toLowerCase())) {
+		try {
+			await reportHash(txHash);
+		} catch (error) {
+			throw new HydraPreSplitError(
+				`pre-split carve tx ${txHash} was submitted but not recorded: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
 
 	const sleep = params.sleep ?? defaultSleep;
 	const deadline = now() + CONFIRM_TIMEOUT_MS;
