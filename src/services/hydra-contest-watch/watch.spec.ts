@@ -440,6 +440,23 @@ describe('runHydraContestWatch', () => {
 		);
 	});
 
+	it('keeps a node that answered observable when the gap write fails', async () => {
+		mockFindMany.mockResolvedValue([{ ...watchHead(), status: HydraHeadStatus.Closed }] as never);
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.Closed,
+			closedSnapshotNumber: 3n,
+			verifiedSnapshotNumber: 5n,
+		});
+		mockUpdateMany.mockImplementation((async (args: { data: Record<string, unknown> }) => {
+			if ('contestGapSignature' in args.data) throw new Error('database unavailable');
+			return { count: 1 };
+		}) as never);
+		await watch.runHydraContestWatch();
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: 'NODE_UNOBSERVABLE' }) }),
+		);
+	});
+
 	it('keeps watching a disabled Closed head through a separate read-only socket', async () => {
 		mockFindMany.mockResolvedValue([
 			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: false, ...empty },

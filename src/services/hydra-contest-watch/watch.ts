@@ -351,11 +351,19 @@ async function compareHeadWithNode(
 		}
 	}
 	if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) return null;
-	await applyContestGapObservation(
-		head,
-		{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
-		new Date(),
-	);
+	try {
+		await applyContestGapObservation(
+			head,
+			{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
+			new Date(),
+		);
+	} catch (error) {
+		// The node answered. A failed write is retried next tick, and must not read as a lost node.
+		logger.error('[HydraContestWatch] could not record the snapshot gap', {
+			hydraHeadId: head.id,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+	}
 	return 'compared';
 }
 
@@ -396,7 +404,7 @@ export async function runHydraContestWatch(): Promise<void> {
 			try {
 				nodeEvidence.set(head.id, await compareHeadWithNode(head, connectionManager, needsReadOnlyObserver));
 			} catch (error) {
-				logger.warn('[HydraContestWatch] could not compare the head with the chain', {
+				logger.warn('[HydraContestWatch] could not read the node', {
 					hydraHeadId: head.id,
 					error: error instanceof Error ? error.message : 'Unknown error',
 				});
