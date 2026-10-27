@@ -1,7 +1,8 @@
 /// One snapshot that passed the party signature and accumulator checks. Replay
 /// also stores one that it then rejects for its transition or as a bad first
-/// snapshot, because every party signed it. The JSON is immutable recovery evidence; Hydra signatures
-/// bind the output multiset, not the node's UTxO reference mapping.
+/// snapshot, because every party signed it. The JSON is immutable recovery
+/// evidence; Hydra signatures bind the output multiset, not the node's UTxO
+/// reference mapping.
 model HydraStoredSnapshot {
   id String @id @default(cuid())
   createdAt DateTime @default(now())

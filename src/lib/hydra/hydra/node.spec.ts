@@ -2020,6 +2020,18 @@ describe('HydraNode', () => {
 			expect(persisted).toEqual([second.snapshot.number]);
 		});
 
+		it('fails the pass without waiting for the rejected snapshot write', async () => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: () => new Promise<void>(() => undefined),
+			});
+			const [, second] = signedHistoryChain().frames;
+
+			historyConnection.emit('message', JSON.stringify(second));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/snapshot gap/);
+		});
+
 		it.each([
 			{
 				label: 'rejects',

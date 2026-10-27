@@ -125,7 +125,10 @@ export interface HydraNodeClientConfig {
 	maxRetainedTransactionCborBytes?: number;
 	/** Computes history snapshot accumulators; defaults to the event loop. */
 	computeSnapshotAccumulator?: HydraAccumulatorComputer;
-	/** Persist each verified signed snapshot before replay accepts it. */
+	/**
+	 * Persist each verified signed snapshot before replay accepts it. Replay also
+	 * calls it, without waiting, for a signed snapshot it rejects.
+	 */
 	persistVerifiedSnapshot?: (frame: HydraSnapshotVerificationFrame) => Promise<void>;
 }
 
