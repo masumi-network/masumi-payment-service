@@ -44,6 +44,12 @@ export type ExecuteHydraTopupParams = {
 	 * Takes precedence over `filter`/`target`. Adds an L1 confirmation wait.
 	 */
 	exact?: { unit: string; amount: bigint } | null;
+	/**
+	 * Called once, as soon as this top-up has a row and its first L1 transaction
+	 * is built and signed. The endpoint answers then, so a refusal before this
+	 * point reaches the operator in the answer, not only in the head error list.
+	 */
+	onAccepted?: () => void;
 };
 
 export type ExecuteHydraTopupResult = {
@@ -116,6 +122,12 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	// may release. Row absence alone can mean the scheduler released already.
 	let walletReleaseTransferred = false;
 	let ownsTerminalTransition = false;
+	let accepted = false;
+	const accept = () => {
+		if (accepted) return;
+		accepted = true;
+		params.onAccepted?.();
+	};
 
 	try {
 		// Inside the try, all four of them. Raised before it, none of these reached
@@ -235,6 +247,21 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		let walletUtxos = utxos;
 		let commitUtxos;
 		if (params.exact) {
+			// Decided before the carve, so the operator is told in the answer. Only
+			// what cannot work is refused: fees still decide the rest at the carve.
+			const unit = params.exact.unit.toLowerCase();
+			let held = 0n;
+			for (const utxo of utxos) {
+				for (const asset of utxo.output.amount) {
+					if (asset.unit.toLowerCase() === unit) held += BigInt(asset.quantity);
+				}
+			}
+			if (held < params.exact.amount) {
+				throw createHttpError(
+					400,
+					`The wallet holds ${held} ${params.exact.unit} on L1, less than the ${params.exact.amount} requested`,
+				);
+			}
 			let carved;
 			try {
 				carved = await carveExactUtxo({
@@ -256,6 +283,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 							data: { splitTxHash, splitInvalidHereafterSlot },
 						});
 						carveTxHash = splitTxHash;
+						accept();
 					},
 				});
 				carveConfirmed = true;
@@ -318,6 +346,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			}
 			throw flowError;
 		}
+		accept();
 
 		const committedLovelace = validatedDraft.committedValue.get('lovelace') ?? 0n;
 		const committedAssets: Record<string, string> = {};

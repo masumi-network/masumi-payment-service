@@ -1,5 +1,5 @@
 /**
- * Process-local guards for POST /hydra/head/init.
+ * Process-local and durable guards for POST /hydra/head/init.
  *
  * Split from `lifecycle.ts`, which was past the 750-line limit.
  */
@@ -7,6 +7,7 @@
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { randomUUID } from 'node:crypto';
 
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
@@ -15,6 +16,36 @@ import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 export const initsInFlight = new Set<string>();
 /** Heads whose last Init timed out on a node behind the chain, so that Init may still be parked there. */
 export const initsAwaitingNode = new Set<string>();
+
+/** Acquire one durable Init dispatch per head, including across service restarts. */
+export async function reserveInitDispatch(hydraHeadId: string): Promise<string> {
+	const token = randomUUID();
+	const admitted = await prisma.hydraHead.updateMany({
+		where: {
+			id: hydraHeadId,
+			isEnabled: true,
+			status: HydraHeadStatus.Idle,
+			initDispatchToken: null,
+		},
+		data: { initDispatchToken: token },
+	});
+	if (admitted.count !== 1) {
+		throw createHttpError(
+			409,
+			'Hydra Init was already dispatched or the head is no longer Idle; reconcile before retrying',
+		);
+	}
+	return token;
+}
+
+/** Release only this attempt, after a response proves no InitTx can confirm. */
+export async function releaseFailedInitDispatch(hydraHeadId: string, token: string | null): Promise<void> {
+	if (token === null) return;
+	await prisma.hydraHead.updateMany({
+		where: { id: hydraHeadId, initDispatchToken: token },
+		data: { initDispatchToken: null },
+	});
+}
 
 /**
  * Refuses a retry while an earlier Init may still be parked on the node.

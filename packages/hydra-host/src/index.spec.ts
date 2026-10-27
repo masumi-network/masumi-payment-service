@@ -601,3 +601,30 @@ describe('Host listener failure shutdown', () => {
 		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
 	});
 });
+
+describe('Host peer firewall control socket', () => {
+	it('refuses a shared socket directory before any stored node boots', async () => {
+		const shared = path.join(dataDir, 'shared');
+		await fs.mkdir(shared, { mode: 0o755 });
+		await fs.chmod(shared, 0o755);
+		process.env.HYDRA_HOST_CONTROL_SOCKET = path.join(shared, 'control.sock');
+		const { Supervisor } = await import('./supervisor/supervisor.js');
+		const boot = jest.spyOn(Supervisor.prototype, 'boot');
+		await import('./index.js');
+		await exitReached;
+		expect(boot).not.toHaveBeenCalled();
+		expect(servers).toHaveLength(0);
+		expect(jest.mocked(console.error).mock.calls.flat().join(' ')).toContain('control socket directory');
+	});
+
+	it('drains the Host when the private listener cannot start', async () => {
+		process.env.HYDRA_HOST_CONTROL_SOCKET = path.join(dataDir, 'control.sock');
+		await startListening();
+		expect(servers).toHaveLength(3);
+		listenerError(2);
+		await drainStarted;
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+	});
+});

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
+import { createPeerFirewallSocketServer, preparePeerFirewallSocket } from './api/peer-firewall-socket.js';
 import { createExchangePlane } from './api/exchange-server.js';
 import { redemptionNetwork, verifyRedemptionSignature } from './registry/redemption-signature.js';
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
 		supervisor: Supervisor | null;
 		lock?: HostLock;
 		server?: ReturnType<typeof createControlPlane>;
+		firewallSocketServer?: ReturnType<typeof createPeerFirewallSocketServer>;
 		exchangePlane?: ReturnType<typeof createExchangePlane>;
 		timer?: ReturnType<typeof setInterval>;
 	} = { shutdownReason: null, supervisor: null };
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
 		startup.supervisor?.beginShutdown();
 		clearInterval(startup.timer);
 		startup.server?.close();
+		startup.firewallSocketServer?.close();
 		startup.exchangePlane?.close();
 
 		// Bound the drain so a stuck node cannot hold the container open past the
@@ -161,6 +164,9 @@ async function main(): Promise<void> {
 	});
 	await startup.lock.acquire();
 	if (shuttingDown) return;
+	// Under the lease, and before any node boots: a socket directory that is not
+	// private would otherwise stop every node on each restart.
+	if (config.controlSocketPath !== undefined) preparePeerFirewallSocket(config.controlSocketPath);
 
 	const store = new NodeRegistryStore(config.dataDir);
 	const exchange = new ExchangeStore(config.dataDir);
@@ -293,6 +299,9 @@ async function main(): Promise<void> {
 			tickSupervisor('exchange redemption');
 		},
 	});
+	if (config.controlSocketPath !== undefined) {
+		startup.firewallSocketServer = createPeerFirewallSocketServer(startup.server);
+	}
 	startup.timer = setInterval(() => tickSupervisor('interval'), TICK_INTERVAL_MS);
 
 	// Install the common drain path before either listener can fail. Supervisor
@@ -310,12 +319,21 @@ async function main(): Promise<void> {
 		logger.error(`[host] exchange plane could not listen: ${detail}`);
 		shutdown('EXCHANGE_LISTEN_ERROR', 1);
 	});
+	startup.firewallSocketServer?.on('error', (error: NodeJS.ErrnoException) => {
+		logger.error(`[host] peer firewall control socket could not listen: ${error.message}`);
+		shutdown('FIREWALL_SOCKET_LISTEN_ERROR', 1);
+	});
 	startup.server.listen(config.listenPort, () => {
 		logger.info(`[host] control plane listening on :${config.listenPort}`);
 	});
 	startup.exchangePlane.listen(config.exchangePort, () => {
 		logger.info(`[host] exchange plane listening on :${config.exchangePort}`);
 	});
+	if (config.controlSocketPath !== undefined) {
+		startup.firewallSocketServer?.listen(config.controlSocketPath, () => {
+			logger.info('[host] peer firewall control socket listening');
+		});
+	}
 }
 
 main().catch((error: unknown) => {

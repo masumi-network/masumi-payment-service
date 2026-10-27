@@ -272,16 +272,14 @@ Requirements:
 Admin signing runbook (mandatory off-chain process):
 
 - **Admins MUST NOT sign before `external_dispute_unlock_time`.** This is the
-  single hard rule that makes the dispute outcome safe to reason about. The
-  validator allows the seller to call `SubmitResult` and rotate `result_hash`
-  on the disputed UTxO right up until `external_dispute_unlock_time`. The
-  admin-signed `DisputeWithdrawal` payload binds `own_ref` (the spent
-  UTxO's tx hash + output index) but does NOT bind `result_hash`, so any
-  signature collected during the rotation window remains technically valid
-  against a later state of the same UTxO. If admins sign while rotation is
-  still possible, the seller can swap `result_hash` between admin review
-  and tx settlement — admins would have signed for hash `H1` while the
-  buyer ultimately sees `H2` on chain, undermining the dispute outcome.
+  operational rule for collecting signatures against a stable disputed
+  UTxO. The validator allows the seller to call `SubmitResult` and rotate
+  `result_hash` until `external_dispute_unlock_time`. A rotation spends the
+  disputed UTxO and creates a continuation with a new output reference.
+  The admin-signed `DisputeWithdrawal` payload binds `own_ref` (the spent
+  UTxO's tx hash + output index), so signatures for the old reference do
+  not authorize the continuation. Admins must inspect the current UTxO
+  and collect new signatures if a rotation happens before settlement.
 
   The on-chain `must_start_after(external_dispute_unlock_time)` gate on
   `WithdrawDisputed` (vested_pay.ak: enforced via the time bound checks in
@@ -297,11 +295,10 @@ Admin signing runbook (mandatory off-chain process):
 
   Operationally: admin tooling MUST refuse to issue a signature whose
   signing-time wall clock is earlier than `external_dispute_unlock_time` of
-  the target disputed UTxO. Settlement-submission tooling SHOULD re-verify
-  on-chain `result_hash` immediately before broadcast as a defense-in-depth
-  cross-check; this matters less once the timeout has passed (rotation is
-  impossible) but catches operator errors where signing was issued
-  prematurely.
+  the target disputed UTxO. Settlement-submission tooling SHOULD re-read
+  the target output reference and on-chain `result_hash` before broadcast.
+  A changed reference invalidates the collected signatures. The hash check
+  also catches operator errors in the dispute record.
 
 - **Hash-pin the result_hash for the audit record.** Even with the timeout
   rule above honored, admin tooling should capture the on-chain

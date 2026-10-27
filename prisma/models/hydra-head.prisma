@@ -16,6 +16,11 @@ model HydraHead {
   /// Current status of the Hydra head
   status HydraHeadStatus @default(Idle)
 
+  /// Durable one-shot Init admission. Retained after dispatch or an ambiguous
+  /// outcome so a restarted payment service cannot post a second Init.
+  /// Cleared only when the first attempt cannot confirm on L1.
+  initDispatchToken String?
+
   /// Contestation period in seconds (configured on the Hydra node)
   contestationPeriod BigInt @default(86400)
 

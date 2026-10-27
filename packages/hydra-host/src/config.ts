@@ -7,6 +7,7 @@
  * never fires in time to help.
  */
 
+import { isAbsolute } from 'node:path';
 import { type DriftThresholds } from './supervisor/drift.js';
 import { validatePortLayout, type PortLayout } from './registry/ports.js';
 import { readReleaseInfo, type ReleaseInfo } from './release.js';
@@ -15,6 +16,8 @@ export type HostConfig = {
 	dataDir: string;
 	hydraNodeBin: string;
 	listenPort: number;
+	/** Private Unix socket used only by the root-run peer firewall helper. */
+	controlSocketPath: string | undefined;
 	/** Public, TLS-backed URL that counterparties use to redeem invites. */
 	publicExchangeUrl: string;
 	/** Trust the last X-Forwarded-For value from the Exchange Plane proxy. */
@@ -199,6 +202,14 @@ function optional(env: EnvSource, key: string, fallback: string): string {
 	return value === undefined || value.length === 0 ? fallback : value;
 }
 
+function controlSocketPath(env: EnvSource): string | undefined {
+	// Empty reads as unset, like every other optional setting.
+	const path = env.get('HYDRA_HOST_CONTROL_SOCKET')?.trim();
+	if (path === undefined || path.length === 0) return undefined;
+	if (!isAbsolute(path)) throw new ConfigError('HYDRA_HOST_CONTROL_SOCKET must be an absolute path');
+	return path;
+}
+
 function strictBoolean(env: EnvSource, key: string, fallback: boolean): boolean {
 	const value = env.get(key)?.trim();
 	if (value === undefined) return fallback;
@@ -369,6 +380,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		dataDir: optional(env, 'HYDRA_HOST_DATA_DIR', '/data'),
 		hydraNodeBin: optional(env, 'HYDRA_NODE_BIN', '/usr/local/bin/hydra-node'),
 		listenPort: tcpPort(env, 'HYDRA_HOST_PORT', 8443),
+		controlSocketPath: controlSocketPath(env),
 		exchangePort: tcpPort(env, 'HYDRA_HOST_EXCHANGE_PORT', 8444),
 		publicExchangeUrl: publicExchangeUrl(env),
 		exchangeTrustProxy: optional(env, 'HYDRA_HOST_EXCHANGE_TRUST_PROXY', 'false') === 'true',

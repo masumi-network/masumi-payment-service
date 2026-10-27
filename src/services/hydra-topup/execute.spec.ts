@@ -248,10 +248,12 @@ describe('executeHydraTopup deposit claim', () => {
 				: null;
 		});
 
-		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toMatchObject({
+		const onAccepted = jest.fn();
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all', onAccepted })).rejects.toMatchObject({
 			status: 409,
 			message: expect.stringContaining('not been absorbed or recovered'),
 		});
+		expect(onAccepted).not.toHaveBeenCalled();
 
 		expect(mockTxFindFirst).toHaveBeenCalledWith({
 			where: {
@@ -468,5 +470,140 @@ describe('executeHydraTopup verification errors', () => {
 				errorAt: expect.any(Date),
 			},
 		});
+	});
+});
+
+describe('executeHydraTopup acceptance', () => {
+	const carved = {
+		input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+		output: { address: 'addr_test1...', amount: [{ unit: 'lovelace', quantity: '5000000' }] },
+	};
+
+	beforeEach(() => {
+		mockGenerateWalletExtended.mockResolvedValue({
+			wallet: { getUtxos: jest.fn(async () => [carved]) },
+			address: 'addr_test1...',
+			utxos: [carved],
+			vKey: 'vkey',
+			blockchainProvider: {},
+		});
+		mockCarveExactUtxo.mockImplementation(
+			async (params: { onCarveSubmitted: (hash: string, slot: bigint) => Promise<void> }) => {
+				await params.onCarveSubmitted('b'.repeat(64), 600n);
+				return carved;
+			},
+		);
+		mockBuildValidatedHydraCommit.mockResolvedValue({
+			txId: 'b'.repeat(64),
+			invalidHereafterSlot: 1_000n,
+			signedCommitTx: 'signed-deposit',
+			committedValue: new Map([['lovelace', 5_000_000n]]),
+		});
+		mockReserveAndSubmitHydraTopup.mockImplementation(
+			async (reservation: { topupId: string }, submit: () => Promise<unknown>) => ({
+				topupId: reservation.topupId,
+				submitResult: await submit(),
+			}),
+		);
+		mockInterpretCardanoTxSubmitResult.mockReturnValue({ ok: true });
+		mockReconcilePendingHydraTopup.mockResolvedValue('confirmed');
+	});
+
+	it('E1 accepts once the carve is signed and recorded, and only once', async () => {
+		const onAccepted = jest.fn();
+		await executeHydraTopup({
+			headId: HEAD_ID,
+			filter: 'ada-only',
+			exact: { unit: 'lovelace', amount: 5_000_000n },
+			onAccepted,
+		});
+		expect(onAccepted).toHaveBeenCalledTimes(1);
+		expect(onAccepted.mock.invocationCallOrder[0]).toBeGreaterThan(mockUpdateTopup.mock.invocationCallOrder[0]);
+		expect(onAccepted.mock.invocationCallOrder[0]).toBeLessThan(
+			mockBuildValidatedHydraCommit.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('E2 accepts a whole-UTxO top-up after the draft is built and before the deposit is submitted', async () => {
+		const onAccepted = jest.fn();
+		await executeHydraTopup({ headId: HEAD_ID, filter: 'all', onAccepted });
+		expect(onAccepted).toHaveBeenCalledTimes(1);
+		expect(onAccepted.mock.invocationCallOrder[0]).toBeGreaterThan(
+			mockBuildValidatedHydraCommit.mock.invocationCallOrder[0],
+		);
+		expect(onAccepted.mock.invocationCallOrder[0]).toBeLessThan(
+			mockReserveAndSubmitHydraTopup.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('E3 does not accept when the wallet is busy', async () => {
+		const onAccepted = jest.fn();
+		mockClaimHotWalletForL1.mockRejectedValueOnce(
+			Object.assign(
+				new Error(
+					'The wallet for this top-up is busy with another transaction. It is released when that one finishes; try again then',
+				),
+				{ status: 409 },
+			),
+		);
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all', onAccepted })).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(onAccepted).not.toHaveBeenCalled();
+		expect(mockTxCreate).not.toHaveBeenCalled();
+	});
+
+	it('E4 refuses an exact amount the wallet cannot cover, before carving', async () => {
+		const onAccepted = jest.fn();
+		await expect(
+			executeHydraTopup({
+				headId: HEAD_ID,
+				filter: 'ada-only',
+				exact: { unit: 'lovelace', amount: 10_000_000_000n },
+				onAccepted,
+			}),
+		).rejects.toMatchObject({
+			status: 400,
+			message: 'The wallet holds 5000000 lovelace on L1, less than the 10000000000 requested',
+		});
+		expect(mockCarveExactUtxo).not.toHaveBeenCalled();
+		expect(onAccepted).not.toHaveBeenCalled();
+		expect(mockUpdateManyTopup).toHaveBeenCalledWith({
+			where: { id: TOPUP_ID, status: 'Preparing' },
+			data: { status: 'Failed' },
+		});
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID, 'claim-token-1');
+	});
+
+	it('E5 matches a token unit typed in upper case against the wallet', async () => {
+		const unit = 'ab'.repeat(28) + '74657374';
+		mockGenerateWalletExtended.mockResolvedValue({
+			wallet: {},
+			address: 'addr_test1...',
+			vKey: 'vkey',
+			blockchainProvider: {},
+			utxos: [
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: {
+						address: 'addr_test1...',
+						amount: [
+							{ unit: 'lovelace', quantity: '2000000' },
+							{ unit, quantity: '5' },
+						],
+					},
+				},
+			],
+		});
+		// Once: clearAllMocks keeps implementations.
+		mockCarveExactUtxo.mockRejectedValueOnce(new Error('stop after the funds check'));
+		await expect(
+			executeHydraTopup({
+				headId: HEAD_ID,
+				filter: { unit: unit.toUpperCase(), exclusive: true },
+				exact: { unit: unit.toUpperCase(), amount: 5n },
+			}),
+		).rejects.toThrow('stop after the funds check');
+		expect(mockCarveExactUtxo).toHaveBeenCalled();
 	});
 });

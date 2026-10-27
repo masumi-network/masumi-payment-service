@@ -57,6 +57,10 @@ overrides:
   ws@>=8 <9: 8.21.1
   yaml: 2.8.3
   zod@>=4 <5: 4.6.6
+  '@x402/core>zod': 4.6.6
+  '@x402/evm>zod': 4.6.6
+  '@x402/extensions>zod': 4.6.6
+  masumi-schema-validator-component>zod: 4.6.6
 
 patchedDependencies:
   '@sundaeswap/core':
@@ -65,12 +69,12 @@ patchedDependencies:
   http-cache-semantics@4.3.0:
     hash: 31ee930f09fb2810d6093b14bf15373eb06d0a4ea391a2fed254a3dd8b7b9549
     path: patches/http-cache-semantics@4.3.0.patch
+  masumi-schema-validator-component@1.2.0:
+    hash: fa2ed4b8ba0ddd915dc69304e2eebec7141766f8882f7c940d575bbd2cb96dd4
+    path: patches/masumi-schema-validator-component@1.2.0.patch
   postman-collection@5.2.0:
     hash: b95ff398c80011fb6e23b2c680f0b8e4dae43fe98a2a71517721375d4eb613f4
     path: patches/postman-collection@5.2.0.patch
-  zod@3.25.76:
-    hash: 50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f
-    path: patches/zod@3.25.76.patch
   zod@4.6.6:
     hash: c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2
     path: patches/zod@4.6.6.patch
@@ -418,7 +422,7 @@ importers:
         version: 1.5.0
       masumi-schema-validator-component:
         specifier: 1.2.0
-        version: 1.2.0(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0)
+        version: 1.2.0(patch_hash=fa2ed4b8ba0ddd915dc69304e2eebec7141766f8882f7c940d575bbd2cb96dd4)(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0)
       monaco-editor:
         specifier: 0.55.1
         version: 0.55.1
@@ -8753,9 +8757,6 @@ packages:
     peerDependencies:
       zod: 4.6.6
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
-
   zod@4.6.6:
     resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
@@ -13455,13 +13456,13 @@ snapshots:
 
   '@x402/core@2.14.0':
     dependencies:
-      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
 
   '@x402/evm@2.14.0(typescript@5.9.3)':
     dependencies:
       '@x402/core': 2.14.0
-      viem: 2.52.2(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
-      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
+      viem: 2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     transitivePeerDependencies:
       - bufferutil
       - typescript
@@ -13476,8 +13477,8 @@ snapshots:
       ajv: 8.18.0
       jose: 5.10.0
       tweetnacl: 1.0.3
-      viem: 2.52.2(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
-      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
+      viem: 2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     transitivePeerDependencies:
       - bufferutil
       - ethers
@@ -13495,11 +13496,6 @@ snapshots:
     dependencies:
       jsonparse: 1.3.1
       through: 2.3.8
-
-  abitype@1.2.3(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)):
-    optionalDependencies:
-      typescript: 5.9.3
-      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
 
   abitype@1.2.3(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     optionalDependencies:
@@ -16304,7 +16300,7 @@ snapshots:
 
   marked@14.0.0: {}
 
-  masumi-schema-validator-component@1.2.0(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0):
+  masumi-schema-validator-component@1.2.0(patch_hash=fa2ed4b8ba0ddd915dc69304e2eebec7141766f8882f7c940d575bbd2cb96dd4)(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0):
     dependencies:
       '@monaco-editor/react': 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
@@ -16313,7 +16309,7 @@ snapshots:
       react-hook-form: 7.78.0(react@19.2.7)
       tailwind-merge: 2.6.1
       tailwindcss: 4.3.0
-      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     transitivePeerDependencies:
       - monaco-editor
 
@@ -16688,21 +16684,6 @@ snapshots:
       get-intrinsic: 1.3.0
       object-keys: 1.1.1
       safe-push-apply: 1.0.0
-
-  ox@0.14.29(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)):
-    dependencies:
-      '@adraffy/ens-normalize': 1.11.1
-      '@noble/ciphers': 1.3.0
-      '@noble/curves': 1.9.1
-      '@noble/hashes': 1.8.0
-      '@scure/bip32': 1.7.0
-      '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
-      eventemitter3: 5.0.1
-    optionalDependencies:
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - zod
 
   ox@0.14.29(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
@@ -18126,23 +18107,6 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  viem@2.52.2(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)):
-    dependencies:
-      '@noble/curves': 1.9.1
-      '@noble/hashes': 1.8.0
-      '@scure/bip32': 1.7.0
-      '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
-      isows: 1.0.7(ws@8.21.1)
-      ox: 0.14.29(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
-      ws: 8.21.1
-    optionalDependencies:
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-      - zod
-
   viem@2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
       '@noble/curves': 1.9.1
@@ -18357,7 +18321,5 @@ snapshots:
   zod-validation-error@4.0.2(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
       zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
-
-  zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f): {}
 
   zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2): {}

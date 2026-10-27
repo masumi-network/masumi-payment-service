@@ -155,12 +155,31 @@ every flag, variable and the same volume.
 **Docker on a droplet**, from
 [hydra-host-deploy-droplet.md §9](hydra-host-deploy-droplet.md):
 
+When upgrading from a build without the private firewall socket, stop the
+refresh timer and the Host. Install the new `hydra-peer-firewall` helper and
+set `HYDRA_CONTROL_SOCKET=/mnt/hydra_data/peer-firewall.sock` and
+`HYDRA_CONTROL_SOCKET_UID=10001` in `/etc/default/hydra-peer-firewall`.
+Remove any `HYDRA_CONTROL_URL` setting. Recreate the container with
+`HYDRA_HOST_CONTROL_SOCKET=/data/peer-firewall.sock`. The old helper still
+sends its admin token over TCP, so upgrading the image alone leaves the
+original issue open.
+
 ```bash
+systemctl stop hydra-peer-firewall.timer hydra-peer-firewall.service
 systemctl stop hydra-host
+# Install the new helper and update /etc/default/hydra-peer-firewall here.
 docker rm hydra-host
-docker create --name hydra-host ... "$HYDRA_HOST_IMAGE"
+docker create --name hydra-host -e HYDRA_HOST_CONTROL_SOCKET=/data/peer-firewall.sock ... "$HYDRA_HOST_IMAGE"
 systemctl start hydra-host
+systemctl start hydra-peer-firewall.timer
+systemctl start hydra-peer-firewall.service
+hydra-peer-firewall verify
 ```
+
+The new helper does not send the admin token over TCP. Check that the refresh
+succeeded before Resume. A failed refresh keeps the peer range at baseline.
+See [the deployment steps](hydra-host-deploy-droplet.md#4-the-firewall) for
+the full script configuration.
 
 **Railway.** In the Host service settings, change the source image to the
 verified digest. Then deploy. The volume stays attached. A

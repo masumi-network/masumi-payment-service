@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:net';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { renderNftables, type ResolvedPeerAllowlist } from './api/peer-allowlist.js';
@@ -30,6 +31,7 @@ esac
 // CURL_ACK_FAIL makes the Host refuse it the way `curl -f` reports a 4xx.
 const CURL_STUB = `#!/bin/bash
 cat > "$CURL_HEADERS"
+printf '%s\\n' "$@" >> "$CURL_ARGS"
 if [[ " $* " == *" --data-binary "* ]]; then
 	printf '%s\\n' "$@" >> "$CURL_ACKS"
 	[[ -z "\${CURL_ACK_FAIL:-}" ]] || exit 22
@@ -40,6 +42,7 @@ fi
 const FLOCK_STUB = '#!/bin/bash\nexit 0\n';
 
 let dir: string;
+let controlSocket: Server;
 
 function allowlist(): ResolvedPeerAllowlist {
 	return {
@@ -82,8 +85,11 @@ function run(command: string, extraEnv: Record<string, string> = {}) {
 			HYDRA_PEER_RULES_FILE: join(dir, 'nftables.d', 'hydra-peer.nft'),
 			HYDRA_PEER_LOCK_FILE: join(dir, 'lock'),
 			HYDRA_ADMIN_TOKEN_FILE: join(dir, 'token'),
+			HYDRA_CONTROL_SOCKET: join(dir, 'control.sock'),
+			HYDRA_CONTROL_SOCKET_UID: String(process.getuid?.() ?? 10001),
 			NFT_STATE: join(dir, 'loaded.nft'),
 			CURL_HEADERS: join(dir, 'headers'),
+			CURL_ARGS: join(dir, 'curl-args'),
 			CURL_BODY: join(dir, 'response.json'),
 			CURL_ACKS: join(dir, 'acks'),
 			...extraEnv,
@@ -109,8 +115,8 @@ function loaded(): string {
 	return readFileSync(join(dir, 'loaded.nft'), 'utf8');
 }
 
-beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), 'hydra-peer-firewall-'));
+beforeEach(async () => {
+	dir = mkdtempSync(join(realpathSync(tmpdir()), 'hydra-peer-firewall-'));
 	for (const [name, body] of [
 		['nft', NFT_STUB],
 		['curl', CURL_STUB],
@@ -122,9 +128,15 @@ beforeEach(() => {
 		chmodSync(path, 0o755);
 	}
 	writeFileSync(join(dir, 'token'), 'admin-token\n');
+	controlSocket = createServer();
+	await new Promise<void>((resolve, reject) => {
+		controlSocket.once('error', reject);
+		controlSocket.listen(join(dir, 'control.sock'), resolve);
+	});
 });
 
-afterEach(() => {
+afterEach(async () => {
+	await new Promise<void>((resolve) => controlSocket.close(() => resolve()));
 	rmSync(dir, { recursive: true, force: true });
 });
 
@@ -198,7 +210,7 @@ describe('hydra-peer-firewall baseline', () => {
 	});
 
 	it('replaces accept rules left by an earlier run', () => {
-		writeResponse({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) });
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
 		expect(run('refresh').status).toBe(0);
 		expect(loaded()).toContain('203.0.113.7');
 
@@ -221,13 +233,18 @@ describe('hydra-peer-firewall baseline', () => {
 });
 
 describe('hydra-peer-firewall refresh', () => {
-	it('applies the Host ruleset and sends the token only on stdin', () => {
-		writeResponse({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) });
+	it('applies validated peer rules and sends the token only over the private socket', () => {
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
 		const result = run('refresh');
 		expect(result.status).toBe(0);
 		expect(result.stdout).toBe('verified\n');
 		expect(loaded()).toContain('tcp dport 5001 ip saddr { 203.0.113.7 } accept');
 		expect(readFileSync(join(dir, 'headers'), 'utf8')).toBe('Authorization: Bearer admin-token\n');
+		const curlArgs = readFileSync(join(dir, 'curl-args'), 'utf8');
+		expect(curlArgs.match(/--unix-socket/g)).toHaveLength(2);
+		expect(curlArgs.match(/--noproxy/g)).toHaveLength(2);
+		expect(curlArgs).toContain(join(dir, 'control.sock'));
+		expect(curlArgs).not.toContain('127.0.0.1:8443');
 		expect(readFileSync(join(dir, 'nftables.d', 'hydra-peer.nft'), 'utf8')).toBe(loaded());
 		expect(acks()).toEqual([`{"generation":"${GENERATION}"}`]);
 		expect(readFileSync(join(dir, 'acks'), 'utf8')).toContain('/v1/peer-allowlist/applied');
@@ -236,14 +253,14 @@ describe('hydra-peer-firewall refresh', () => {
 	// An acknowledgement frees released peer ports, so it must never describe a
 	// ruleset that is not the one loaded.
 	it('does not acknowledge a ruleset that nft failed to apply', () => {
-		writeResponse({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) });
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
 		const result = run('refresh', { NFT_APPLY_FAIL: '1' });
 		expect(result.status).toBe(1);
 		expect(acks()).toEqual([]);
 	});
 
 	it('fails when the Host does not record the acknowledgement', () => {
-		writeResponse({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) });
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
 		const result = run('refresh', { CURL_ACK_FAIL: '1' });
 		expect(result.status).toBe(1);
 		expect(result.stdout).toBe('');
@@ -255,7 +272,7 @@ describe('hydra-peer-firewall refresh', () => {
 	it('applies the ruleset of a Host that sends no generation, without acknowledging', () => {
 		writeFileSync(
 			join(dir, 'response.json'),
-			JSON.stringify({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) }),
+			JSON.stringify({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) }),
 		);
 		const result = run('refresh');
 		expect(result.status).toBe(0);
@@ -268,7 +285,7 @@ describe('hydra-peer-firewall refresh', () => {
 	it('refuses to put a malformed generation into the acknowledgement', () => {
 		writeResponse({
 			peerRange: RANGE,
-			rules: [],
+			rules: allowlist().rules,
 			nftables: renderNftables(allowlist(), RANGE),
 			generation: 'x", "generation": "y.1',
 		});
@@ -287,22 +304,76 @@ describe('hydra-peer-firewall refresh', () => {
 		expect(loaded()).toBe(before);
 	});
 
-	it('refuses a truncated ruleset that would flush every rule', () => {
-		expect(run('baseline').status).toBe(0);
-		const before = loaded();
+	it('never passes Host-supplied nftables commands to root nft', () => {
 		writeResponse({
 			peerRange: RANGE,
-			rules: [],
-			nftables: 'add table inet hydra_peer\nflush table inet hydra_peer\n',
+			rules: allowlist().rules,
+			nftables: `flush ruleset\n${renderNftables(allowlist(), RANGE)}`,
 		});
 		const result = run('refresh');
+		expect(result.status).toBe(0);
+		expect(loaded()).toContain('tcp dport 5001 ip saddr { 203.0.113.7 } accept');
+		expect(loaded()).not.toContain('flush ruleset');
+	});
+
+	it('refuses a truncated response before changing the loaded ruleset', () => {
+		expect(run('baseline').status).toBe(0);
+		const before = loaded();
+		writeFileSync(join(dir, 'response.json'), '{"peerRange":');
+		const result = run('refresh');
 		expect(result.status).toBe(1);
-		expect(result.stderr).toContain('does not refuse 5001-5004 on exactly two hooks');
+		expect(result.stderr).toContain('the peer allow-list response is invalid');
 		expect(loaded()).toBe(before);
 		// A rejected file left next to the persisted one could be loaded by a
 		// wide nftables include glob at the next boot.
 		expect(existsSync(join(dir, 'nftables.d', 'hydra-peer.nft.new'))).toBe(false);
 		expect(existsSync(join(dir, 'nftables.d', 'hydra-peer.nft.response'))).toBe(false);
+	});
+
+	// The Host boots with two nodes recorded on one port and lists both rules.
+	it('merges the peers of two nodes recorded on one port instead of failing the refresh', () => {
+		const shared = allowlist();
+		shared.rules.push({ ...shared.rules[0], nodeId: 'n2', allowedIpv4Addresses: ['198.51.100.9'] });
+		writeResponse({ peerRange: RANGE, rules: shared.rules, nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh');
+		expect(result.status).toBe(0);
+		expect(loaded()).toContain('tcp dport 5001 ip saddr { 198.51.100.9, 203.0.113.7 } accept');
+		expect(acks()).toEqual([`{"generation":"${GENERATION}"}`]);
+	});
+
+	it('refuses an invalid IPv4 address before running nft', () => {
+		const bad = allowlist();
+		bad.rules[0].allowedIpv4Addresses = ['203.0.113.7\nflush ruleset'];
+		writeResponse({ peerRange: RANGE, rules: bad.rules, nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh');
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('Host peer address is not IPv4');
+		expect(existsSync(join(dir, 'loaded.nft'))).toBe(false);
+	});
+
+	it('refuses to send the token without a private socket path', () => {
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh', { HYDRA_CONTROL_SOCKET: '' });
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('HYDRA_CONTROL_SOCKET');
+		expect(existsSync(join(dir, 'curl-args'))).toBe(false);
+	});
+
+	it('refuses to send the token when the socket directory becomes public', () => {
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
+		chmodSync(dir, 0o755);
+		const result = run('refresh');
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('the control socket directory must have mode 0700');
+		expect(existsSync(join(dir, 'curl-args'))).toBe(false);
+	});
+
+	it('refuses to send the token to a socket with an unexpected owner', () => {
+		writeResponse({ peerRange: RANGE, rules: allowlist().rules, nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh', { HYDRA_CONTROL_SOCKET_UID: String((process.getuid?.() ?? 10001) + 1) });
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('wrong type or owner');
+		expect(existsSync(join(dir, 'curl-args'))).toBe(false);
 	});
 
 	it('refuses a Host whose peer range differs from the machine range', () => {

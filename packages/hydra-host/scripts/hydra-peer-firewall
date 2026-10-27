@@ -1,9 +1,9 @@
 #!/bin/bash
 # Keep the Hydra Host peer plane behind a verified nftables ruleset.
 #
-# The peer plane is unauthenticated etcd raft. The Host renders its allow-list
+# The peer plane is unauthenticated etcd raft. The Host reports its allow-list
 # at GET /v1/peer-allowlist but cannot apply it, so this script runs on the
-# machine, as root, outside the container.
+# machine, as root, outside the container. It renders nftables commands locally.
 #
 #   baseline  Load a ruleset that refuses the whole peer range, then verify it.
 #             Run before the Host starts, so no accept rule from an earlier run
@@ -18,7 +18,8 @@
 #   HYDRA_PEER_PORT_START   first peer port (default 5001)
 #   HYDRA_PEER_PORT_COUNT   number of peer ports (default 32)
 #   HYDRA_ADMIN_TOKEN_FILE  root-owned file holding the admin token (refresh)
-#   HYDRA_CONTROL_URL       Control Plane base URL (default http://127.0.0.1:8443)
+#   HYDRA_CONTROL_SOCKET    private Unix socket shared with the Host (refresh)
+#   HYDRA_CONTROL_SOCKET_UID  expected Host uid (default 10001)
 #   HYDRA_PEER_RULES_FILE   persisted ruleset (default /etc/nftables.d/hydra-peer.nft)
 #   HYDRA_PEER_LOCK_FILE    lock file (default /run/hydra-peer-firewall.lock)
 set -euo pipefail
@@ -32,7 +33,8 @@ fi
 
 START=${HYDRA_PEER_PORT_START:-5001}
 COUNT=${HYDRA_PEER_PORT_COUNT:-32}
-CONTROL_URL=${HYDRA_CONTROL_URL:-http://127.0.0.1:8443}
+CONTROL_SOCKET=${HYDRA_CONTROL_SOCKET:-}
+CONTROL_SOCKET_UID=${HYDRA_CONTROL_SOCKET_UID:-10001}
 DEST=${HYDRA_PEER_RULES_FILE:-/etc/nftables.d/hydra-peer.nft}
 LOCK=${HYDRA_PEER_LOCK_FILE:-/run/hydra-peer-firewall.lock}
 TABLE='inet hydra_peer'
@@ -126,35 +128,115 @@ do_baseline() {
 	install_ruleset
 }
 
-# Call the Control Plane as admin. Arguments: token file, then curl arguments.
+# Call the private Control Plane socket as admin. The public TCP listener is
+# never a fallback: another local process can own that port while Host is down.
 # printf is a builtin, so the token never appears in a process argv.
 control_curl() {
 	local token_file=$1
 	shift
 	printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$token_file")" |
-		curl -fsS --max-time 20 -H @- "$@"
+		curl -fsS --max-time 20 --noproxy '*' --unix-socket "$CONTROL_SOCKET" -H @- "$@"
+}
+
+check_control_socket() {
+	[[ "$CONTROL_SOCKET_UID" =~ ^[0-9]+$ ]] || fail 'HYDRA_CONTROL_SOCKET_UID must be a numeric uid'
+	python3 -c '
+import os, stat, sys
+
+path, expected_uid = sys.argv[1], int(sys.argv[2])
+if not os.path.isabs(path) or os.path.normpath(path) != path:
+    sys.exit("the control socket path must be absolute and normalized")
+try:
+    directory = os.lstat(os.path.dirname(path))
+    endpoint = os.lstat(path)
+except OSError as error:
+    sys.exit("the private control socket is unavailable: %s" % error)
+if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != expected_uid:
+    sys.exit("the control socket directory has the wrong type or owner")
+if stat.S_IMODE(directory.st_mode) & 0o077 or stat.S_IMODE(directory.st_mode) & 0o700 != 0o700:
+    sys.exit("the control socket directory must have mode 0700")
+if not stat.S_ISSOCK(endpoint.st_mode) or endpoint.st_uid != expected_uid:
+    sys.exit("the control socket has the wrong type or owner")
+ancestor = os.path.dirname(path)
+while True:
+    try:
+        current = os.lstat(ancestor)
+    except OSError as error:
+        sys.exit("the control socket ancestor is unavailable: %s" % error)
+    if not stat.S_ISDIR(current.st_mode) or current.st_uid not in (0, expected_uid):
+        sys.exit("the control socket has an untrusted ancestor")
+    mode = stat.S_IMODE(current.st_mode)
+    if mode & 0o022 and not (current.st_uid == 0 and mode & stat.S_ISVTX):
+        sys.exit("the control socket has a writable ancestor")
+    if ancestor == "/":
+        break
+    ancestor = os.path.dirname(ancestor)
+' "$CONTROL_SOCKET" "$CONTROL_SOCKET_UID" || fail 'refusing to send the admin token to an untrusted control socket'
 }
 
 do_refresh() {
 	local token_file=${HYDRA_ADMIN_TOKEN_FILE:-}
 	[[ -n "$token_file" && -s "$token_file" ]] || fail 'HYDRA_ADMIN_TOKEN_FILE must name a non-empty file'
+	[[ -n "$CONTROL_SOCKET" ]] || fail 'HYDRA_CONTROL_SOCKET must name the private Host Unix socket'
+	[[ -z "${HYDRA_CONTROL_URL:-}" ]] || fail 'HYDRA_CONTROL_URL is unsupported; use HYDRA_CONTROL_SOCKET'
+	check_control_socket
 
-	if ! control_curl "$token_file" "$CONTROL_URL/v1/peer-allowlist" >"$RESPONSE"; then
+	if ! control_curl "$token_file" 'http://localhost/v1/peer-allowlist' >"$RESPONSE"; then
 		fail 'could not fetch the peer allow-list; the loaded ruleset is unchanged'
 	fi
 
-	# The Host must manage the same range this machine refuses, or ports the
-	# Host uses would sit outside the default-deny.
+	# Build nftables commands from typed ports and IPv4 addresses. The response's
+	# nftables field is never executable input to this root process.
 	if ! python3 -c '
-import json, sys
+import ipaddress, json, sys
+
 body = json.load(open(sys.argv[1]))
+start, count = int(sys.argv[2]), int(sys.argv[3])
 peer_range = body["peerRange"]
-if peer_range["start"] != int(sys.argv[2]) or peer_range["count"] != int(sys.argv[3]):
-    sys.exit("Host peer range %s+%s does not match %s+%s" % (peer_range["start"], peer_range["count"], sys.argv[2], sys.argv[3]))
-for rule in body["rules"]:
+if type(peer_range["start"]) is not int or type(peer_range["count"]) is not int:
+    sys.exit("Host peer range is invalid")
+if peer_range["start"] != start or peer_range["count"] != count:
+    sys.exit("Host peer range %s+%s does not match %s+%s" % (peer_range["start"], peer_range["count"], start, count))
+
+rules = body["rules"]
+if not isinstance(rules, list):
+    sys.exit("Host peer rules are invalid")
+allowed = {}
+for rule in rules:
+    port = rule["peerPort"]
+    addresses = rule["allowedIpv4Addresses"]
+    if type(port) is not int or port < start or port >= start + count:
+        sys.exit("Host peer port is invalid")
+    if not isinstance(addresses, list) or any(not isinstance(address, str) for address in addresses):
+        sys.exit("Host peer addresses are invalid")
+    if type(rule["closed"]) is not bool or rule["closed"] != (len(addresses) == 0):
+        sys.exit("Host peer closed state is inconsistent")
+    try:
+        # Two nodes recorded on one port is a state the Host boots with. Merge
+        # their peers, as the Host-rendered ruleset did, so one bad record does
+        # not fail every refresh and leave the loaded ruleset stale.
+        allowed.setdefault(port, set()).update(str(ipaddress.IPv4Address(address)) for address in addresses)
+    except ipaddress.AddressValueError:
+        sys.exit("Host peer address is not IPv4")
     for error in rule.get("resolutionErrors", []):
         print("hydra-peer-firewall: %s: %s: %s" % (rule["nodeId"], error["host"], error["reason"]), file=sys.stderr)
-sys.stdout.write(body["nftables"])
+
+last = start + count - 1
+port_range = str(start) if start == last else "%s-%s" % (start, last)
+print("#!/usr/sbin/nft -f")
+print("# Rendered by hydra-peer-firewall from validated peer addresses.")
+print("add table inet hydra_peer")
+print("flush table inet hydra_peer")
+print("table inet hydra_peer {")
+for hook in ("input", "forward"):
+    print("\tchain %s {" % hook)
+    print("\t\ttype filter hook %s priority filter; policy accept;" % hook)
+    for port, addresses in sorted(allowed.items()):
+        if addresses:
+            print("\t\ttcp dport %s ip saddr { %s } accept" % (port, ", ".join(sorted(addresses))))
+    print("\t\ttcp dport %s drop" % port_range)
+    print("\t}")
+print("}")
 ' "$RESPONSE" "$START" "$COUNT" >"$TMP"; then
 		fail 'the peer allow-list response is invalid; the loaded ruleset is unchanged'
 	fi
@@ -176,7 +258,7 @@ acknowledge() {
 	[[ "$generation" =~ ^[0-9a-f-]+\.[0-9]+$ ]] ||
 		fail 'the peer allow-list generation is malformed; the ruleset is applied, but released peer ports stay blocked'
 	if ! control_curl "$1" -H 'Content-Type: application/json' \
-		--data-binary "{\"generation\":\"$generation\"}" "$CONTROL_URL/v1/peer-allowlist/applied" >/dev/null; then
+		--data-binary "{\"generation\":\"$generation\"}" 'http://localhost/v1/peer-allowlist/applied' >/dev/null; then
 		fail 'the ruleset is applied and verified, but the Host did not record it; released peer ports stay blocked'
 	fi
 }

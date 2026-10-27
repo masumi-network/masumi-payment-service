@@ -180,6 +180,13 @@ export type ExecuteHydraDecommitParams = {
 	asset?: { unit: string; amount: bigint } | null;
 	/** Withdraw the collateral reserve too. For winding a head down. */
 	drain?: boolean;
+	/**
+	 * Called once, as soon as this withdrawal is built, signed and recorded
+	 * Pending, just before it is requested from the node. The endpoint answers
+	 * then, so a refusal before this point reaches the operator in the answer,
+	 * and what the node and the head decide afterwards lands on the row.
+	 */
+	onAccepted?: () => void;
 };
 
 export type ExecuteHydraDecommitResult = {
@@ -604,6 +611,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			},
 		});
 		preparingId = null;
+		params.onAccepted?.();
 
 		try {
 			await hydraHead.decommit(
