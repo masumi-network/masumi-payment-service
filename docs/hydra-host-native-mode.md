@@ -172,8 +172,8 @@ One difference is worth stating, because it is easy to read as "already handled"
 There is no container here, so there is no port publication and no
 `docker-compose.public-peer.yml` to gate the peer range behind. The peer ports
 are simply open on the machine as soon as a node starts. The nftables ruleset
-from `GET /v1/peer-allowlist`, plus whatever firewall sits in front of the
-machine, is the entire protection for an unauthenticated etcd raft plane. Run
+that `hydra-peer-firewall` renders from `GET /v1/peer-allowlist`, plus whatever
+firewall sits in front of the machine, is the entire protection for an unauthenticated etcd raft plane. Run
 `hydra-peer-firewall baseline` before the Host starts, and run
 `hydra-peer-firewall refresh` on a timer and after every membership change. See
 [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md) for the script and
