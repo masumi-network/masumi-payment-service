@@ -8,6 +8,61 @@ runtime, etcd and `hydra-node`. The data volume stays.
 The admin UI shows which release each part runs and the newest published
 release. This guide is the procedure behind its **Update available** badge.
 
+## Release integrity
+
+VERIFIED: `.github/workflows/ghcr.yml` contains a gate for release tags and
+commits on `main`. It passes `--provenance=mode=max` and `--sbom=true` to Buildx,
+and names the `hydra-host-release` GitHub Environment. It signs a manifest that
+contains the pushed image digest, release tag and source commit, then attaches
+the manifest and signature to the release. The job fails if its signing key is
+missing. The local `test-verify-release-image` test checks a valid signature and
+rejects changes to the signed manifest, image, tag and commit.
+
+INFERRED: The workflow file alone cannot require a human review or protect a
+tag. Before the first release through this job, configure
+`hydra-host-release` with required reviewers and restrict it to release tags.
+Configure a tag ruleset that limits who can create, update, or delete project
+release tags. Record the settings in the release review. The present repository
+settings are not determined here.
+
+Create a dedicated signing key outside this repository. Store its private PEM
+as the `HYDRA_HOST_IMAGE_SIGNING_KEY_PEM` secret in that protected Environment.
+Store the public PEM in the deployment secret store. Check its fingerprint
+through an independent channel before first use or rotation. A public key
+downloaded from the same release cannot establish trust in that release.
+
+INFERRED: When the release job succeeds, the signature covers the image index
+digest and its BuildKit provenance and SBOM. The digest in the job summary is
+for review; do not use it to select the deployed image without verification.
+The job has not been exercised against a live GHCR release in this review.
+
+Before replacing a Host, obtain `hydra-host-image.txt` and
+`hydra-host-image.txt.sig` from that release. Use the approved full source
+commit from the release review, not the commit claimed by the manifest. This
+example uses the GitHub CLI to download the two assets:
+
+```bash
+release=0.30.0
+approved_commit=REPLACE_WITH_REVIEWED_COMMIT
+asset_dir="/srv/hydra/release-assets/$release"
+mkdir -p "$asset_dir"
+gh release download "$release" -R masumi-network/masumi-payment-service \
+  -p hydra-host-image.txt -p hydra-host-image.txt.sig \
+  -D "$asset_dir"
+HYDRA_HOST_IMAGE=$(packages/hydra-host/scripts/verify-release-image \
+  /srv/hydra/release-public.pem \
+  "$asset_dir/hydra-host-image.txt" \
+  "$asset_dir/hydra-host-image.txt.sig" \
+  ghcr.io/masumi-network/masumi-payment-service-hydra-host \
+  "$release" "$approved_commit")
+printf '%s\n' "$HYDRA_HOST_IMAGE"
+```
+
+VERIFIED (local `test-verify-release-image`): The verifier exits on an invalid
+signature or any mismatch. It prints only an immutable `image@sha256:...`
+reference on success. Use that exact value for
+Docker, Compose or Railway. Do not switch it back to a tag after verification.
+
 ## How the version is shown
 
 | Shown                          | Meaning                                                                     |
@@ -91,9 +146,8 @@ a node did not stop.
 
 ### 4. Redeploy the Host image
 
-Use the image built from the new tag:
-`ghcr.io/masumi-network/masumi-payment-service-hydra-host:<tag>`. Pin it by
-digest. Keep every flag, variable and the same volume.
+Set `HYDRA_HOST_IMAGE` through the signed release verification above. Keep
+every flag, variable and the same volume.
 
 **Docker on a droplet**, from
 [hydra-host-deploy-droplet.md §9](hydra-host-deploy-droplet.md):
@@ -101,12 +155,12 @@ digest. Keep every flag, variable and the same volume.
 ```bash
 systemctl stop hydra-host
 docker rm hydra-host
-docker create --name hydra-host ... <new image digest>
+docker create --name hydra-host ... "$HYDRA_HOST_IMAGE"
 systemctl start hydra-host
 ```
 
-**Railway.** In the Host service settings, change the source image to the new
-tag or digest. Then deploy. The volume stays attached. A
+**Railway.** In the Host service settings, change the source image to the
+verified digest. Then deploy. The volume stays attached. A
 service with a volume cannot run two deployments at once, so expect a short
 downtime while the old deployment stops.
 
@@ -175,3 +229,34 @@ The payment service image comes from the same tag:
 main page of the admin UI. Upgrade it the same way you deploy it today, and run
 its database migrations as part of the deploy. See
 [deployment.md](deployment.md).
+
+## Rotate Host tokens
+
+The Host reads its admin and user tokens at startup. The payment service saves
+new tokens through `PATCH /hydra/host`. If the Host owns any node, the service
+refuses a user token update until every paused node reports `Stopped`.
+The update then drops the old Head sessions. The
+session sweep connects them with the new token after Resume.
+
+1. Pause the Host and wait until its phase is **Paused**. Keep this window short:
+   a stopped node cannot contest a Close.
+2. Replace the tokens in the Host's protected environment file. Restart the
+   same Host image with the same data volume and shutdown grace period.
+3. Send `PATCH /hydra/host` with the Host `id` and each changed `userToken` or
+   `adminToken`. Do this before Resume, since Resume uses the saved admin token.
+   The service checks that each node is stopped with the new user token, then
+   drops old Head sessions while the Host is paused. The ordinary pause status
+   may show `Stopping` between steps 2 and 3 because it still uses the old token.
+4. Resume the Host. Check that each node starts and each enabled Head reconnects.
+   If a session stays down, send the same `userToken` again to retry the refresh.
+
+VERIFIED (`src/services/hydra-host/registry.ts:435`,
+`src/services/hydra-invite/provisioning.ts:365`,
+`src/services/hydra-invite/redemption-ports.ts:219`): The token update, node
+provisioning, and redemption starts share the Host pause lease. A concurrent
+request gets `409` and can be retried after the token update finishes. Head
+adoption waits until Resume (`src/routes/api/hydra/head/create-head.ts:167`).
+
+An admin-only change does not restart node sessions. If you rotate both tokens,
+send both in the same PATCH request. Do not put token values in logs or shell
+history.

@@ -1619,6 +1619,7 @@ enum WebhookEventType {
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
   HYDRA_HEAD_POST_TX_FAILED
   HYDRA_HEAD_CONTEST_MISSING
+  HYDRA_HEAD_CONTEST_WATCH_ALERT
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1902,8 +1903,14 @@ model HydraTopup {
   /// The L1 self-payment that carves the exact amount into its own UTxO, when an
   /// exact amount was asked for. Recorded as soon as it is submitted: waiting for
   /// it to confirm is the longest part of a top-up, and without this there is no
-  /// transaction an operator can look up during that wait.
+  /// transaction an operator can look up during that wait. Stored after signing
+  /// and before submission.
   splitTxHash String?
+
+  /// Signed invalid-hereafter slot of the pre-split transaction. It is stored
+  /// with splitTxHash before submission, so an ambiguous submit can be checked
+  /// against a finite validity window. Null when no pre-split was built.
+  splitInvalidHereafterSlot BigInt?
 
   /// The incremental-commit deposit L1 transaction hash (64 hex).
   ///

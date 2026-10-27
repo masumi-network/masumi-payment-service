@@ -157,6 +157,11 @@ quotes become part of the token.
 
 ## 2. Run the container
 
+Verify the signed Host release and set `HYDRA_HOST_IMAGE` to its immutable
+reference before creating the container. Use the procedure in
+[hydra-host-upgrade.md](hydra-host-upgrade.md#release-integrity). Keep the
+trusted public key outside the downloaded release assets.
+
 Use `--network host`. Publishing 32 peer ports individually spawns 32 userland
 proxies and caps how many heads one Host can carry. Under host networking the
 `hydra-node` API range stays shut anyway, because it is pinned to `127.0.0.1` in
@@ -199,7 +204,7 @@ docker create --name hydra-host \
   -e HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true \
   -e HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL=true \
   -e HYDRA_HOST_MONITORING_ENABLED=false \
-  ghcr.io/example/hydra-host@sha256:...
+  "${HYDRA_HOST_IMAGE:?verify the signed release first}"
 ```
 
 `HYDRA_HOST_SCRIPTS_TX_IDS` holds the comma-separated transaction ids of a
@@ -829,11 +834,14 @@ coordinated change, not a rolling one. Close and fan out every open head
 first: an upgraded node cannot use a head opened by the previous version. The
 2.3.0 to 2.4.1 move has its own steps in
 [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
+Verify the new signed release before stopping the current Host. Follow
+[hydra-host-upgrade.md](hydra-host-upgrade.md#release-integrity) and set
+`HYDRA_HOST_IMAGE` to the verified digest.
 
 ```bash
 systemctl stop hydra-host                          # drains, up to 250s
 docker rm hydra-host
-docker create --name hydra-host ... <new digest>   # same flags, same volume
+docker create --name hydra-host ... "$HYDRA_HOST_IMAGE" # same flags and volume
 systemctl start hydra-host
 ```
 

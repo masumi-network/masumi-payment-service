@@ -17,6 +17,8 @@ import type { Mock } from 'jest-mock';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindMany = jest.fn() as AnyMock;
+const mockHostFindUnique = jest.fn() as AnyMock;
+const mockWithPauseLease = jest.fn() as AnyMock;
 const mockFindFirst = jest.fn() as AnyMock;
 const mockCreate = jest.fn() as AnyMock;
 const mockAcknowledge = jest.fn() as AnyMock;
@@ -34,7 +36,7 @@ class HydraHostRequestError extends Error {
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
-		hydraHost: { findMany: mockFindMany },
+		hydraHost: { findMany: mockFindMany, findUnique: mockHostFindUnique },
 		hydraLocalParticipant: { findFirst: mockFindFirst, create: mockCreate },
 	},
 }));
@@ -60,6 +62,10 @@ jest.unstable_mockModule('@/services/hydra-host/placement', () => ({
 
 jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({
 	expectedHostCapabilitiesForNetwork: () => ({}),
+}));
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	withHostPauseLease: mockWithPauseLease,
 }));
 
 jest.unstable_mockModule('./node-keys', () => ({
@@ -108,11 +114,36 @@ beforeEach(() => {
 		secrets: { hydraSigningKey: 'hydra-sk', cardanoSigningKey: 'cardano-sk' },
 	});
 	mockFindFirst.mockResolvedValue(null);
+	mockHostFindUnique.mockResolvedValue({ pausedAt: null });
+	mockWithPauseLease.mockImplementation(async (_hostId: string, action: () => Promise<void>) => {
+		await action();
+		return true;
+	});
 	mockCreate.mockResolvedValue({ id: 'participant-1' });
 	mockAcknowledge.mockResolvedValue(undefined);
 });
 
 describe('reserveNodeForExchange', () => {
+	it('refuses a pause that began after Host placement, before provisioning', async () => {
+		mockHostFindUnique.mockResolvedValue({ pausedAt: new Date() });
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockProvision).not.toHaveBeenCalled();
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
+	it('does not provision while rotation holds the Host lease', async () => {
+		mockWithPauseLease.mockResolvedValue(false);
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockFetchCapabilities).not.toHaveBeenCalled();
+		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
 	it('acknowledges escrow on the node it just recorded', async () => {
 		const reserved = await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
 

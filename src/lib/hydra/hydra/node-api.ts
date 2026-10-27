@@ -9,8 +9,9 @@ import { Protocol, UTxO } from '@meshsdk/core';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import type { FinalizedFanoutBindingInput } from './node-finalized-fanout';
 import type { L2MintCheck } from './l2-mint-tally';
+import type { HydraConfirmedSnapshotPayload } from './signed-snapshot';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
-import { type VerifiedHydraFanoutReference } from './snapshot-verification';
+import { type HydraSnapshotVerificationFrame, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraTransaction } from './types';
 
 /**
@@ -125,6 +126,10 @@ export interface HydraNodeClientConfig {
 	maxRetainedTransactionCborBytes?: number;
 	/** Computes history snapshot accumulators; defaults to the event loop. */
 	computeSnapshotAccumulator?: HydraAccumulatorComputer;
+	/** Receives each snapshot whose party signatures and accumulator verified. Must not throw. */
+	onSignedSnapshotVerified?: (snapshot: HydraConfirmedSnapshotPayload) => void;
+	/** Persist each verified signed snapshot before replay accepts it. */
+	persistVerifiedSnapshot?: (frame: HydraSnapshotVerificationFrame) => Promise<void>;
 }
 
 export interface ResolvedHydraNodeLimits {

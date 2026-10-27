@@ -82,6 +82,7 @@ const relation = {
 const localParticipant = {
 	id: 'local-participant-1',
 	walletId: relation.localHotWalletId,
+	hydraHostId: 'host-1',
 	hydraHeadId: null,
 	Wallet: {
 		deletedAt: null,
@@ -111,7 +112,7 @@ beforeEach(() => {
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
 	mockFindRelation.mockResolvedValue(relation);
-	mockQueryRaw.mockResolvedValue([{ id: relation.id }]);
+	mockQueryRaw.mockResolvedValue([{ id: relation.id, pausedAt: null }]);
 	mockFindActiveHead.mockResolvedValue(null);
 	mockFindFinalHeads.mockResolvedValue([]);
 	mockPaymentHandoffCount.mockResolvedValue(0);
@@ -138,6 +139,13 @@ beforeEach(() => {
 });
 
 describe('createBoundHydraHead', () => {
+	it('does not adopt a reserved node after its Host was paused', async () => {
+		mockQueryRaw.mockResolvedValue([{ id: relation.id, pausedAt: new Date() }]);
+
+		await expect(createBoundHydraHead(input)).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockCreateHead).not.toHaveBeenCalled();
+	});
+
 	it('claims the exact relation participants in one Serializable transaction', async () => {
 		await expect(createBoundHydraHead(input)).resolves.toMatchObject({ id: 'head-1' });
 

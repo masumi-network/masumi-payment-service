@@ -27,26 +27,54 @@ describe('canReleaseTopupWallet', () => {
 	// The 409 path: this call claimed the wallet, was refused before creating a
 	// row, and owns no transaction. Holding on costs the whole stale-lock window.
 	it('releases when this operation never created a row', () => {
-		expect(canReleaseTopupWallet({ outstandingOwnTopup: false, carveTxHash: null, depositConfirmed: false })).toBe(
-			true,
-		);
+		expect(
+			canReleaseTopupWallet({
+				outstandingOwnTopup: false,
+				carveTxHash: null,
+				carveConfirmed: false,
+				depositConfirmed: false,
+			}),
+		).toBe(true);
 	});
 
 	it('holds while this operation own deposit could still land', () => {
-		expect(canReleaseTopupWallet({ outstandingOwnTopup: true, carveTxHash: null, depositConfirmed: false })).toBe(
-			false,
-		);
+		expect(
+			canReleaseTopupWallet({
+				outstandingOwnTopup: true,
+				carveTxHash: null,
+				carveConfirmed: false,
+				depositConfirmed: false,
+			}),
+		).toBe(false);
 	});
 
 	// A signed carve may be in the mempool whatever happened afterwards: its
 	// inputs still read as unspent, so a batcher handed the wallet here builds
 	// over them and one of the two dies as BadInputsUTxO.
-	it('holds after a signed carve until the deposit that spends it confirms', () => {
+	it('holds after a signed carve until the carve or deposit confirms', () => {
 		expect(
-			canReleaseTopupWallet({ outstandingOwnTopup: false, carveTxHash: 'ab'.repeat(32), depositConfirmed: false }),
+			canReleaseTopupWallet({
+				outstandingOwnTopup: false,
+				carveTxHash: 'ab'.repeat(32),
+				carveConfirmed: false,
+				depositConfirmed: false,
+			}),
 		).toBe(false);
 		expect(
-			canReleaseTopupWallet({ outstandingOwnTopup: false, carveTxHash: 'ab'.repeat(32), depositConfirmed: true }),
+			canReleaseTopupWallet({
+				outstandingOwnTopup: false,
+				carveTxHash: 'ab'.repeat(32),
+				carveConfirmed: true,
+				depositConfirmed: false,
+			}),
+		).toBe(true);
+		expect(
+			canReleaseTopupWallet({
+				outstandingOwnTopup: false,
+				carveTxHash: 'ab'.repeat(32),
+				carveConfirmed: false,
+				depositConfirmed: true,
+			}),
 		).toBe(true);
 	});
 });

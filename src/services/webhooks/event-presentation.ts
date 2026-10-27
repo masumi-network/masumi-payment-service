@@ -38,6 +38,8 @@ export function getWebhookEventPresentation(eventType: WebhookSendPayload['event
 			return { emoji: '🚨', title: 'Hydra L1 transaction failed' };
 		case WebhookEventType.HYDRA_HEAD_CONTEST_MISSING:
 			return { emoji: '🚨', title: 'Hydra head closed on an old snapshot' };
+		case WebhookEventType.HYDRA_HEAD_CONTEST_WATCH_ALERT:
+			return { emoji: '🚨', title: 'Hydra contest watch needs attention' };
 		case WEBHOOK_TEST_EVENT_TYPE:
 			return { emoji: '🧪', title: 'Test webhook delivery' };
 		default:

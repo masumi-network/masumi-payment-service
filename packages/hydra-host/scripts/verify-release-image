@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Print only the signed, immutable image reference after every check passes.
+set -euo pipefail
+
+if [[ $# -ne 6 ]]; then
+	echo 'usage: verify-release-image PUBLIC_KEY MANIFEST SIGNATURE EXPECTED_IMAGE EXPECTED_TAG EXPECTED_COMMIT' >&2
+	exit 2
+fi
+
+public_key=$1
+manifest=$2
+signature=$3
+expected_image=$4
+expected_tag=$5
+expected_commit=$6
+
+if [[ ! "$expected_image" =~ ^ghcr\.io/[a-z0-9._/-]+$ ]]; then
+	echo 'expected image must be a GHCR repository name without a tag or digest' >&2
+	exit 2
+fi
+if [[ ! "$expected_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+	echo 'expected tag must be a project release version' >&2
+	exit 2
+fi
+if [[ ! "$expected_commit" =~ ^[0-9a-f]{40}$ ]]; then
+	echo 'expected commit must be a full lowercase Git SHA-1' >&2
+	exit 2
+fi
+
+if ! openssl dgst -sha256 -verify "$public_key" -signature "$signature" "$manifest" >/dev/null; then
+	echo 'Hydra Host release signature did not verify' >&2
+	exit 1
+fi
+
+lines=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+	lines+=("$line")
+done < "$manifest"
+
+if [[ ${#lines[@]} -ne 4 ]] ||
+	[[ "${lines[0]}" != "image=$expected_image" ]] ||
+	[[ "${lines[2]}" != "release=$expected_tag" ]] ||
+	[[ "${lines[3]}" != "commit=$expected_commit" ]]; then
+	echo 'Hydra Host release manifest does not match the reviewed image, tag and commit' >&2
+	exit 1
+fi
+if [[ ! "${lines[1]}" =~ ^digest=(sha256:[0-9a-f]{64})$ ]]; then
+	echo 'Hydra Host release manifest has no valid image digest' >&2
+	exit 1
+fi
+digest=${BASH_REMATCH[1]}
+
+printf '%s@%s\n' "$expected_image" "$digest"
