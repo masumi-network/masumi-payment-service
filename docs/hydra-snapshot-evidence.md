@@ -7,7 +7,9 @@
 - VERIFIED (code): The row contains the snapshot number, version, accumulator, UTxO partitions, deposit transaction ID, and party signatures. It excludes the unsigned `confirmed` transaction list. Hydra 2.3 signatures bind the output multiset, not each UTxO reference. The stored reference map therefore remains endpoint-trusted evidence, not signed evidence.
 - VERIFIED (code): The connection manager and read-only contest observer both pass verified frames to the store. The Prisma migration must be applied before enabling this code.
 - VERIFIED (code): `prisma/models/hydra-stored-snapshot.prisma` deletes stored snapshots with their head. The guarded relation delete at `src/routes/api/hydra/relation/index.ts:306-359` permits this only after Final status, fanout, reconciliation, and settlement checks. Export required evidence before deleting a final relation.
-- VERIFIED (code): `src/services/hydra-contest-watch/watch.ts` compares a closed node's observed on-chain snapshot number with the latest stored signed snapshot number. It uses the stored number when the restarted node reports an older number or no verified number. That stored number can come from a snapshot that replay rejected, because every party signed it.
+- VERIFIED (code): `src/services/hydra-contest-watch/watch.ts` compares a closed node's observed on-chain snapshot number with the latest stored signed snapshot number. It uses the stored number when the restarted node reports an older verified number. The comparison runs only when replay is complete and verified: `closedSnapshotNumber` and `verifiedSnapshotNumber` are both gated on `hasVerifiedPinnedSessions` (`src/lib/hydra/hydra/node.ts:439-467`). A snapshot that replay rejected therefore never feeds this check while that rejection persists, because the pass does not complete. That head reads as not observable instead.
+
+Correction on 2026-10-27: an earlier version of this line said the stored number is also used when the node reports no verified number, and that it can come from a snapshot that replay rejected. Neither can happen, for the reason above.
 
 ## Recovery limit
 

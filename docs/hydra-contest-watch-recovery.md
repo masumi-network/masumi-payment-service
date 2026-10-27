@@ -30,6 +30,10 @@ Head's error list, so an operator without a webhook receiver still sees them.
    A paused Host stops its nodes, so every Open Head on it raises this alert
    once the pause outlasts the bound above.
    Resume the Host before the contestation deadline.
+   A running node whose history replay keeps failing raises this alert too,
+   because the watch uses only a completed, verified replay. Check the Head's
+   error list for a `HistoryReplay` failure before you restore a node that is
+   running.
 3. If node persistence is lost, use the stored `initChainSlot` and
    `initChainHash` as the pre-Init replay point for `--start-chain-from`.
    REPORTED: [the preprod recovery drill](hydra-persistence-recovery-verification.md)
