@@ -707,8 +707,10 @@ finite cap. This formula is a guard, not a measured capacity claim. When the
 cap refuses a connection, the Host logs `control plane is at its N-connection
 cap`, at once and then at most once a minute while drops continue. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
 the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
-authenticated caller reaches it. The Host does not bound request rate, proxy byte
-volume, or WebSocket message size.
+authenticated caller reaches it. The proxy caps each WebSocket message at
+4 MiB in both directions (`MAX_WS_MESSAGE_BYTES`), the same as the payment
+client's own frame cap. The Host does not bound request rate or proxy byte
+volume.
 
 The Control Plane ingress must enforce these limits before forwarding to port
 `8443`:
