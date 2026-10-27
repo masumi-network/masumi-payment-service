@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
+import { PassThrough } from 'node:stream';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,7 @@ import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
+import { proxyWebSocket } from './proxy.js';
 import { createControlPlane } from './server.js';
 import { deriveNodeToken } from './node-token.js';
 import type { ProvisionDeps } from './provision.js';
@@ -784,6 +786,21 @@ describe('node api websocket proxy', () => {
 
 		await closed;
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
+	// ws emits 'error' and then 'close' for a refused upgrade. A second end()
+	// raises write-after-end on a socket Node no longer guards.
+	it('answers a refused upgrade once', async () => {
+		const clientSocket = new PassThrough();
+		clientSocket.on('error', () => undefined);
+		const end = jest.spyOn(clientSocket, 'end');
+		const errors: string[] = [];
+		const request = { headers: {} } as IncomingMessage;
+		proxyWebSocket(request, clientSocket as never, Buffer.alloc(0), 1, '/', '', (message) => errors.push(message));
+		await new Promise<void>((resolve) => setTimeout(resolve, 200));
+
+		expect(end).toHaveBeenCalledTimes(1);
+		expect(errors).toHaveLength(1);
 	});
 
 	it('502s an upgrade the node refuses and keeps serving', async () => {
