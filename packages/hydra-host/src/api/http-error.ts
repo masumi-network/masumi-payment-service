@@ -7,7 +7,7 @@
  * message with a misleading 4xx.
  */
 
-export type HttpErrorStatus = 400 | 403 | 404 | 409 | 507;
+export type HttpErrorStatus = 400 | 403 | 404 | 409 | 502 | 507;
 
 export class HostApiError extends Error {
 	constructor(

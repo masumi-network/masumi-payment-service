@@ -14,6 +14,7 @@ const EVERY_ROUTE_KIND: Record<RouteKind, true> = {
 	escrowAck: true,
 	setPeers: true,
 	startNode: true,
+	initNode: true,
 	stopNode: true,
 	restartNode: true,
 	removeNode: true,

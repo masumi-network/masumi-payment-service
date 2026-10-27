@@ -2692,6 +2692,17 @@ describe('HydraNode', () => {
 	});
 
 	describe('init()', () => {
+		it('uses admitted Init dispatch while the verified live socket observes the answer', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const dispatch = jest.fn(async () => undefined);
+			const initPromise = node.init(1000, dispatch);
+			expect(dispatch).toHaveBeenCalledTimes(1);
+			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
+			await expect(initPromise).resolves.toBeUndefined();
+		});
+
 		it('sends Init and resolves when HeadIsInitializing is received', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();

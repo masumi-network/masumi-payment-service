@@ -23,6 +23,7 @@ export type RouteKind =
 	| 'removeNode'
 	| 'removeUnclaimedNode'
 	| 'nodeHealth'
+	| 'initNode'
 	| 'capabilities'
 	| 'peerAllowlist'
 	| 'peerAllowlistApplied'
@@ -130,6 +131,8 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 		}
 		if (method === 'POST') {
 			switch (action) {
+				case 'init':
+					return { kind: 'initNode', tier: 'admin', nodeId };
 				case 'escrow-ack':
 					return { kind: 'escrowAck', tier: 'admin', nodeId };
 				case 'start':

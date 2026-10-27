@@ -7,9 +7,9 @@
  *
  * Two behaviours are load-bearing and easy to lose to a "sensible default":
  *
- *  - **Nothing is buffered.** The payment service replays the full event log
- *    over a WebSocket (`?history=yes`), which can be large and slow; buffering
- *    it would blow memory and stall the replay.
+ *  - **History is streamed with backpressure.** The payment service replays
+ *    the full event log over a WebSocket (`?history=yes`). Each message is
+ *    bounded, and a slow reader pauses the upstream instead of collecting it.
  *  - **Idle timeouts are disabled on proxied connections.** A quiet head sends
  *    nothing for long stretches, and the control plane's own short timeouts
  *    (which exist to bound ordinary requests) would tear those sockets down.
@@ -17,7 +17,8 @@
 
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
-import type { Duplex } from 'node:stream';
+import { Transform, type Duplex } from 'node:stream';
+import WebSocket, { WebSocketServer, createWebSocketStream } from 'ws';
 
 /**
  * The upgrade socket is a `net.Socket` at runtime, but `server.on('upgrade')`
@@ -29,6 +30,9 @@ type UpgradeSocket = Duplex & Partial<Pick<Socket, 'setTimeout' | 'setNoDelay'>>
 const LOOPBACK = '127.0.0.1';
 const PRE_DISPATCH_ERROR_HEADER = 'x-hydra-host-proxy-error';
 const NODE_NOT_CONNECTED = 'node-not-connected';
+const MAX_WS_MESSAGE_BYTES = 4 * 1024 * 1024;
+const INIT_DISPATCH_TIMEOUT_MS = 10_000;
+const WS_DRAIN_GRACE_MS = 30_000;
 
 /** Headers that must never be forwarded upstream. */
 const STRIPPED_REQUEST_HEADERS = new Set([
@@ -147,12 +151,42 @@ export function proxyHttp(
 	request.pipe(upstream);
 }
 
+/** One request opens one loopback session and sends one privileged Init. */
+export function dispatchInit(apiPort: number): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const socket = new WebSocket(`ws://${LOOPBACK}:${apiPort}/?history=no`, {
+			perMessageDeflate: false,
+			maxPayload: MAX_WS_MESSAGE_BYTES,
+			handshakeTimeout: INIT_DISPATCH_TIMEOUT_MS,
+		});
+		let settled = false;
+		const finish = (error?: Error): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			if (error) {
+				socket.terminate();
+				reject(error);
+			} else {
+				socket.close();
+				resolve();
+			}
+		};
+		const timer = setTimeout(
+			() => finish(new Error('node Init websocket did not accept the command in time')),
+			INIT_DISPATCH_TIMEOUT_MS,
+		);
+		socket.once('open', () => socket.send(JSON.stringify({ tag: 'Init' }), (error) => finish(error)));
+		socket.once('error', (error: unknown) =>
+			finish(error instanceof Error ? error : new Error('node Init websocket failed')),
+		);
+		socket.once('close', () => finish(new Error('node Init websocket closed before command dispatch')));
+	});
+}
+
 /**
- * Tunnel a WebSocket upgrade to the node.
- *
- * The upgrade is re-issued upstream rather than hand-rolled, so the node
- * performs the real handshake (including its own `Sec-WebSocket-Accept`) and we
- * only splice the resulting sockets together.
+ * Forward parsed, bounded WebSocket messages. The node's full history remains
+ * streamed with backpressure; Init is reserved for the admin-only route above.
  */
 export function proxyWebSocket(
 	request: IncomingMessage,
@@ -163,80 +197,119 @@ export function proxyWebSocket(
 	query: string,
 	onError: (message: string) => void,
 ): void {
-	const upstream = httpRequest({
-		host: LOOPBACK,
-		port: apiPort,
-		method: 'GET',
-		path: upstreamPath(subPath, query),
-		headers: {
-			...forwardableHeaders(request.headers),
-			Connection: 'Upgrade',
-			Upgrade: 'websocket',
-		},
+	const upstream = new WebSocket(`ws://${LOOPBACK}:${apiPort}${upstreamPath(subPath, query)}`, {
+		perMessageDeflate: false,
+		autoPong: false,
+		maxPayload: MAX_WS_MESSAGE_BYTES,
+		handshakeTimeout: INIT_DISPATCH_TIMEOUT_MS,
 	});
-
+	let upgraded = false;
 	const fail = (message: string): void => {
-		// A caller that is already gone was cut on purpose (a stop or restart) or
-		// hung up; the node is not at fault, so there is nothing to report.
-		if (clientSocket.destroyed) {
-			return;
-		}
+		if (clientSocket.destroyed) return;
 		onError(message);
-		clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
-		clientSocket.destroy();
+		if (upgraded) {
+			clientSocket.destroy();
+		} else {
+			clientSocket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
+		}
 	};
-
-	// A stop or restart can cut the caller while the node is still answering the
-	// upgrade. Abort the request then, or a slow node holds it open.
-	clientSocket.once('close', () => upstream.destroy());
-
-	upstream.on('upgrade', (upstreamResponse, upstreamSocket, upstreamHead) => {
-		// The caller was cut in the same turn the node answered.
-		if (clientSocket.destroyed) {
-			upstreamSocket.destroy();
+	clientSocket.once('close', () => upstream.terminate());
+	upstream.once('error', (error: unknown) =>
+		fail(`websocket proxy to port ${apiPort} failed: ${error instanceof Error ? error.message : 'unknown error'}`),
+	);
+	upstream.once('close', () => {
+		if (!upgraded) {
+			fail(`node api port ${apiPort} closed the websocket upgrade`);
 			return;
 		}
-		// A quiet head can be silent for a long time, and the full-history replay
-		// can be slow; neither side may time the socket out.
+		// createWebSocketStream ends the client only after queued history frames
+		// drain. A stalled reader cannot keep this closed node session forever.
+		const timer = setTimeout(() => clientSocket.destroy(), WS_DRAIN_GRACE_MS);
+		timer.unref();
+		clientSocket.once('close', () => clearTimeout(timer));
+	});
+	upstream.once('open', () => {
+		if (clientSocket.destroyed) return upstream.terminate();
 		clientSocket.setTimeout?.(0);
-		upstreamSocket.setTimeout?.(0);
 		clientSocket.setNoDelay?.(true);
-		upstreamSocket.setNoDelay?.(true);
-
-		const statusLine = ['HTTP/1.1 101 Switching Protocols'];
-		for (const [key, value] of Object.entries(upstreamResponse.headers)) {
-			if (value === undefined) {
-				continue;
-			}
-			statusLine.push(`${key}: ${Array.isArray(value) ? value.join(', ') : value}`);
+		const server = new WebSocketServer({
+			noServer: true,
+			perMessageDeflate: false,
+			autoPong: false,
+			maxPayload: MAX_WS_MESSAGE_BYTES,
+		});
+		try {
+			server.handleUpgrade(request, clientSocket, head, (client) => {
+				upgraded = true;
+				const clientStream = createWebSocketStream(client, { readableObjectMode: true, readableHighWaterMark: 1 });
+				const upstreamStream = createWebSocketStream(upstream, { readableObjectMode: true, readableHighWaterMark: 1 });
+				const commandGate = new Transform({
+					writableObjectMode: true,
+					readableObjectMode: true,
+					readableHighWaterMark: 1,
+					writableHighWaterMark: 1,
+					transform(chunk: unknown, _encoding, callback) {
+						if (typeof chunk !== 'string') {
+							client.close(1003, 'text commands required');
+							upstream.terminate();
+							callback();
+							return;
+						}
+						let command: unknown;
+						try {
+							command = JSON.parse(chunk);
+						} catch {
+							client.close(1007, 'invalid JSON command');
+							upstream.terminate();
+							callback();
+							return;
+						}
+						if (typeof command !== 'object' || command === null || Array.isArray(command)) {
+							client.close(1008, 'invalid command');
+							upstream.terminate();
+							callback();
+							return;
+						}
+						if ((command as { tag?: unknown }).tag === 'Init') {
+							onError('blocked Init on ordinary node websocket');
+							client.close(1008, 'Init requires admitted route');
+							upstream.terminate();
+							callback();
+							return;
+						}
+						// Re-encoding removes duplicate JSON keys, including a hidden first
+						// `tag` that another parser could interpret as Init.
+						callback(null, JSON.stringify(command));
+					},
+				});
+				const teardown = (): void => {
+					client.terminate();
+					upstream.terminate();
+				};
+				// The payment client counts node pongs as liveness. Each hop must
+				// relay control frames, never answer a ping on the node's behalf.
+				const relayControl = (target: WebSocket, kind: 'ping' | 'pong', data: Buffer): void => {
+					if (target.readyState !== WebSocket.OPEN) return;
+					try {
+						target[kind](data);
+					} catch {
+						teardown();
+					}
+				};
+				client.on('ping', (data: Buffer) => relayControl(upstream, 'ping', data));
+				client.on('pong', (data: Buffer) => relayControl(upstream, 'pong', data));
+				upstream.on('ping', (data: Buffer) => relayControl(client, 'ping', data));
+				upstream.on('pong', (data: Buffer) => relayControl(client, 'pong', data));
+				client.once('close', teardown);
+				clientStream.once('error', teardown);
+				upstreamStream.once('error', teardown);
+				commandGate.once('error', teardown);
+				clientStream.pipe(commandGate).pipe(upstreamStream);
+				upstreamStream.pipe(clientStream);
+			});
+		} catch (error) {
+			upstream.terminate();
+			fail(`websocket client upgrade failed: ${(error as Error).message}`);
 		}
-		clientSocket.write(`${statusLine.join('\r\n')}\r\n\r\n`);
-
-		if (upstreamHead.length > 0) {
-			clientSocket.write(upstreamHead);
-		}
-		if (head.length > 0) {
-			upstreamSocket.write(head);
-		}
-
-		const teardown = (): void => {
-			upstreamSocket.destroy();
-			clientSocket.destroy();
-		};
-		upstreamSocket.on('error', teardown);
-		clientSocket.on('error', teardown);
-		upstreamSocket.on('close', teardown);
-		clientSocket.on('close', teardown);
-
-		upstreamSocket.pipe(clientSocket);
-		clientSocket.pipe(upstreamSocket);
 	});
-
-	upstream.on('response', () => {
-		// The node answered without upgrading — it is not speaking WebSocket here.
-		fail(`node api port ${apiPort} refused the websocket upgrade`);
-	});
-	upstream.on('error', (error: Error) => fail(`websocket proxy to port ${apiPort} failed: ${error.message}`));
-
-	upstream.end();
 }

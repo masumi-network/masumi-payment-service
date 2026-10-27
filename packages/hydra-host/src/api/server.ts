@@ -41,6 +41,7 @@ import {
 } from './peer-allowlist.js';
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
+import { dispatchPrivilegedInit } from './privileged-init.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
@@ -394,6 +395,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 		response: ServerResponse,
 	): Promise<void> {
 		switch (kind) {
+			case 'initNode': {
+				await dispatchPrivilegedInit(store, nodeId ?? '', logger);
+				send(response, 202, { dispatched: true });
+				return;
+			}
 			case 'capabilities': {
 				const capabilities = await readCapabilities({
 					release: config.release,
