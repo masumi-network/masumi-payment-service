@@ -90,8 +90,15 @@ or in a snapshot of it.
 Add this entry to `/etc/crypttab` so systemd knows the mapping:
 
 ```
-hydra_data /dev/disk/by-id/scsi-0DO_Volume_hydra-data none luks
+hydra_data /dev/disk/by-id/scsi-0DO_Volume_hydra-data none luks,nofail
 ```
+
+Keep `nofail` in this entry. Without it, systemd makes the unlock a hard
+boot dependency and waits at the console for the passphrase with no timeout.
+SSH does not start, so the Host stays offline until someone types the
+passphrase in the DigitalOcean console. With `nofail`, the droplet boots with
+the volume locked. Unlock it over SSH with
+`systemctl start systemd-cryptsetup@hydra_data`, then run `mount /mnt/hydra_data`.
 
 Persist the mapped filesystem in `/etc/fstab`:
 
@@ -99,8 +106,8 @@ Persist the mapped filesystem in `/etc/fstab`:
 /dev/mapper/hydra_data /mnt/hydra_data ext4 defaults,nofail,noatime 0 0
 ```
 
-`nofail` lets the droplet finish booting when the encrypted volume is locked or
-missing. That is safe here **only because the systemd unit below refuses to
+`nofail` in `/etc/crypttab` and `/etc/fstab` lets the droplet finish booting
+when the encrypted volume is locked or missing. That is safe here **only because the systemd unit below refuses to
 start without the mount**. After every reboot, confirm `cryptsetup status
 hydra_data`, `findmnt -no SOURCE /mnt/hydra_data`, and the Host service state.
 Without that guard, `nofail` plus a Docker restart policy is how a Host boots
