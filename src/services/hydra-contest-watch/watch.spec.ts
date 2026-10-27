@@ -338,13 +338,147 @@ describe('runHydraContestWatch', () => {
 		);
 	});
 
-	it('alerts when a disconnected node remains unobservable past the bounded grace period', async () => {
+	// The unobserved alert owns a node this service cannot see. Both alerts
+	// together sent two webhooks for one outage.
+	it.each([
+		['a disconnected node', { status: HydraHeadStatus.Disconnected }],
+		['a lost socket that keeps status Open', { status: HydraHeadStatus.Open, hasVerifiedPinnedSessions: false }],
+		[
+			'a lost socket that keeps status FanningOut',
+			{ status: HydraHeadStatus.FanningOut, hasVerifiedPinnedSessions: false },
+		],
+	])('alerts %s once, as unobserved, and not also as a contest watch outage', async (_name, node) => {
+		const since = new Date(Date.now() - 6 * 60_000);
+		mockGetNode.mockReturnValue(node);
+		mockFindMany.mockResolvedValue([
+			{
+				...watchHead(),
+				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
+				contestWatchIssueSince: since,
+				observationGapSince: since,
+				observationCheckedAt: new Date(Date.now() - 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockUnobservedQueue).toHaveBeenCalledWith(
+			database,
+			expect.objectContaining({ hydraHeadId: 'head-1', isNodeSide: true }),
+		);
+		expect(mockQueueWatchAlert).not.toHaveBeenCalled();
+		// Dropped in the same run, so a restart before the next run cannot send it.
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', contestWatchIssueSignature: 'NODE_UNOBSERVABLE' },
+			data: { contestWatchIssueSignature: null, contestWatchIssueSince: null, contestWatchIssueAlertedAt: null },
+		});
+	});
+
+	// A ten-minute period: this issue is due after one minute, the gap after 150 s.
+	it('holds the contest watch outage alert unclaimed until the unobserved gap alerts', async () => {
+		const since = new Date(Date.now() - 2 * 60_000);
 		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockFindMany.mockResolvedValue([
+			{
+				...watchHead(),
+				contestationPeriod: 600n,
+				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
+				contestWatchIssueSince: since,
+				observationGapSince: since,
+				observationCheckedAt: new Date(Date.now() - 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).not.toHaveBeenCalled();
+		expect(mockUnobservedQueue).not.toHaveBeenCalled();
+		// Left unclaimed and its clock kept, so it still alerts from the outage start
+		// if the unobserved gap starts over first.
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueAlertedAt: expect.any(Date) }) }),
+		);
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: null }) }),
+		);
+	});
+
+	// A failed unobserved alert must not drop this one too, or neither goes out.
+	it('keeps the contest watch outage issue when the unobserved alert could not be queued', async () => {
+		const since = new Date(Date.now() - 6 * 60_000);
+		mockUnobservedQueue.mockRejectedValueOnce(new Error('queue unavailable') as never);
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockFindMany.mockResolvedValue([
+			{
+				...watchHead(),
+				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
+				contestWatchIssueSince: since,
+				observationGapSince: since,
+				observationCheckedAt: new Date(Date.now() - 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).not.toHaveBeenCalled();
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: null }) }),
+		);
+	});
+
+	// The unobserved gap starts over on a cause that flips, or a restart of this
+	// service, and then may not reach its grace period first.
+	it.each([
+		['started over after this issue', { gapSince: 1, checkedAt: 1 }],
+		['no longer checked', { gapSince: 10, checkedAt: 4 }],
+	])('keeps the contest watch outage alert when the unobserved gap %s', async (_name, minutesAgo) => {
+		const base = Date.now();
+		const unavailableSince = new Date(base - 6 * 60_000);
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockFindMany.mockResolvedValue([
+			{
+				...watchHead(),
+				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
+				contestWatchIssueSince: unavailableSince,
+				observationGapSince: new Date(base - minutesAgo.gapSince * 60_000),
+				observationCheckedAt: new Date(base - minutesAgo.checkedAt * 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).toHaveBeenCalledWith(
+			database,
+			expect.objectContaining({ reason: 'NODE_UNOBSERVABLE', unavailableSince: unavailableSince.toISOString() }),
+		);
+	});
+
+	// A restart after the unobserved alert must not send this outage a second
+	// time, and a node that comes back in a state L1 contradicts needs a new clock.
+	it('drops the contest watch outage issue once the unobserved alert went out', async () => {
+		const since = new Date(Date.now() - 6 * 60_000);
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockFindMany.mockResolvedValue([
+			{
+				...watchHead(),
+				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
+				contestWatchIssueSince: since,
+				observationGapSince: since,
+				observationGapAlertedAt: new Date(Date.now() - 60_000),
+				observationGapAlertedNodeSide: true,
+				observationCheckedAt: new Date(Date.now() - 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', contestWatchIssueSignature: 'NODE_UNOBSERVABLE' },
+			data: { contestWatchIssueSignature: null, contestWatchIssueSince: null, contestWatchIssueAlertedAt: null },
+		});
+		expect(mockQueueWatchAlert).not.toHaveBeenCalled();
+	});
+
+	// The node answers, so no unobserved alert comes, but its view of the head
+	// disagrees with L1 and the watch cannot compare snapshots.
+	it('alerts an observed node whose head state cannot be compared with L1', async () => {
+		const unavailableSince = new Date(Date.now() - 6 * 60_000);
+		mockGetNode.mockReturnValue(liveNode({ status: HydraHeadStatus.Closed }));
 		mockFindMany.mockResolvedValueOnce([watchHead()] as never).mockResolvedValueOnce([
 			{
 				...watchHead(),
 				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
-				contestWatchIssueSince: new Date(Date.now() - 6 * 60_000),
+				contestWatchIssueSince: unavailableSince,
 			},
 		] as never);
 		await watch.runHydraContestWatch();
@@ -352,8 +486,9 @@ describe('runHydraContestWatch', () => {
 		await watch.runHydraContestWatch();
 		expect(mockQueueWatchAlert).toHaveBeenCalledWith(
 			database,
-			expect.objectContaining({ reason: 'NODE_UNOBSERVABLE', unavailableSince: expect.any(String) }),
+			expect.objectContaining({ reason: 'NODE_UNOBSERVABLE', unavailableSince: unavailableSince.toISOString() }),
 		);
+		expect(mockUnobservedQueue).not.toHaveBeenCalled();
 	});
 
 	it('alerts when the independent L1 source fails while the node stays open', async () => {
@@ -372,26 +507,6 @@ describe('runHydraContestWatch', () => {
 			expect.objectContaining({ reason: 'L1_OBSERVER_UNAVAILABLE', chainState: null }),
 		);
 	});
-
-	it.each([HydraHeadStatus.Open, HydraHeadStatus.FanningOut])(
-		'alerts when a disconnected socket retains status %s',
-		async (status) => {
-			const unavailableSince = new Date(Date.now() - 6 * 60_000);
-			mockFindMany.mockResolvedValue([
-				{
-					...watchHead(),
-					contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
-					contestWatchIssueSince: unavailableSince,
-				},
-			] as never);
-			mockGetNode.mockReturnValue({ status, hasVerifiedPinnedSessions: false });
-			await watch.runHydraContestWatch();
-			expect(mockQueueWatchAlert).toHaveBeenCalledWith(
-				database,
-				expect.objectContaining({ reason: 'NODE_UNOBSERVABLE', unavailableSince: unavailableSince.toISOString() }),
-			);
-		},
-	);
 
 	it('bounds the outage alert by the contest period and five minutes', () => {
 		expect(watch.watchUnavailableAfterMs(600n)).toBe(60_000);

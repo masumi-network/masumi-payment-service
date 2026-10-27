@@ -19,7 +19,13 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { webhookEventsService } from '@/services/webhooks/events.service';
 import { HydraPersistenceRotationError, HydraProtocolError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
-import { applyObservationGap, nodeUnobservedCause, type UnobservedCause } from './observation-gap';
+import {
+	applyObservationGap,
+	nodeUnobservedCause,
+	OBSERVATION_STALE_MS,
+	type ObservationGapDecision,
+	type UnobservedCause,
+} from './observation-gap';
 import {
 	ContestObserverConfigurationError,
 	readOnlyContestNode,
@@ -67,6 +73,7 @@ async function applyIndependentContestWatchAlerts(
 	chain: ChainObservation | null,
 	issue: WatchIssue | null,
 	now: Date,
+	isNodeOutagePending: boolean,
 ): Promise<void> {
 	if (chain?.state === 'closed' && head.contestWatchClosedAlertedAt === null) {
 		await prisma.$transaction(async (tx) => {
@@ -111,7 +118,9 @@ async function applyIndependentContestWatchAlerts(
 	}
 	if (
 		head.contestWatchIssueAlertedAt !== null ||
-		now.getTime() - head.contestWatchIssueSince.getTime() < watchUnavailableAfterMs(head.contestationPeriod)
+		now.getTime() - head.contestWatchIssueSince.getTime() < watchUnavailableAfterMs(head.contestationPeriod) ||
+		// Left unclaimed, so it still alerts if the unobserved gap starts over first.
+		(issue === 'NODE_UNOBSERVABLE' && isNodeOutagePending)
 	) {
 		return;
 	}
@@ -382,8 +391,9 @@ export async function runHydraContestWatch(): Promise<void> {
 				unobservedCause = connectFailureCause(error, message);
 				logger.warn('[HydraContestWatch] could not reach the head node', { hydraHeadId: head.id, error: message });
 			}
+			let observationDecision: ObservationGapDecision | null = null;
 			try {
-				await applyObservationGap(head, unobservedCause, new Date());
+				observationDecision = await applyObservationGap(head, unobservedCause, now);
 			} catch (error) {
 				logger.warn('[HydraContestWatch] could not record whether the head node is observed', {
 					hydraHeadId: head.id,
@@ -438,13 +448,35 @@ export async function runHydraContestWatch(): Promise<void> {
 				});
 			}
 			if (chain?.state !== 'gone') {
+				// One outage, one alert. A node this service cannot observe is
+				// HYDRA_HEAD_UNOBSERVED's to alert while that gap is live and started no
+				// later than this issue: hold this one until it goes out, then drop it,
+				// so a node that comes back in a state L1 contradicts starts a new clock.
+				// A gap that started over since (a cause that flips while the node stays
+				// not comparable, or a restart) may not reach its grace period first, so
+				// this alert stays the backstop.
+				const nodeIssueSince =
+					head.contestWatchIssueSignature === 'NODE_UNOBSERVABLE' ? head.contestWatchIssueSince : null;
+				const isNodeOutageUnobserved =
+					unobservedCause !== null &&
+					head.observationGapSince !== null &&
+					head.observationCheckedAt !== null &&
+					now.getTime() - head.observationCheckedAt.getTime() < OBSERVATION_STALE_MS &&
+					(nodeIssueSince === null || head.observationGapSince.getTime() <= nodeIssueSince.getTime());
+				const isNodeOutageAlerted =
+					isNodeOutageUnobserved &&
+					(head.observationGapAlertedAt !== null ||
+						observationDecision === 'alert' ||
+						observationDecision === 'escalate');
 				const issue: WatchIssue | null = !isNodeObservable
-					? 'NODE_UNOBSERVABLE'
+					? isNodeOutageAlerted
+						? null
+						: 'NODE_UNOBSERVABLE'
 					: chain === null
 						? 'L1_OBSERVER_UNAVAILABLE'
 						: null;
 				try {
-					await applyIndependentContestWatchAlerts(head, chain, issue, now);
+					await applyIndependentContestWatchAlerts(head, chain, issue, now, isNodeOutageUnobserved);
 				} catch (error) {
 					logger.error('[HydraContestWatch] could not record independent contest alert', {
 						hydraHeadId: head.id,

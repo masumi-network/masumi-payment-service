@@ -2,10 +2,30 @@
 
 VERIFIED: `HYDRA_HEAD_CONTEST_WATCH_ALERT` has three reasons. `HEAD_CLOSED`
 comes from an independent L1 state-token lookup. `NODE_UNOBSERVABLE` means the
-local node could not provide a usable Head state for more than one tenth of the
-contestation period, bounded to one through five minutes. `L1_OBSERVER_UNAVAILABLE`
+local node could not provide a Head state that the watch can compare with L1
+for more than one tenth of the contestation period, bounded to one through five
+minutes. The node may be down, or it may answer with a state that disagrees
+with L1, for example Open after L1 shows a Close. `L1_OBSERVER_UNAVAILABLE`
 means the separate chain lookup
 failed for that long while the node remained observable.
+
+A node that this service cannot observe at all is alerted as
+`HYDRA_HEAD_UNOBSERVED` (see [Hydra operations](hydra-operations.md)).
+Subscribe to both events: during such an outage, `NODE_UNOBSERVABLE` is held
+back while the unobserved gap is checked and started no later than it, and is
+dropped once the unobserved alert went out. A node that then comes back in a
+state that L1 contradicts starts a new `NODE_UNOBSERVABLE` clock.
+`NODE_UNOBSERVABLE` still comes when the unobserved gap starts over first, for
+example after a restart of this service that lasts more than three minutes, or
+when the node is down on some checks and answers in a state that L1 contradicts
+on others.
+
+The unobserved alert waits five minutes, or a quarter of the contestation
+period when that is shorter. For a contestation period between 4 and 50
+minutes, that is later than the bound above. On such a head, a down node is
+alerted later than `NODE_UNOBSERVABLE` alone would alert it, and a node that is
+down for less than the unobserved wait is not alerted at all. Two instances of
+this service that start the two clocks on the same check can send both alerts.
 
 1. On `HEAD_CLOSED`, check the Head's current L1 state and contestation
    deadline. Keep the local node running so it can post a Contest. Confirm on
@@ -16,7 +36,9 @@ failed for that long while the node remained observable.
    volume, and the service's runtime token. Restore the existing node with its
    original keys and volume. Do not create a new Head identity. Repeat the L1
    check after the node reconnects. A restarted node may need time to replay
-   its history before it can compare snapshots.
+   its history before it can compare snapshots. If the node runs and answers,
+   compare its Head state with L1: a node that lags the chain, or an L1
+   rollback, makes the two disagree.
 3. If node persistence is lost, use the stored `initChainSlot` and
    `initChainHash` as the pre-Init replay point for `--start-chain-from`.
    REPORTED: [the preprod recovery drill](hydra-persistence-recovery-verification.md)

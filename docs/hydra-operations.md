@@ -496,7 +496,11 @@ per outage, with the exception below. The alert grace period is five minutes,
 or a quarter of the contestation period when that is under 20 minutes. The
 watch checks about once a minute, so the alert can come up to a minute later
 than that. A restart of this service that lasts more than three minutes starts
-a new outage, which can alert again.
+a new outage, which can alert again. The same outage usually comes only as `HYDRA_HEAD_UNOBSERVED`, not also
+as `HYDRA_HEAD_CONTEST_WATCH_ALERT` with reason `NODE_UNOBSERVABLE`. Subscribe
+to both events. Both can come when the unobserved gap started after the
+`NODE_UNOBSERVABLE` clock, or starts over before it alerts. See
+[the contest watch recovery runbook](hydra-contest-watch-recovery.md).
 
 The error and the webhook `reason` name the cause found at the last check.
 `isNodeSide` tells two kinds of cause apart:
