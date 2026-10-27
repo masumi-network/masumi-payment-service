@@ -12,6 +12,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import createHttpError from 'http-errors';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -194,16 +195,24 @@ describe('topup list paging', () => {
 describe('topupHeadPost answers on acceptance', () => {
 	it('R1 answers with the executor refusal when it refuses before accepting', async () => {
 		mockExecute.mockRejectedValue(
-			Object.assign(
-				new Error(
-					'The wallet for this top-up is busy with another transaction. It is released when that one finishes; try again then',
-				),
-				{ statusCode: 409, status: 409 },
+			createHttpError(
+				409,
+				'The wallet for this top-up is busy with another transaction. It is released when that one finishes; try again then',
 			),
 		);
 		await expect(topupHeadPost.handler({ input })).rejects.toMatchObject({
 			statusCode: 409,
 			message: expect.stringContaining('busy'),
+		});
+	});
+
+	// In production an unexposed 5xx answers with only its default message.
+	it('R1b shows the reason of a 5xx refusal before accepting', async () => {
+		mockExecute.mockRejectedValue(createHttpError(502, 'Pre-split failed: insufficient funds for the fee'));
+		await expect(topupHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 502,
+			expose: true,
+			message: 'Pre-split failed: insufficient funds for the fee',
 		});
 	});
 

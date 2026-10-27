@@ -228,9 +228,9 @@ The base Compose file also binds the Control Plane and Exchange Plane to
 **The peer plane cannot authenticate its callers**, which is why the base
 compose file does not publish it. It still has to be reachable, because a head
 whose peer port is closed cannot reach its counterparty, so the order matters.
-`GET /v1/peer-allowlist` renders a per-head nftables ruleset.
+`GET /v1/peer-allowlist` reports the allowed peer addresses for each node's peer port.
 [`packages/hydra-host/scripts/hydra-peer-firewall`](../packages/hydra-host/scripts/hydra-peer-firewall)
-applies it on the machine. Run `hydra-peer-firewall baseline` before the Host
+validates them, renders the nftables ruleset itself and applies it on the machine. Run `hydra-peer-firewall baseline` before the Host
 starts, so the whole range is refused and verified. Then run
 `hydra-peer-firewall refresh` on a timer and after every membership change, so
 each peered port opens to its counterparty only. Skipping it leaves 32

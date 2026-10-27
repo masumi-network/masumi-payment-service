@@ -203,9 +203,9 @@ function optional(env: EnvSource, key: string, fallback: string): string {
 }
 
 function controlSocketPath(env: EnvSource): string | undefined {
-	const raw = env.get('HYDRA_HOST_CONTROL_SOCKET');
-	if (raw === undefined) return undefined;
-	const path = raw.trim();
+	// Empty reads as unset, like every other optional setting.
+	const path = env.get('HYDRA_HOST_CONTROL_SOCKET')?.trim();
+	if (path === undefined || path.length === 0) return undefined;
 	if (!isAbsolute(path)) throw new ConfigError('HYDRA_HOST_CONTROL_SOCKET must be an absolute path');
 	return path;
 }

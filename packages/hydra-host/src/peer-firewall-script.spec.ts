@@ -330,6 +330,17 @@ describe('hydra-peer-firewall refresh', () => {
 		expect(existsSync(join(dir, 'nftables.d', 'hydra-peer.nft.response'))).toBe(false);
 	});
 
+	// The Host boots with two nodes recorded on one port and lists both rules.
+	it('merges the peers of two nodes recorded on one port instead of failing the refresh', () => {
+		const shared = allowlist();
+		shared.rules.push({ ...shared.rules[0], nodeId: 'n2', allowedIpv4Addresses: ['198.51.100.9'] });
+		writeResponse({ peerRange: RANGE, rules: shared.rules, nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh');
+		expect(result.status).toBe(0);
+		expect(loaded()).toContain('tcp dport 5001 ip saddr { 198.51.100.9, 203.0.113.7 } accept');
+		expect(acks()).toEqual([`{"generation":"${GENERATION}"}`]);
+	});
+
 	it('refuses an invalid IPv4 address before running nft', () => {
 		const bad = allowlist();
 		bad.rules[0].allowedIpv4Addresses = ['203.0.113.7\nflush ruleset'];

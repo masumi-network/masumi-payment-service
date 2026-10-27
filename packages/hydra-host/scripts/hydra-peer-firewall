@@ -199,20 +199,23 @@ if peer_range["start"] != start or peer_range["count"] != count:
     sys.exit("Host peer range %s+%s does not match %s+%s" % (peer_range["start"], peer_range["count"], start, count))
 
 rules = body["rules"]
-if not isinstance(rules, list) or len(rules) > count:
+if not isinstance(rules, list):
     sys.exit("Host peer rules are invalid")
 allowed = {}
 for rule in rules:
     port = rule["peerPort"]
     addresses = rule["allowedIpv4Addresses"]
-    if type(port) is not int or port < start or port >= start + count or port in allowed:
-        sys.exit("Host peer port is invalid or duplicated")
+    if type(port) is not int or port < start or port >= start + count:
+        sys.exit("Host peer port is invalid")
     if not isinstance(addresses, list) or any(not isinstance(address, str) for address in addresses):
         sys.exit("Host peer addresses are invalid")
     if type(rule["closed"]) is not bool or rule["closed"] != (len(addresses) == 0):
         sys.exit("Host peer closed state is inconsistent")
     try:
-        allowed[port] = sorted({str(ipaddress.IPv4Address(address)) for address in addresses})
+        # Two nodes recorded on one port is a state the Host boots with. Merge
+        # their peers, as the Host-rendered ruleset did, so one bad record does
+        # not fail every refresh and leave the loaded ruleset stale.
+        allowed.setdefault(port, set()).update(str(ipaddress.IPv4Address(address)) for address in addresses)
     except ipaddress.AddressValueError:
         sys.exit("Host peer address is not IPv4")
     for error in rule.get("resolutionErrors", []):
@@ -230,7 +233,7 @@ for hook in ("input", "forward"):
     print("\t\ttype filter hook %s priority filter; policy accept;" % hook)
     for port, addresses in sorted(allowed.items()):
         if addresses:
-            print("\t\ttcp dport %s ip saddr { %s } accept" % (port, ", ".join(addresses)))
+            print("\t\ttcp dport %s ip saddr { %s } accept" % (port, ", ".join(sorted(addresses))))
     print("\t\ttcp dport %s drop" % port_range)
     print("\t}")
 print("}")
