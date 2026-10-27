@@ -1,0 +1,61 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -927,13 +927,14 @@
+   return `[{"validation": "${key}", "value": "${value}"}]`;
+ }
+ function extractZodErrors(zodError, schema, index, input) {
+-  if (!zodError.errors) {
++  const zodIssues = zodError.issues ?? zodError.errors;
++  if (!Array.isArray(zodIssues)) {
+     return [{
+       message: `Schema ${index + 1}: ${zodError.message}`,
+       line: getLine("type", input)
+     }];
+   }
+-  return zodError.errors.map((error) => {
++  return zodIssues.map((error) => {
+     const fieldPath = error.path?.join(".") || "";
+     const fieldName = fieldPath || error.path?.[0] || "unknown";
+     const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -919,13 +919,14 @@
+   return `[{"validation": "${key}", "value": "${value}"}]`;
+ }
+ function extractZodErrors(zodError, schema, index, input) {
+-  if (!zodError.errors) {
++  const zodIssues = zodError.issues ?? zodError.errors;
++  if (!Array.isArray(zodIssues)) {
+     return [{
+       message: `Schema ${index + 1}: ${zodError.message}`,
+       line: getLine("type", input)
+     }];
+   }
+-  return zodError.errors.map((error) => {
++  return zodIssues.map((error) => {
+     const fieldPath = error.path?.join(".") || "";
+     const fieldName = fieldPath || error.path?.[0] || "unknown";
+     const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
+diff --git a/src/lib/validation.ts b/src/lib/validation.ts
+--- a/src/lib/validation.ts
++++ b/src/lib/validation.ts
+@@ -180,9 +180,10 @@
+   index: number,
+   input: string
+ ): { message: string; line?: number }[] {
+-  if (!zodError.errors) {
++  const zodIssues = zodError.issues ?? zodError.errors;
++  if (!Array.isArray(zodIssues)) {
+     return [{
+       message: `Schema ${index + 1}: ${zodError.message}`,
+       line: getLine('type', input),
+     }];
+   }
+@@ -190,4 +191,4 @@
+-  return zodError.errors.map((error: any) => {
++  return zodIssues.map((error: any) => {
+     const fieldPath = error.path?.join('.') || '';
+     const fieldName = fieldPath || error.path?.[0] || 'unknown';
+     const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
