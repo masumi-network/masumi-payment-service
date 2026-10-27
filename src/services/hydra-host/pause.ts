@@ -468,7 +468,7 @@ export async function advanceHydraHostPause(hostId: string, options: { force: bo
 export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseState> {
 	const acted = await withHostPauseLease(
 		hostId,
-		async () => {
+		async (leaseUntil) => {
 			const host = await loadHost(hostId);
 			if (host.pausedAt === null) return;
 			if (host.encryptedAdminToken === null) {
@@ -493,8 +493,10 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 			if (failures.length > 0) {
 				throw createHttpError(502, `could not start every paused node; the host stays paused: ${failures.join('; ')}`);
 			}
+			// Fenced on the lease: node starts can outlast it, and a stop that took
+			// the expired lease meanwhile must not be followed by a cleared pause.
 			await prisma.hydraHost.updateMany({
-				where: { id: hostId, pausedAt: host.pausedAt },
+				where: { id: hostId, pausedAt: host.pausedAt, pauseLeaseUntil: leaseUntil },
 				data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: new Date() },
 			});
 		},

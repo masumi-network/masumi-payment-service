@@ -560,14 +560,17 @@ describe('getHydraHostPauseState', () => {
 });
 
 describe('resumeHydraHost', () => {
-	it('starts the paused nodes, then clears the pause fenced on its timestamp', async () => {
+	it('starts the paused nodes, then clears the pause fenced on its timestamp and lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
 
 		await pause.resumeHydraHost('host-1');
 
 		expect(mockStartHostNode).toHaveBeenCalledTimes(2);
+		// Node starts can outlast the lease. A stop that took it meanwhile must win.
+		const leaseUntil = mockHostUpdateMany.mock.calls[0]?.[0]?.data?.pauseLeaseUntil;
+		expect(leaseUntil).toBeInstanceOf(Date);
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'host-1', pausedAt: PAUSED_AT },
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseLeaseUntil: leaseUntil },
 			// The redemption give-up counts from resumedAt, so a pause is not days of retries.
 			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: expect.any(Date) },
 		});
