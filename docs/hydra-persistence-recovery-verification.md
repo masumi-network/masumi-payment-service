@@ -15,7 +15,9 @@ Yes, proven live, with one qualification.
 
 The DB stores every key: encrypted wallet mnemonics, the hydra signing key, the node cardano key, remote party verification keys, and head identity fields. VERIFIED by decrypting and re-deriving addresses (`96-derive-db-wallets.mts`). At the time of this drill, it stored NO snapshot bodies, NO multisignatures, NO in-head UTxO set, and no `--start-chain-from` anchor. DB + ENCRYPTION_KEY recovered keys and wallets, and chain replay recovered state up to the last increment. It did not recover post-increment L2 state.
 
-Correction on 2026-10-27. VERIFIED in `prisma/models/hydra-head.prisma:112-119`: the current `HydraHead` model stores `initChainSlot` and `initChainHash` as the block point before Init. `src/lib/hydra/hydra/head-init-validation.ts:336-379` resolves the point on a best-effort basis. `src/services/hydra-init-backfill/index.ts:27-61` retries missing anchors for eligible live heads. A null anchor still needs operator investigation. Signed snapshot bodies, multisignatures, and the in-head UTxO set remain absent from the payment DB.
+Correction on 2026-10-27. VERIFIED in `prisma/models/hydra-head.prisma:112-119`: the current `HydraHead` model stores `initChainSlot` and `initChainHash` as the block point before Init. `src/lib/hydra/hydra/head-init-validation.ts:336-379` resolves the point on a best-effort basis. `src/services/hydra-init-backfill/index.ts:27-61` retries missing anchors for eligible live heads. A null anchor still needs operator investigation.
+
+Correction to the correction. The paragraph above said that signed snapshot bodies, multisignatures, and the in-head UTxO set remain absent from the payment DB. That was wrong for this release: it was written before the snapshot store merged. VERIFIED in `prisma/models/hydra-stored-snapshot.prisma`: `HydraStoredSnapshot` stores each verified signed snapshot with its multisignature and UTxO partitions. See `docs/hydra-snapshot-evidence.md` for what the rows attest.
 
 **Q3. Should we store snapshots in the payment DB after each L1 hash and head change?**
 
@@ -76,7 +78,8 @@ Method: code reading of the upstream 2.4.1 tag, which `packages/hydra-host/Docke
 - Encrypted with ENCRYPTION_KEY: `WalletSecret.encryptedMnemonic` (fund wallets), `HydraSecretKey` (hydra SK + node cardano SK), HydraHost tokens.
 - Plain at the time of the drill: `headIdentifier`, `contestationPeriod`, remote party vkeys (`HydraVerificationKey`), advertise fields, `latestSnapshotNumber` (bare counter), reconciliation cursors.
 - VERIFIED current schema: `HydraHead.initChainSlot` and `HydraHead.initChainHash` can store the pre-Init replay anchor. Both fields are nullable. Anchor observation and backfill are best effort, so inspect each Head before a restore.
-- Absent from the current payment DB: signed snapshot bodies, multisignatures, in-head UTxO sets, and the node event log.
+- VERIFIED current schema: `HydraStoredSnapshot` stores each verified signed snapshot body, its multisignature, and its UTxO partitions.
+- Absent from the current payment DB: the node event log.
 
 ## Feature design: snapshot storage in the payment DB
 
@@ -117,7 +120,7 @@ Retention: keep at least the latest CONFIRMED row, the latest INCREMENT_ACK row 
 
 R1. Peer intact (today's common case). Nothing needed from the store: the peer closes at the latest snapshot. VERIFIED live (head 1).
 
-R2. Both sides wiped, counterparty cooperative. Restart both nodes with `--wipe`-equivalent fresh dirs and `--start-chain-from` = the verified anchor. Replay rebuilds the last increment certificate (VERIFIED, finding 5). After the proposed snapshot store exists, its `snapshotJson` rows can identify the rolled-back L2 tail (diff stored latest utxo vs reconstructed utxo). Re-submit those transactions. After re-signing, close and fan out normally (VERIFIED, findings 6 and 7).
+R2. Both sides wiped, counterparty cooperative. Restart both nodes with `--wipe`-equivalent fresh dirs and `--start-chain-from` = the verified anchor. Replay rebuilds the last increment certificate (VERIFIED, finding 5). The stored `HydraStoredSnapshot.signedSnapshotJson` rows can identify the rolled-back L2 tail (diff stored latest utxo vs reconstructed utxo). Re-submit those transactions. After re-signing, close and fan out normally (VERIFIED, findings 6 and 7).
 
 R3. Both sides wiped, counterparty gone or hostile. Stock node closes at the reconstructed last-increment state (INFERRED, finding 9), which already recovers ALL funds at their positions as of the last increment. To close at the true latest state instead, build the close tx externally from the stored snapshot: the row holds the snapshot body and both multisignatures; the accumulator commitment is recomputable from the stored canonical TxOut bytes (the service already has the KZG code); the head validator is a published reference script. This is the only path that needs new tx-building code, and it is needed only when the rolled-back tail materially favors the counterparty.
 

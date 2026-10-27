@@ -571,9 +571,10 @@ export function HydraNodeDetailsDialog({
                 </p>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {/* Copyable in full: pinning a reviewed node means pasting these
-                    into HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH and the params
-                    hash, and there is no other way to read the value. */}
+                  {/* Copyable in full so an operator can compare them with the
+                    reviewed pins. Never paste the Scripts value into
+                    HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: that pin ships in
+                    reviewed-catalogue.ts, and the service refuses any other. */}
                   <Field
                     label="Scripts"
                     value={shortHash(host.scriptCatalogueHash)}
