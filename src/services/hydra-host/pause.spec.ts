@@ -629,3 +629,22 @@ describe('assertHydraHeadHostNotPaused', () => {
 		await expect(pause.assertHydraHeadHostNotPaused('head-2')).resolves.toBeUndefined();
 	});
 });
+
+describe('withHostPauseLease', () => {
+	// Two invites provisioned on one Host at once must not refuse each other.
+	it('waits for a short holder to release the lease', async () => {
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValue({ count: 1 });
+		const action = jest.fn(async () => undefined);
+
+		await expect(pause.withHostPauseLease('host-1', action, 1_000)).resolves.toBe(true);
+		expect(action).toHaveBeenCalledTimes(1);
+	});
+
+	it('gives up without acting when the lease stays held', async () => {
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
+		const action = jest.fn(async () => undefined);
+
+		await expect(pause.withHostPauseLease('host-1', action, 300)).resolves.toBe(false);
+		expect(action).not.toHaveBeenCalled();
+	});
+});

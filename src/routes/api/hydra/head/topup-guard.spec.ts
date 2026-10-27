@@ -23,6 +23,7 @@ const mockAssertReady = jest.fn() as AnyMock;
 const mockExecute = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	SHORT_HOST_ACTION_LEASE_WAIT_MS: 10_000,
 	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
 	isHydraHeadOnPausedHost: jest.fn(async () => false),
 	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),

@@ -22,6 +22,7 @@
  * stay short. The admin UI says so next to the timer.
  */
 
+import { setTimeout as sleep } from 'node:timers/promises';
 import createHttpError from 'http-errors';
 import {
 	HydraDecommitStatus,
@@ -72,6 +73,13 @@ export type HydraHostPauseState = {
  * longer action can overlap the next holder, but its release cannot end theirs.
  */
 const PAUSE_LEASE_MS = 15 * 60_000;
+/**
+ * How long a short Host action, such as provisioning a node or starting one,
+ * waits for the lease. Two such actions on one Host otherwise refuse each
+ * other, although only a pause, Resume or token rotation must exclude them.
+ */
+export const SHORT_HOST_ACTION_LEASE_WAIT_MS = 10_000;
+const LEASE_RETRY_INTERVAL_MS = 250;
 const BUSY_MESSAGE = 'another pause action is running on this hydra host; retry shortly';
 /**
  * Pauses whose every stop this instance saw succeed, by Host and stop request,
@@ -199,21 +207,29 @@ function hasInFlightWork(inFlight: HydraHostPauseInFlight): boolean {
  * Host would read as running with every node stopped.
  *
  * A lease row rather than a database lock, so no connection is held across
- * the Host calls. Returns false without acting when another holder has it.
+ * the Host calls. Returns false without acting when another holder still has
+ * it after `waitMs`.
  * The holder's deadline is passed to the action so a final database write can
  * fence itself if the lease expired and another holder took over.
  */
 export async function withHostPauseLease(
 	hostId: string,
 	action: (leaseUntil: Date) => Promise<void>,
+	waitMs = 0,
 ): Promise<boolean> {
-	const now = new Date();
-	const until = new Date(now.getTime() + PAUSE_LEASE_MS);
-	const claimed = await prisma.hydraHost.updateMany({
-		where: { id: hostId, OR: [{ pauseLeaseUntil: null }, { pauseLeaseUntil: { lt: now } }] },
-		data: { pauseLeaseUntil: until },
-	});
-	if (claimed.count === 0) return false;
+	const deadline = Date.now() + waitMs;
+	let until: Date;
+	for (;;) {
+		const now = new Date();
+		until = new Date(now.getTime() + PAUSE_LEASE_MS);
+		const claimed = await prisma.hydraHost.updateMany({
+			where: { id: hostId, OR: [{ pauseLeaseUntil: null }, { pauseLeaseUntil: { lt: now } }] },
+			data: { pauseLeaseUntil: until },
+		});
+		if (claimed.count > 0) break;
+		if (Date.now() + LEASE_RETRY_INTERVAL_MS > deadline) return false;
+		await sleep(LEASE_RETRY_INTERVAL_MS);
+	}
 	try {
 		await action(until);
 	} finally {
