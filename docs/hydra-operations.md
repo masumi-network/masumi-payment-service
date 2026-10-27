@@ -50,12 +50,14 @@ not open.
 
 ### 1. Start the Host
 
-The image is built from `packages/hydra-host/Dockerfile` and is not published to
-a registry. **In production, run that image under whatever you already use**:
-Kubernetes, Nomad, systemd, your own `docker run`. The compose file next to it
-is for local testing and as a worked example of the settings that matter; it is
-a single unmanaged container with a local volume, which is not what you want
-holding a mainnet head.
+The release workflow builds `packages/hydra-host/Dockerfile` and publishes the
+Host image to GHCR when a GitHub release is published
+(`.github/workflows/ghcr.yml:32-55`). Verify the image digest and the release
+commit before deployment. Pin the digest when you run the image under
+Kubernetes, Nomad, systemd, or `docker run`. The compose file next to the
+Dockerfile is for local testing and shows the settings that matter. It is a
+single unmanaged container with a local volume, so it is unsuitable for a
+mainnet head.
 
 For a droplet, which is the target this Host was designed for, follow
 [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md). It covers the
