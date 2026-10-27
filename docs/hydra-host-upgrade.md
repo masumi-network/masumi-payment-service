@@ -259,9 +259,11 @@ session sweep connects them with the new token after Resume.
 
 VERIFIED (`src/services/hydra-host/registry.ts:445`,
 `src/services/hydra-invite/provisioning.ts:365`,
-`src/services/hydra-invite/redemption-ports.ts:227`): The token update, node
+`src/services/hydra-invite/redemption-ports.ts:227`): A user token update, node
 provisioning, and redemption starts share the Host pause lease. A concurrent
-request gets `409` and can be retried after the token update finishes. Head
+request gets `409` and can be retried after the user token update finishes. A
+PATCH without `userToken`, such as an admin token or status change, takes no
+lease and is not fenced against them. Head
 adoption is refused with `409` while the Host is paused; retry it after Resume
 (`src/routes/api/hydra/head/create-head.ts:166-167`).
 
