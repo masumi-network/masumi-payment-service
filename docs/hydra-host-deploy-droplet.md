@@ -130,9 +130,12 @@ chmod 700 /mnt/hydra_data
 ### The Blockfrost file
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file containing the project id**, not
-the id itself. It is handed to `hydra-node` as `--blockfrost`, and the node opens
-it. A Host with no such file starts fine and then every node it spawns dies,
-which reads as a node problem rather than a missing secret.
+the id itself. VERIFIED (`packages/hydra-host/src/supervisor/args.ts:194-195`,
+`packages/hydra-host/src/api/init-admission.ts:28-69,96-135`): Both the Host and
+`hydra-node` read this file. Before each Init, the Host uses the key to read
+current L1 parameters from Blockfrost. If the file or the Blockfrost response
+is unavailable, the Host refuses Init. A Host
+with no such file starts fine, but every node it spawns also fails to start.
 
 ```bash
 mkdir -p /srv/hydra
@@ -712,8 +715,8 @@ cap`, at once and then at most once a minute while drops continue. VERIFIED (`pa
 the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
 authenticated caller reaches it. The proxy caps each WebSocket message at
 4 MiB in both directions (`MAX_WS_MESSAGE_BYTES`), the same as the payment
-client's own frame cap. The Host does not bound request rate or proxy byte
-volume.
+client's own frame cap. The Host does not bound request rate or proxy HTTP
+byte volume.
 
 The Control Plane ingress must enforce these limits before forwarding to port
 `8443`:

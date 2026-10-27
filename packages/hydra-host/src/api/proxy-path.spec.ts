@@ -1,5 +1,19 @@
 import { describe, expect, it } from '@jest/globals';
-import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy, buildProxyQuery } from './proxy-path.js';
+import {
+	isProxyableHttpPath,
+	isProxyableWebSocketPath,
+	matchNodeApiProxy,
+	buildProxyQuery,
+	queryOf,
+} from './proxy-path.js';
+
+describe('queryOf', () => {
+	it('preserves the raw query for the proxy allow-list', () => {
+		expect(queryOf('/v1/nodes/abc/api/head?history=%79es')).toBe('?history=%79es');
+		expect(queryOf('/v1/nodes/abc/api/head')).toBe('');
+		expect(queryOf(undefined)).toBe('');
+	});
+});
 
 describe('matchNodeApiProxy', () => {
 	it('splits the node id from the sub-path', () => {

@@ -32,7 +32,13 @@ import { createDocsAssetServer } from './docs-assets.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
-import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
+import {
+	buildProxyQuery,
+	isProxyableHttpPath,
+	isProxyableWebSocketPath,
+	matchNodeApiProxy,
+	queryOf,
+} from './proxy-path.js';
 import {
 	buildPeerAllowlist,
 	renderNftables,
@@ -42,6 +48,7 @@ import {
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { dispatchPrivilegedInit } from './privileged-init.js';
+import { readBlockfrostLatestParameters, type ReadCurrentL1Parameters } from './init-admission.js';
 import { matchRoute } from './routes.js';
 import { applyControlPlaneLimits } from './server-limits.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
@@ -60,19 +67,8 @@ export type ServerDeps = {
 	provision: ProvisionDeps;
 	resolvePeerHostname?: PeerHostnameResolver;
 	logger: SupervisorLogger;
+	readCurrentL1Parameters?: ReadCurrentL1Parameters;
 };
-
-/**
- * The raw query of a request target, `?` included, or empty.
- *
- * Taken by index rather than through `URL`, because `URL` would percent-decode
- * and re-encode on the way, and the value here is handed to an allow-list that
- * must see exactly what the caller sent.
- */
-function queryOf(url: string | undefined): string {
-	const index = (url ?? '').indexOf('?');
-	return index === -1 ? '' : (url ?? '').slice(index);
-}
 
 function send(response: ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body ?? null);
@@ -164,6 +160,7 @@ function readPeers(body: unknown): PeerRecord[] {
 
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
+	const readCurrentL1Parameters = deps.readCurrentL1Parameters ?? readBlockfrostLatestParameters;
 	const resolvePeerHostname = deps.resolvePeerHostname ?? createBoundedPeerResolver();
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
@@ -393,7 +390,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	): Promise<void> {
 		switch (kind) {
 			case 'initNode': {
-				await dispatchPrivilegedInit(store, nodeId ?? '', logger);
+				await dispatchPrivilegedInit(store, nodeId ?? '', logger, config, readCurrentL1Parameters);
 				send(response, 202, { dispatched: true });
 				return;
 			}

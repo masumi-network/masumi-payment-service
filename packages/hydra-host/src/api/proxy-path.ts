@@ -13,6 +13,18 @@
 
 export type ProxyTarget = { nodeId: string; subPath: string };
 
+/**
+ * The raw query of a request target, `?` included, or empty.
+ *
+ * Taken by index rather than through `URL`, because `URL` would percent-decode
+ * and re-encode on the way, and the value here is handed to an allow-list that
+ * must see exactly what the caller sent.
+ */
+export function queryOf(url: string | undefined): string {
+	const index = (url ?? '').indexOf('?');
+	return index === -1 ? '' : (url ?? '').slice(index);
+}
+
 const NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Exact paths permitted per method. `/commits/{txid}` is handled separately. */

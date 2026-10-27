@@ -134,7 +134,7 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		tier: 'admin',
 		summary: 'Dispatch one Init to this node',
 		description:
-			'Privileged override. The payment service checks L1 and L2 ledger parameters before calling this route. The Host does not repeat that check.',
+			"Admin only. Before dispatch, the Host reads this node's live L2 parameters and current L1 parameters from Blockfrost. Init is refused when those checks fail.",
 	},
 	{ path: '/v1/nodes/{nodeId}/stop', method: 'post', kind: 'stopNode', tier: 'admin', summary: 'Stop the node' },
 	{
