@@ -20,6 +20,7 @@ import {
 	startHostNode,
 	type HostPeer,
 } from '@/services/hydra-host/client';
+import { withHostPauseLease } from '@/services/hydra-host/pause';
 import { attemptRedemption, type ExchangeTransportOptions } from './exchange-client';
 import type { createHeadFromExchange } from './orchestrator';
 import type { RedemptionPorts, RedemptionState } from './redemption';
@@ -213,19 +214,22 @@ export function buildRedemptionPorts(input: {
 
 		start: async () => {
 			const host = hostAccess(record);
-			// Read again here: a pause that landed after the record was read has
-			// already stopped this node, and starting it now would undo that.
-			const current = await prisma.hydraHost.findUnique({
-				where: { id: record.hydraHostId },
-				select: { pausedAt: true },
+			// Rotation, Resume and this start share the lease. A token cannot be
+			// saved between the pause check and the Host's start response.
+			const acted = await withHostPauseLease(record.hydraHostId, async () => {
+				const current = await prisma.hydraHost.findUnique({
+					where: { id: record.hydraHostId },
+					select: { pausedAt: true },
+				});
+				if (!current || current.pausedAt !== null) {
+					throw createHttpError(
+						409,
+						'your Hydra Host was paused for maintenance; the redemption continues once it is resumed',
+					);
+				}
+				await startHostNode(host.baseUrl, host.adminToken, record.hostNodeId, host.transport);
 			});
-			if (current?.pausedAt != null) {
-				throw createHttpError(
-					409,
-					'your Hydra Host was paused for maintenance; the redemption continues once it is resumed',
-				);
-			}
-			await startHostNode(host.baseUrl, host.adminToken, record.hostNodeId, host.transport);
+			if (!acted) throw createHttpError(409, 'another Host pause action is running; retry the redemption shortly');
 		},
 
 		markStarted: async () => await markStarted(record.id),

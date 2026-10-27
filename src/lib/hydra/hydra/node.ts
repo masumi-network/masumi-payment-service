@@ -69,7 +69,6 @@ import {
 } from './node-api';
 import { withHistorySetting } from './node-url';
 import type { L2MintCheck } from './l2-mint-tally';
-import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
 import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
 import * as settlementCommands from './node-settlement-commands';
@@ -199,11 +198,7 @@ export class HydraNode extends EventEmitter {
 			retainConfirmedTransactions: config.retainConfirmedTransactions,
 		});
 		this._live = new LiveFrameProcessor(this.liveFrameHost(), this);
-		this._replay = new HydraHistoryReplay(
-			this._historyConnection,
-			this._ledger,
-			this.replayHost(config.computeSnapshotAccumulator),
-		);
+		this._replay = new HydraHistoryReplay(this._historyConnection, this._ledger, this.replayHost(config));
 		if (config.expectedHeadId) this.pinExpectedHeadId(config.expectedHeadId);
 	}
 	/**
@@ -245,7 +240,7 @@ export class HydraNode extends EventEmitter {
 		};
 	}
 
-	private replayHost(computeSnapshotAccumulator: HydraAccumulatorComputer | undefined): HistoryReplayHost {
+	private replayHost(config: HydraNodeClientConfig): HistoryReplayHost {
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const self = this;
 		return {
@@ -253,7 +248,8 @@ export class HydraNode extends EventEmitter {
 				return self._expectedHeadId;
 			},
 			trustLocalNodeSnapshotMetadata: this._trustLocalNodeSnapshotMetadata,
-			computeSnapshotAccumulator,
+			computeSnapshotAccumulator: config.computeSnapshotAccumulator,
+			onSignedSnapshotVerified: config.onSignedSnapshotVerified,
 			get persistenceRotationError(): HydraProtocolError | undefined {
 				return self._unsupportedPersistenceRotationError;
 			},
@@ -274,6 +270,7 @@ export class HydraNode extends EventEmitter {
 			emitTxConfirmed: (txId, transaction) => {
 				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
 			},
+			persistVerifiedSnapshot: config.persistVerifiedSnapshot,
 			reportL2MintOutstanding: (incident) => this.emit(HydraNodeEvent.L2MintOutstanding, incident),
 			onProtocolDrift: (description) => {
 				this.emit(HydraNodeEvent.ProtocolDriftDetected, description);

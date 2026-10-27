@@ -17,17 +17,23 @@ consequence of one of them:
 
 1. **A head is per counterparty.** It is opened between your wallet and one
    other wallet, and it carries payments between those two only. An agent
-   whose seller wallet is not the head's counterparty settles on L1, and the
-   payment succeeds — it is simply slower and costs a fee.
+   whose seller wallet is not the head's counterparty can use L1 when the
+   purchase uses automatic routing. Normal L1 validation and settlement still
+   apply. A purchase forced to Hydra does not switch to L1.
 2. **Money must be inside the head to be spent there.** Funds are put in when
    the head opens, and added later through a deposit. Neither is instant.
 3. **Opening and closing are L1 transactions.** They take minutes and cost
    fees. A head is worth opening when you expect a stream of payments with the
    same counterparty, not for a single one.
 
-If you take one thing from this page: **Hydra is a speed optimisation with a
-setup cost, and L1 is always the fallback.** Nothing is stuck on L2 that
-cannot come back.
+Hydra has a setup cost. An automatically routed purchase can use L1 before
+the service reserves its L2 inputs. A purchase forced to Hydra waits or fails
+when no usable head exists. Funds already in a head return through a valid
+withdrawal or a completed Close and fanout. An unabsorbed deposit needs
+**Recover**. An unburned L2 mint or an output that L1 cannot carry can block
+final fanout. Keep the node running and monitor settlement until the head is
+`Final`; see [Take money out](#5-take-money-out) and
+[stalled fanout](#a-head-that-stays-in-fanoutpossible-or-fanningout).
 
 ## What you need
 
@@ -50,12 +56,14 @@ not open.
 
 ### 1. Start the Host
 
-The image is built from `packages/hydra-host/Dockerfile` and is not published to
-a registry. **In production, run that image under whatever you already use**:
-Kubernetes, Nomad, systemd, your own `docker run`. The compose file next to it
-is for local testing and as a worked example of the settings that matter; it is
-a single unmanaged container with a local volume, which is not what you want
-holding a mainnet head.
+The release workflow builds `packages/hydra-host/Dockerfile` and publishes the
+Host image to GHCR when a GitHub release is published
+(`.github/workflows/ghcr.yml:32-55`). Verify the image digest and the release
+commit before deployment. Pin the digest when you run the image under
+Kubernetes, Nomad, systemd, or `docker run`. The compose file next to the
+Dockerfile is for local testing and shows the settings that matter. It is a
+single unmanaged container with a local volume, so it is unsuitable for a
+mainnet head.
 
 For a droplet, which is the target this Host was designed for, follow
 [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md). It covers the
@@ -287,18 +295,20 @@ the check fails, and the readings appear under **Details → Version and hashes*
 
 | Variable                                      | Where the value comes from                                                                                                       |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.4.1-<git sha>`; a bare `2.4.1` does not match one. |
-| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | **Details → Scripts**, via the copy button.                                                                                      |
+| `HYDRA_EXPECTED_VERSION`                      | Reviewed binary version in `src/services/hydra-host/reviewed-catalogue.ts`. It is already the service default.                    |
+| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | Reviewed catalogue hash in the same source file. It is already the service default. Never copy this pin from a Host.              |
 | `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_<NETWORK>` | Already set for preprod. Do not copy this one from the Host: point the Host at the reviewed file instead (below).                |
 
 Restart the service and press **Check** again. The node goes Active.
 
 Two things that look like the same problem and are not:
 
-- **The Scripts fingerprint cannot be computed from the CLI.** It is taken over
-  the parsed catalogue document as this service re-serialises it, so
-  `hydra-node --hydra-script-catalogue | sha256sum` yields a different digest.
-  Copy it from the node details.
+- **The Scripts fingerprint comes from reviewed release code.**
+  `src/services/hydra-host/reviewed-catalogue.ts` records the full catalogue,
+  the source image digest, and its fingerprint. The fingerprint hashes
+  `JSON.stringify` of the parsed CLI document. A direct `sha256sum` of the
+  pretty printed CLI output differs. If a Host reports another value, stop
+  placement and review the image and binary before changing the release record.
 - **A ledger parameters mismatch is a Host misconfiguration, not a pin to
   update.** The Host must serve the reviewed file that ships in the repository.
   The image already does: it copies `packages/hydra-host/params` to
@@ -423,12 +433,13 @@ Two things follow from how Hydra works here:
 
 Set once per head, in the invite, and fixed for its life.
 
-Mainnet values are given throughout, but mainnet is not runnable yet: the Host
-refuses to boot without a reviewed ledger parameters file and
-`packages/hydra-host/params/` ships only `preprod.json`. Adding one is a
-reviewed change, not a configuration step —
-`HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET` has to be set to its hash on this
-side at the same time.
+Mainnet values are given throughout. The repository ships only a preprod
+parameters file, so the Host's default mainnet path has no file. An operator
+can supply a mainnet file through `HYDRA_HOST_LEDGER_PARAMS_FILE` and set its
+hash in `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET` on the payment service.
+The Host checks the file and the service checks the hash match. Neither check
+proves that the file was reviewed. Before deployment, review the exact file
+against the target network and record that file and its hash with the release.
 
 |                         | Preprod  | Mainnet | What it does                                                                                                                                                                                                   |
 | ----------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -450,9 +461,11 @@ close within five days.
 
 ## Day to day
 
-**Payments route themselves.** A purchase between two wallets with an open head
-goes through it; anything else goes to L1. There is no per-payment switch, and
-a head that is not usable is never an error — it is a slower payment.
+**Payments route by the selected layer and available head.** Automatic routing
+tries a usable head first. Before an L2 reservation, a request can use L1 if
+no usable head is available. A purchase forced to Hydra waits while a head
+wallet is busy and fails if no suitable head exists. It does not silently use
+L1. Once L2 inputs are reserved, a failed submission stays held for recovery.
 
 **Watch the node balance.** Each head's node holds about 30 ADA of its own to
 pay for opening, depositing and closing. It is topped up automatically from the
@@ -464,9 +477,22 @@ will show them exactly once before sealing them. Without them you cannot
 recover funds from a head whose service database is gone. The head details
 dialog warns until you do it.
 
-**Closing.** Close from the head's action menu. What is inside the head returns
-to L1 after the dispute window, then fans out, and nothing needs watching in
-between.
+**The newest signed snapshot is kept outside the node.** Each time the service
+verifies that every party signed a snapshot, it stores the newest one for that
+head in `HydraHeadSignedSnapshot`. When the replay rejects a transition, it
+still stores the snapshot that transition reached. It stores no later snapshot,
+because the replay stops there. The row holds `ConfirmedSnapshot` JSON equivalent
+to what `GET /snapshot` returns. No API or admin page shows it, so read it with
+SQL. If a node loses its own persistence, this row is the evidence of what the
+head last agreed. It does not make a restored node
+contest by itself: in our hydra-node 2.3.0 test, a node restored after storage
+loss refused a side-load of the stored snapshot (`SideLoadSvNumberInvalid`).
+
+**Closing.** Close from the head's action menu. Keep the node online through
+the contestation period so it can contest an old snapshot. After the deadline,
+watch fanout until the head reaches `Final`. A stalled `FanoutPossible` or
+`FanningOut` head needs investigation and may need partial fanout. An unburned
+L2 mint or an output that L1 cannot carry can stop final fanout.
 
 One thing does not come back that way: a deposit the head never absorbed is not
 part of the fanout. It returns only through **Recover**, which needs this

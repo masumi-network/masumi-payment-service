@@ -45,6 +45,8 @@ import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status
 import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
 import { forgetReplayFailures, recordReplayFailures } from './replay-failure-recorder';
+import { createSignedSnapshotRecorder } from '@/services/hydra-signed-snapshot/recorder';
+import { persistVerifiedHydraSnapshot } from '@/services/hydra-snapshot-store/store';
 import {
 	HYDRA_PRE_INIT_STATUSES,
 	headConfigurationInclude,
@@ -275,6 +277,8 @@ export class HydraConnectionManager {
 			authToken: nodeAuthToken,
 			guardHostDestination: true,
 			computeSnapshotAccumulator: snapshotAccumulator,
+			onSignedSnapshotVerified: createSignedSnapshotRecorder(head.id),
+			persistVerifiedSnapshot: (frame) => persistVerifiedHydraSnapshot(head.id, frame),
 		};
 
 		const hydraHead: CustomHydraHead = new CustomHydraHead([nodeConfig], {

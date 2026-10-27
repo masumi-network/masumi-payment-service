@@ -89,6 +89,21 @@ export function proxyHttp(
 	// pipelined request's response waits in a queue without a socket, and some
 	// Node versions never destroy it, so its destroyed request is the signal.
 	if (response.destroyed || request.destroyed) return;
+	// Stripping Transfer-Encoding while piping a GET or DELETE body leaves the
+	// upstream request unframed. Its bytes could be parsed as another request.
+	if (
+		(request.method === 'GET' || request.method === 'DELETE') &&
+		(request.headers['transfer-encoding'] !== undefined ||
+			(request.headers['content-length'] !== undefined && request.headers['content-length'] !== '0'))
+	) {
+		response.writeHead(400, {
+			'Content-Type': 'application/json',
+			'Cache-Control': 'no-store',
+			Connection: 'close',
+		});
+		response.end(JSON.stringify({ error: 'GET and DELETE node API requests must not have a body' }));
+		return;
+	}
 	const upstream = httpRequest(
 		{
 			host: LOOPBACK,

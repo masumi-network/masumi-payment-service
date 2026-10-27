@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -192,6 +192,30 @@ describe('node api proxy', () => {
 		expect(response.status).toBe(200);
 		expect((await response.json()) as { ok: boolean }).toMatchObject({ ok: true });
 		expect(node.received[0]?.url).toBe('/snapshot/utxo');
+	});
+
+	it.each([
+		['GET', '/v1/nodes/node-1/api/head', { 'Transfer-Encoding': 'chunked' }, 'probe'],
+		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Transfer-Encoding': 'chunked' }, 'probe'],
+		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Content-Length': '5' }, 'probe'],
+	])('rejects a framed body on proxied %s before contacting the node', async (method, url, headers, body) => {
+		const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+			const request = httpRequest(
+				`${baseUrl}${url}`,
+				{ method, headers: { Authorization: `Bearer ${USER}`, ...headers } },
+				(reply) => {
+					let received = '';
+					reply.setEncoding('utf8');
+					reply.on('data', (chunk: string) => (received += chunk));
+					reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: received }));
+				},
+			);
+			request.on('error', reject);
+			request.end(body);
+		});
+		expect(response.status).toBe(400);
+		expect(response.body).toContain('body');
+		expect(node.received).toHaveLength(0);
 	});
 
 	// A same-name upstream header would beat the handler's setHeader in
@@ -467,6 +491,7 @@ describe('node api websocket proxy', () => {
 		server: Server;
 		port: number;
 		greeted: string[];
+		upgradeHeaders: IncomingMessage['headers'][];
 		commands: string[];
 		pings: string[];
 		pongs: string[];
@@ -475,6 +500,7 @@ describe('node api websocket proxy', () => {
 	}> {
 		const { WebSocketServer } = await import('ws');
 		const greeted: string[] = [];
+		const upgradeHeaders: IncomingMessage['headers'][] = [];
 		const commands: string[] = [];
 		const pings: string[] = [];
 		const pongs: string[] = [];
@@ -495,9 +521,10 @@ describe('node api websocket proxy', () => {
 					ping: (d: string) => void;
 					on: (e: string, cb: (d: Buffer) => void) => void;
 				},
-				request: { url?: string },
+				request: { url?: string; headers: IncomingMessage['headers'] },
 			) => {
 				greeted.push(request.url ?? '');
+				upgradeHeaders.push(request.headers);
 				pingFromNode = () => socket.ping('node-ping');
 				sendThenClose = (message) => {
 					socket.send(message);
@@ -517,6 +544,7 @@ describe('node api websocket proxy', () => {
 			server,
 			port: (server.address() as AddressInfo).port,
 			greeted,
+			upgradeHeaders,
 			commands,
 			pings,
 			pongs,
@@ -550,11 +578,12 @@ describe('node api websocket proxy', () => {
 	const connect = async (
 		url: string,
 		token?: string,
+		extraHeaders: Record<string, string> = {},
 	): Promise<{ firstMessage: string | null; status: number | null }> => {
 		const WebSocket = (await import('ws')).default;
 		return new Promise((resolve) => {
 			const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}${url}`, {
-				headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
+				headers: { ...(token === undefined ? {} : { Authorization: `Bearer ${token}` }), ...extraHeaders },
 			} as never);
 			const done = (firstMessage: string | null, status: number | null): void => {
 				try {
@@ -699,6 +728,18 @@ describe('node api websocket proxy', () => {
 		expect(other.commands).toEqual([]);
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 		await new Promise<void>((resolve) => other.server.close(() => resolve()));
+	});
+
+	it('does not forward a Content-Length on the bodyless upgrade request', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+
+		const result = await connect('/v1/nodes/node-1/api', USER, { 'Content-Length': '5' });
+
+		expect(result.firstMessage).toContain('Greetings');
+		expect(upstream.upgradeHeaders[0]?.['content-length']).toBeUndefined();
+
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
 
 	it('rejects an unauthenticated upgrade', async () => {

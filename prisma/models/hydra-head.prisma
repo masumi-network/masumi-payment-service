@@ -71,6 +71,15 @@ model HydraHead {
   contestGapSince     DateTime?
   contestGapAlertedAt DateTime?
 
+  /// Independent L1 Close alert and contest-watch availability. A Close alert
+  /// fires once while the state token is at a Closed head output, and resets
+  /// only when L1 shows Open again. Availability is tracked separately from a
+  /// confirmed snapshot gap, so an unreachable node cannot hide either alert.
+  contestWatchClosedAlertedAt DateTime?
+  contestWatchIssueSignature String?
+  contestWatchIssueSince     DateTime?
+  contestWatchIssueAlertedAt DateTime?
+
   /// Durable admission gate set before Close is sent. Reservation writers lock
   /// the head row and refuse new L2 work once closing has begun.
   isClosing Boolean @default(false)
@@ -127,6 +136,9 @@ model HydraHead {
   /// Errors that have occurred during the head's lifecycle
   Errors HydraHeadError[]
 
+  /// Verified signed snapshots retained independently of hydra-node storage.
+  StoredSnapshots HydraStoredSnapshot[]
+
   /// Incremental-commit top-ups into this head
   Topups HydraTopup[]
 
@@ -141,6 +153,9 @@ model HydraHead {
 
   /// Transactions submitted through this head (L2)
   Transactions Transaction[]
+
+  /// The newest snapshot every party signed, stored for evidence and contest.
+  SignedSnapshot HydraHeadSignedSnapshot?
 
   /// The redeemed invite that produced this head.
   Invite HydraHeadInvite?

@@ -1,11 +1,21 @@
-import { Transaction, resolveTxHash, type IFetcher, type MeshWallet, type UTxO } from '@meshsdk/core';
+import {
+	SLOT_CONFIG_NETWORK,
+	Transaction,
+	resolveTxHash,
+	unixTimeToEnclosingSlot,
+	type IFetcher,
+	type MeshWallet,
+	type UTxO,
+} from '@meshsdk/core';
 import type { Network } from '@/generated/prisma/client';
+import { convertNetwork } from '@/utils/converter/network-convert';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { logger } from '@masumi/payment-core/logger';
 import { calculateTokenDepositMinLovelace } from './deposit-min-ada';
 
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 const CONFIRM_POLL_MS = 15_000;
+export const CARVE_VALIDITY_MS = 10 * 60 * 1000;
 // A carve is a plain value self-payment; one confirmation is enough to safely
 // spend its output into the deposit that follows.
 const CARVE_CONFIRMATIONS = 1;
@@ -93,7 +103,11 @@ async function defaultSubmitCarveTx(
 	amount: bigint,
 	reportIntendedHash: (txHash: string) => Promise<void>,
 	blockchainProvider: IFetcher,
+	invalidHereafterSlot: number,
+	validUntilMs: number,
+	now: () => number,
 ): Promise<string> {
+	if (now() >= validUntilMs) throw new HydraPreSplitError('pre-split validity window expired before build');
 	const tx = new Transaction({ initiator: wallet });
 	if (unit === 'lovelace') {
 		tx.sendLovelace(walletAddress, amount.toString());
@@ -108,9 +122,12 @@ async function defaultSubmitCarveTx(
 			{ unit: 'lovelace', quantity: lovelace.toString() },
 		]);
 	}
+	tx.setTimeToExpire(invalidHereafterSlot.toString());
 	const unsigned = await tx.build();
 	const signed = await wallet.signTx(unsigned);
+	if (now() >= validUntilMs) throw new HydraPreSplitError('pre-split validity window expired before submission');
 	await reportIntendedHash(String(resolveTxHash(signed)).toLowerCase());
+	if (now() >= validUntilMs) throw new HydraPreSplitError('pre-split validity window expired before submission');
 	return await wallet.submitTx(signed);
 }
 
@@ -142,6 +159,8 @@ export async function carveExactUtxo(params: {
 	 */
 	existingUtxos?: UTxO[];
 	now?: () => number;
+	/** Anchored before the wallet claim, so the signed carve expires before the claim can age out. */
+	validUntilMs?: number;
 	sleep?: (ms: number) => Promise<void>;
 	submitCarveTx?: (
 		wallet: MeshWallet,
@@ -162,7 +181,7 @@ export async function carveExactUtxo(params: {
 	 * inputs still read as unspent and an L1 batcher handed the same wallet would
 	 * build a second transaction over them.
 	 */
-	onCarveSubmitted?: (txHash: string) => Promise<void>;
+	onCarveSubmitted?: (txHash: string, invalidHereafterSlot: bigint) => Promise<void>;
 }): Promise<UTxO> {
 	if (params.amount <= 0n) throw new HydraPreSplitError('exact top-up amount must be positive');
 	if (params.unit === 'lovelace' && params.amount < MIN_CARVE_LOVELACE) {
@@ -194,20 +213,36 @@ export async function carveExactUtxo(params: {
 		return reusable;
 	}
 
+	const now = params.now ?? Date.now;
+	const validUntilMs = params.validUntilMs ?? now() + CARVE_VALIDITY_MS;
+	if (!Number.isSafeInteger(validUntilMs) || now() >= validUntilMs) {
+		throw new HydraPreSplitError('pre-split validity window expired before build');
+	}
+	const invalidHereafterSlot = unixTimeToEnclosingSlot(
+		validUntilMs,
+		SLOT_CONFIG_NETWORK[convertNetwork(params.network)],
+	);
 	const submitCarveTx =
 		params.submitCarveTx ??
 		((wallet, walletAddress, unit, amount, reportIntendedHash) =>
-			defaultSubmitCarveTx(wallet, walletAddress, unit, amount, reportIntendedHash, params.blockchainProvider));
-	// Recording the hash must never lose the carve itself, which by then is on
-	// its way to the chain either way.
+			defaultSubmitCarveTx(
+				wallet,
+				walletAddress,
+				unit,
+				amount,
+				reportIntendedHash,
+				params.blockchainProvider,
+				invalidHereafterSlot,
+				validUntilMs,
+				now,
+			));
+	// Persist the signed hash and bound before submission. If that write fails,
+	// the submitter must stop before sending the signed transaction.
 	const reportedHashes = new Set<string>();
 	const reportHash = async (hash: string): Promise<void> => {
 		if (!params.onCarveSubmitted) return;
-		reportedHashes.add(hash);
-		await params.onCarveSubmitted(hash).catch((error: unknown) => {
-			const reason = error instanceof Error ? error.message : String(error);
-			logger.warn(`hydra-pre-split: could not record carve tx ${hash}: ${reason}`);
-		});
+		await params.onCarveSubmitted(hash, BigInt(invalidHereafterSlot));
+		reportedHashes.add(hash.toLowerCase());
 	};
 	let txHash: string;
 	try {
@@ -223,7 +258,6 @@ export async function carveExactUtxo(params: {
 	// exception, and the row should name what actually went out.
 	if (!reportedHashes.has(txHash.toLowerCase())) await reportHash(txHash);
 
-	const now = params.now ?? Date.now;
 	const sleep = params.sleep ?? defaultSleep;
 	const deadline = now() + CONFIRM_TIMEOUT_MS;
 	for (;;) {
