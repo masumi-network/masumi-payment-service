@@ -331,12 +331,13 @@ describe('the landing page and browser 404', () => {
 		}
 	});
 
-	it('streams the large public documentation bundle with HTTP backpressure', async () => {
+	// Guards against a streamed answer that drops the length.
+	it('serves the large public documentation bundle whole, with its length', async () => {
 		const bundle = await fetch(`${baseUrl}/docs/assets/swagger-ui-bundle.js`);
 		expect(bundle.status).toBe(200);
-		expect(bundle.headers.get('transfer-encoding')).toBe('chunked');
-		expect(bundle.headers.get('content-length')).toBeNull();
-		expect((await bundle.text()).length).toBeGreaterThan(1_000_000);
+		const body = await bundle.arrayBuffer();
+		expect(body.byteLength).toBeGreaterThan(1_000_000);
+		expect(Number(bundle.headers.get('content-length'))).toBe(body.byteLength);
 
 		const head = await fetch(`${baseUrl}/docs/assets/swagger-ui-bundle.js`, { method: 'HEAD' });
 		expect(head.status).toBe(200);

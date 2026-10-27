@@ -28,7 +28,7 @@ import { nonceLogRef } from './nonce-log-ref.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
 import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
-import { serveDocsAsset } from './docs-assets.js';
+import { createDocsAssetServer } from './docs-assets.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
@@ -167,6 +167,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
+	const serveDocsAsset = createDocsAssetServer();
 	// Said once, not on every call: the proxy sees one for each request a service
 	// makes. It is the signal that a service is still on the credential that
 	// reaches every node on this Host.
@@ -255,9 +256,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 						sendNotFound(request, response);
 						return;
 					}
-					await serveDocsAsset(response, asset, method === 'HEAD', (error) =>
-						logger.error(`[api] docs asset stream failed: ${error.message}`),
-					);
+					await serveDocsAsset(response, asset, method === 'HEAD');
 					return;
 				}
 			}
