@@ -14,6 +14,7 @@ import { HydraHostRequestError } from '@/services/hydra-host/client';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindHead = jest.fn() as AnyMock;
+const mockUpdateHead = jest.fn() as AnyMock;
 const mockConnect = jest.fn() as AnyMock;
 const mockInit = jest.fn() as AnyMock;
 const mockNodeGet = jest.fn() as AnyMock;
@@ -22,6 +23,7 @@ const mockFlush = jest.fn() as AnyMock;
 const mockWarn = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
 const mockRecordHeadError = jest.fn() as AnyMock;
+let admittedInitToken: string | null = null;
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
@@ -36,7 +38,7 @@ jest.unstable_mockModule('@masumi/payment-core/auth', () => ({
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
-		hydraHead: { findUnique: mockFindHead, update: jest.fn(), updateMany: jest.fn() },
+		hydraHead: { findUnique: mockFindHead, update: jest.fn(), updateMany: mockUpdateHead },
 		hydraHeadError: { create: jest.fn() },
 	},
 }));
@@ -104,6 +106,21 @@ let observedStatus: (typeof HydraHeadStatus)[keyof typeof HydraHeadStatus] = Hyd
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	admittedInitToken = null;
+	mockUpdateHead.mockImplementation(
+		async (args: { where?: { initDispatchToken?: string | null }; data?: { initDispatchToken?: string | null } }) => {
+			if (typeof args.data?.initDispatchToken === 'string') {
+				if (args.where?.initDispatchToken !== null || admittedInitToken !== null) return { count: 0 };
+				admittedInitToken = args.data.initDispatchToken;
+				return { count: 1 };
+			}
+			if (args.data?.initDispatchToken === null) {
+				if (args.where?.initDispatchToken !== admittedInitToken) return { count: 0 };
+				admittedInitToken = null;
+			}
+			return { count: 1 };
+		},
+	);
 	observedStatus = HydraHeadStatus.Idle;
 	// The handler reads the head twice: the full row up front, then just its
 	// status inside the timeout catch. Tell them apart by the projection.
@@ -723,6 +740,28 @@ describe('initHeadPost, with two requests at once', () => {
 			for (const resolve of finish) resolve();
 			await Promise.all([first.catch(() => undefined), second.catch(() => undefined)]);
 		}
+	});
+});
+
+describe('initHeadPost, after a process restart', () => {
+	it('refuses a second dispatch when the prior attempt is persisted but process guards are empty', async () => {
+		const { initsInFlight, initsAwaitingNode, reserveInitDispatch } = await import('./init-guard');
+		const firstToken = await reserveInitDispatch('head-1');
+		expect(admittedInitToken).toBe(firstToken);
+		// A new process has no in-memory guard. The persisted row still blocks Init.
+		initsInFlight.clear();
+		initsAwaitingNode.clear();
+		mockUpdateHead.mockClear();
+		mockInit.mockImplementation(async (_timeout: unknown, dispatch: () => Promise<void>) => await dispatch());
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('already dispatched'),
+		});
+		expect(admittedInitToken).toBe(firstToken);
+		expect(mockUpdateHead).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ initDispatchToken: null }) }),
+		);
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
 	});
 });
 

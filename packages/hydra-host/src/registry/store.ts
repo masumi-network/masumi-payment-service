@@ -46,6 +46,13 @@ function parseNodeRecord(raw: string, source: string): NodeRecord {
 	if (peerKeysGeneration !== undefined && !isPeerKeyGeneration(peerKeysGeneration)) {
 		throw new RegistryError(`${source} has an invalid peerKeysGeneration`);
 	}
+	const initDispatchAttemptedAt = getOwnValue(parsed, 'initDispatchAttemptedAt');
+	if (
+		initDispatchAttemptedAt !== undefined &&
+		(typeof initDispatchAttemptedAt !== 'string' || initDispatchAttemptedAt.length === 0)
+	) {
+		throw new RegistryError(`${source} has an invalid initDispatchAttemptedAt`);
+	}
 
 	const record = parsed as unknown as NodeRecord;
 
@@ -129,7 +136,9 @@ export class NodeRegistryStore {
 		const dir = this.nodeDir(record.nodeId);
 		await fs.mkdir(dir, { recursive: true });
 		const next = { ...record, updatedAt: new Date().toISOString() };
-		await writeFileAtomic(path.join(dir, NODE_FILE), `${JSON.stringify(next, null, 2)}\n`);
+		await writeFileAtomic(path.join(dir, NODE_FILE), `${JSON.stringify(next, null, 2)}\n`, {
+			strictDirectorySync: next.initDispatchAttemptedAt !== undefined,
+		});
 	}
 
 	/**

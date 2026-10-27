@@ -40,7 +40,13 @@ import { nodeFailedBeforeInit } from './init-node-failure';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
-import { assertNoParkedInit, initsAwaitingNode, initsInFlight } from './init-guard';
+import {
+	assertNoParkedInit,
+	initsAwaitingNode,
+	initsInFlight,
+	releaseFailedInitDispatch,
+	reserveInitDispatch,
+} from './init-guard';
 
 // --- Lifecycle: POST init ---
 
@@ -168,8 +174,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			// True on the normal path and cleared when the timeout diagnosis has
 			// already drained frames, so the drain below runs exactly once per path.
 			let needsPostInitFlush = true;
+			let initDispatchToken: string | null = null;
 			try {
 				const dispatch = async (): Promise<void> => {
+					// The node can stay Idle while its first InitTx is unconfirmed. A
+					// process-local guard cannot prevent a retry after service restart.
+					initDispatchToken = await reserveInitDispatch(head.id);
 					try {
 						await dispatchInitOnHost(host.baseUrl, adminToken, nodeId, {
 							allowInsecureHttp: host.allowInsecureHttp,
@@ -183,7 +193,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				};
 				await hydraHead.init(undefined, dispatch);
 			} catch (initError) {
+				if (createHttpError.isHttpError(initError)) throw initError;
 				if (initError instanceof HydraHostRequestError && initError.status !== null && initError.status < 500) {
+					await releaseFailedInitDispatch(head.id, initDispatchToken);
 					throw createHttpError(503, `Hydra Init was not sent: ${initError.message}`, { expose: true });
 				}
 				// The node said it dropped this Init because it is behind the chain. That
@@ -191,6 +203,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// command and needs no diagnosis or head error. An earlier Init held for
 				// this head may still be parked, so that hold stays.
 				if (initError instanceof HydraCommandRefusedUnsyncedError) {
+					await releaseFailedInitDispatch(head.id, initDispatchToken);
 					if (wasAwaitingNode) initsAwaitingNode.add(head.id);
 					throw createHttpError(
 						503,
@@ -205,6 +218,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// through the diagnosis below: the node also sends it for a head that
 				// has already initialized, which is no failure.
 				if (initError instanceof HydraPostTxRejectedError) {
+					await releaseFailedInitDispatch(head.id, initDispatchToken);
 					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
 					throw createHttpError(504, initError.message, { expose: true });
 				}

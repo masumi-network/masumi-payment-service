@@ -128,6 +128,11 @@ export type NodeRecord = {
 	escrowAckedAt: string | null;
 	/** Guards provision retries against double-allocating a node. */
 	idempotencyKey: string;
+	/**
+	 * Persisted before the privileged Init reaches hydra-node. An Idle node or
+	 * failed HTTP response cannot prove that its first InitTx will not confirm.
+	 */
+	initDispatchAttemptedAt?: string;
 
 	createdAt: string;
 	updatedAt: string;

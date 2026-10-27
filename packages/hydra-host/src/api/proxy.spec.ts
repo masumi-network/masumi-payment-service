@@ -14,6 +14,7 @@ import { ExchangeStore } from '../registry/exchange-store.js';
 import { proxyWebSocket } from './proxy.js';
 import { createControlPlane } from './server.js';
 import { deriveNodeToken } from './node-token.js';
+import { dispatchPrivilegedInit } from './privileged-init.js';
 import type { ProvisionDeps } from './provision.js';
 
 const ADMIN = 'a'.repeat(40);
@@ -762,6 +763,88 @@ describe('node api websocket proxy', () => {
 		await new Promise<void>((resolve) => other.server.close(() => resolve()));
 	});
 
+	it('admits only one of two concurrent admin Init requests', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			const responses = await Promise.all([
+				call('POST', '/v1/nodes/node-1/init', ADMIN),
+				call('POST', '/v1/nodes/node-1/init', ADMIN),
+			]);
+			expect(responses.map((response) => response.status).sort()).toEqual([202, 409]);
+			expect(upstream.commands).toEqual(['{"tag":"Init"}']);
+			expect((await store.read('node-1'))?.initDispatchAttemptedAt).toBeDefined();
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('refuses a second direct Init after reconstructing the Host registry', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(202);
+			const restartedStore = new NodeRegistryStore(dataDir);
+			await expect(
+				dispatchPrivilegedInit(
+					restartedStore,
+					'node-1',
+					{ info: () => undefined, warn: () => undefined, error: () => undefined },
+					loadHostConfig(env),
+					async () => SAFE_L1_PARAMETERS,
+				),
+			).rejects.toMatchObject({ status: 409 });
+			expect(upstream.commands).toEqual(['{"tag":"Init"}']);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	it('keeps the Init marker when the node dispatch outcome is unknown', async () => {
+		const protocolOnly = createServer((request, response) => {
+			if (request.url === '/protocol-parameters') {
+				response.writeHead(200, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify(SAFE_L2_PARAMETERS));
+				return;
+			}
+			response.writeHead(404).end();
+		});
+		protocolOnly.on('upgrade', (_request, socket) => socket.destroy());
+		await new Promise<void>((resolve) => protocolOnly.listen(0, '127.0.0.1', resolve));
+		await store.update('node-1', (current) => ({
+			...current,
+			apiPort: (protocolOnly.address() as AddressInfo).port,
+		}));
+		try {
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(502);
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(409);
+			expect((await new NodeRegistryStore(dataDir).read('node-1'))?.initDispatchAttemptedAt).toBeDefined();
+		} finally {
+			await new Promise<void>((resolve) => protocolOnly.close(() => resolve()));
+		}
+	});
+
+	it('does not send Init when the registry directory sync fails', async () => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const originalOpen = fs.open.bind(fs);
+		const openSpy = jest.spyOn(fs, 'open').mockImplementation(async (...args) => {
+			const handle = await originalOpen(...args);
+			if (args[0] === store.nodeDir('node-1')) {
+				jest.spyOn(handle, 'sync').mockRejectedValueOnce(new Error('directory sync denied'));
+			}
+			return handle;
+		});
+		try {
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(500);
+			expect(upstream.commands).toEqual([]);
+			expect((await store.read('node-1'))?.initDispatchAttemptedAt).toBeDefined();
+		} finally {
+			openSpy.mockRestore();
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
 	it('rejects a direct admin Init when the node reports an unsafe L2 transaction size', async () => {
 		const upstream = await upgradeableNode(true, { ...SAFE_L2_PARAMETERS, maxTxSize: 15_001 });
 		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
@@ -770,6 +853,7 @@ describe('node api websocket proxy', () => {
 			expect(response.status).toBe(409);
 			expect(upstream.commands).toEqual([]);
 			expect(chainReads).toBe(0);
+			expect((await store.read('node-1'))?.initDispatchAttemptedAt).toBeUndefined();
 		} finally {
 			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 		}
