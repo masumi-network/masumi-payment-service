@@ -897,6 +897,8 @@ describe('node api websocket proxy', () => {
 
 		expect(end).toHaveBeenCalledTimes(1);
 		expect(errors).toHaveLength(1);
+		// A client that never half-closes must not keep the socket open.
+		expect(clientSocket.destroyed).toBe(true);
 	});
 
 	it('502s an upgrade the node refuses and keeps serving', async () => {

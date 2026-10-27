@@ -90,8 +90,18 @@ or in a snapshot of it.
 Add this entry to `/etc/crypttab` so systemd knows the mapping:
 
 ```
-hydra_data /dev/disk/by-id/scsi-0DO_Volume_hydra-data none luks
+hydra_data /dev/disk/by-id/scsi-0DO_Volume_hydra-data none luks,nofail
 ```
+
+Keep `nofail` in this entry. Without it, systemd makes the unlock a hard
+boot dependency and waits at the console for the passphrase with no timeout.
+SSH does not start, so the Host stays offline until someone types the
+passphrase in the DigitalOcean console. With `nofail`, the droplet boots with
+the volume locked. Unlock it over SSH with
+`systemctl start systemd-cryptsetup@hydra_data`, then run
+`systemctl start hydra-host`. The Host unit failed at boot on its missing mount,
+and `Restart=always` does not retry a failed dependency. Starting the unit
+mounts the volume through `RequiresMountsFor`.
 
 Persist the mapped filesystem in `/etc/fstab`:
 
@@ -99,8 +109,8 @@ Persist the mapped filesystem in `/etc/fstab`:
 /dev/mapper/hydra_data /mnt/hydra_data ext4 defaults,nofail,noatime 0 0
 ```
 
-`nofail` lets the droplet finish booting when the encrypted volume is locked or
-missing. That is safe here **only because the systemd unit below refuses to
+`nofail` in `/etc/crypttab` and `/etc/fstab` lets the droplet finish booting
+when the encrypted volume is locked or missing. That is safe here **only because the systemd unit below refuses to
 start without the mount**. After every reboot, confirm `cryptsetup status
 hydra_data`, `findmnt -no SOURCE /mnt/hydra_data`, and the Host service state.
 Without that guard, `nofail` plus a Docker restart policy is how a Host boots
@@ -703,8 +713,10 @@ finite cap. This formula is a guard, not a measured capacity claim. When the
 cap refuses a connection, the Host logs `control plane is at its N-connection
 cap`, at once and then at most once a minute while drops continue. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
 the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
-authenticated caller reaches it. The Host caps each client WebSocket message at
-4 MiB. It does not bound request rate or proxy HTTP byte volume.
+authenticated caller reaches it. The proxy caps each WebSocket message at
+4 MiB in both directions (`MAX_WS_MESSAGE_BYTES`), the same as the payment
+client's own frame cap. The Host does not bound request rate or proxy HTTP
+byte volume.
 
 The Control Plane ingress must enforce these limits before forwarding to port
 `8443`:

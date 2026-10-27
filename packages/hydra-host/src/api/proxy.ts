@@ -229,7 +229,10 @@ export function proxyWebSocket(
 		if (upgraded) {
 			clientSocket.destroy();
 		} else {
-			clientSocket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
+			// The server allows half-open sockets and Node drops its timeout after
+			// an upgrade, so destroy once the answer is flushed. Otherwise a client
+			// that never sends FIN holds the socket against the connection cap.
+			clientSocket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n', () => clientSocket.destroy());
 		}
 	};
 	clientSocket.once('close', () => upstream.terminate());

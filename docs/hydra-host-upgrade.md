@@ -39,7 +39,10 @@ The job has not been exercised against a live GHCR release in this review.
 Before replacing a Host, obtain `hydra-host-image.txt` and
 `hydra-host-image.txt.sig` from that release. Use the approved full source
 commit from the release review, not the commit claimed by the manifest. This
-example uses the GitHub CLI to download the two assets:
+example uses the GitHub CLI to download the two assets. Run it from a checkout
+of the approved commit, because the verifier path is relative to the repository
+root. On a droplet without a checkout, copy `verify-release-image` from that
+commit first and call it by its new path.
 
 ```bash
 release=0.30.0
@@ -240,8 +243,12 @@ session sweep connects them with the new token after Resume.
 
 1. Pause the Host and wait until its phase is **Paused**. Keep this window short:
    a stopped node cannot contest a Close.
-2. Replace the tokens in the Host's protected environment file. Restart the
-   same Host image with the same data volume and shutdown grace period.
+2. Replace the tokens in the Host's protected environment file. Then recreate
+   the container: `docker rm` it and run `docker create` again with the same
+   flags, the same verified image digest, the same data volume, and the same
+   shutdown grace period. A plain restart is not enough, because `docker start`
+   and `systemctl restart` keep the environment from the original
+   `docker create`. On Railway, update the variables and redeploy.
 3. Send `PATCH /hydra/host` with the Host `id` and each changed `userToken` or
    `adminToken`. Do this before Resume, since Resume uses the saved admin token.
    The service checks that each node is stopped with the new user token, then
@@ -250,12 +257,15 @@ session sweep connects them with the new token after Resume.
 4. Resume the Host. Check that each node starts and each enabled Head reconnects.
    If a session stays down, send the same `userToken` again to retry the refresh.
 
-VERIFIED (`src/services/hydra-host/registry.ts:435`,
+VERIFIED (`src/services/hydra-host/registry.ts:445`,
 `src/services/hydra-invite/provisioning.ts:365`,
-`src/services/hydra-invite/redemption-ports.ts:219`): The token update, node
+`src/services/hydra-invite/redemption-ports.ts:227`): A user token update, node
 provisioning, and redemption starts share the Host pause lease. A concurrent
-request gets `409` and can be retried after the token update finishes. Head
-adoption waits until Resume (`src/routes/api/hydra/head/create-head.ts:167`).
+request gets `409` and can be retried after the user token update finishes. A
+PATCH without `userToken`, such as an admin token or status change, takes no
+lease and is not fenced against them. Head
+adoption is refused with `409` while the Host is paused; retry it after Resume
+(`src/routes/api/hydra/head/create-head.ts:166-167`).
 
 An admin-only change does not restart node sessions. If you rotate both tokens,
 send both in the same PATCH request. Do not put token values in logs or shell

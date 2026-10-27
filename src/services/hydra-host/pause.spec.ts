@@ -560,17 +560,30 @@ describe('getHydraHostPauseState', () => {
 });
 
 describe('resumeHydraHost', () => {
-	it('starts the paused nodes, then clears the pause fenced on its timestamp', async () => {
+	it('starts the paused nodes, then clears the pause fenced on its timestamp and lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
 
 		await pause.resumeHydraHost('host-1');
 
 		expect(mockStartHostNode).toHaveBeenCalledTimes(2);
+		// Node starts can outlast the lease. A stop that took it meanwhile must win.
+		const leaseUntil = mockHostUpdateMany.mock.calls[0]?.[0]?.data?.pauseLeaseUntil;
+		expect(leaseUntil).toBeInstanceOf(Date);
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'host-1', pausedAt: PAUSED_AT },
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseLeaseUntil: leaseUntil },
 			// The redemption give-up counts from resumedAt, so a pause is not days of retries.
 			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: expect.any(Date) },
 		});
+	});
+
+	// Starts that outlast the lease let another holder take it. Resume must not
+	// report success for a pause it did not clear.
+	it('refuses when the fenced write no longer matches the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		// Lease claim, then the fenced Resume write, then the lease release.
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
 	});
 
 	// One node removed from the Host by hand must not keep the Host paused forever.

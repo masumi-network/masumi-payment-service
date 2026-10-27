@@ -126,7 +126,11 @@ Close and Fanout included, and the Host accepts it on those routes while
 `HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN` is `true`, which is the default so that
 a service not yet on node tokens keeps working. The Host logs the first time a
 request uses it. Set the variable to `false` once none does. Upgrade the Hosts
-before the payment service: an older Host knows only the Host-wide token.
+before the payment service: an older Host knows only the Host-wide token. The
+service also sends Init only through the Host's `POST /v1/nodes/{id}/init`. An
+older Host has no such route and answers `404`, so every Init on it fails with
+`503` "Hydra Init was not sent" until the Host is upgraded. Nothing is posted
+on chain in that case.
 
 `HYDRA_HOST_PUBLIC_EXCHANGE_URL` is the full URL that signed invites give to
 counterparties. It must end in `/exchange`. It must use HTTPS unless it points

@@ -13,6 +13,14 @@ previous run ends. A run with slow nodes or a slow chain lookup takes longer, so
 an alert can arrive more than one run after that bound. A run that finds no
 problem clears the clock.
 
+VERIFIED from `src/services/hydra-contest-watch/watch.ts` and
+`src/lib/hydra/hydra/head-init-validation.ts`: every run reads L1 for every
+Open, Closed or FanoutPossible Head, with two Blockfrost requests per Head
+(`assetsTransactions`, then `txsUtxos`). At one run per minute that is up to
+2,880 requests per Head per day, on the payment source's Blockfrost key, for
+each service instance that runs the job. Size the Blockfrost plan for it: a
+spent quota also fails the payment paths that use the same key.
+
 VERIFIED: the two outage reasons also add a `ContestWatchAlert` error to the
 Head's error list, so an operator without a webhook receiver still sees them.
 `HEAD_CLOSED` is only a webhook, because a planned Close is not an error.
@@ -30,6 +38,13 @@ Head's error list, so an operator without a webhook receiver still sees them.
    A paused Host stops its nodes, so every Open Head on it raises this alert
    once the pause outlasts the bound above.
    Resume the Host before the contestation deadline.
+   A running node whose history replay keeps failing raises this alert too,
+   because the watch uses only a completed, verified replay. Before you restore
+   a node that is running, look for the replay failure. For an enabled Head
+   with a live connection, it is a `CommandFailed` entry with input
+   `HistoryReplay` in the Head's error list. A disabled Head is watched through
+   a read-only observer that records no such entry, so search the service log
+   for `[HydraNode] History replay rejected a protocol frame` instead.
 3. If node persistence is lost, use the stored `initChainSlot` and
    `initChainHash` as the pre-Init replay point for `--start-chain-from`.
    REPORTED: [the preprod recovery drill](hydra-persistence-recovery-verification.md)
