@@ -19,6 +19,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { mainnetPeriodFloorViolation } from '../config.js';
 import { fsyncDir, writeFileAtomic } from '../registry/atomic-write.js';
 import { isPeerKeyGeneration, peerKeyDirectory } from '../registry/peer-key-directory.js';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
@@ -128,6 +129,8 @@ export function provisionNode(request: ProvisionRequest, deps: ProvisionDeps): P
 	if (deps.ledgerParamsRefusal) {
 		return Promise.reject(new ProvisionError(deps.ledgerParamsRefusal, 409));
 	}
+	const periodViolation = request.network === 'mainnet' ? mainnetPeriodFloorViolation(request) : null;
+	if (periodViolation) return Promise.reject(new ProvisionError(periodViolation, 400));
 	const key = request.idempotencyKey.trim();
 	if (key.length === 0) {
 		return Promise.reject(
