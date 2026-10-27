@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table-actions-column';
 import { CopyButton } from '@/components/ui/copy-button';
 import { cn, shortenAddress } from '@/lib/utils';
+import { shortenRecordId } from '@/lib/readable-reference';
 import type { HydraHead, HydraInvite } from '@/lib/hooks/useHydraHeads';
 import {
   formatDate,
@@ -128,7 +129,7 @@ export function HydraHeadTable({
               <td className="p-4 pl-6">
                 <div className="flex flex-col gap-1">
                   <span className="font-mono text-sm text-muted-foreground">
-                    {invite.nonce.slice(0, 12)}…
+                    Invite {shortenRecordId(invite.id)}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     Invited {formatDate(invite.createdAt)}
