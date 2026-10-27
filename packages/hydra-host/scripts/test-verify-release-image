@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+test_dir=$(mktemp -d)
+trap 'rm -rf "$test_dir"' EXIT
+
+private_key="$test_dir/private.pem"
+public_key="$test_dir/public.pem"
+manifest="$test_dir/hydra-host-image.txt"
+signature="$manifest.sig"
+image=ghcr.io/masumi-network/masumi-payment-service-hydra-host
+tag=1.2.3
+commit=0123456789abcdef0123456789abcdef01234567
+digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+openssl ecparam -name prime256v1 -genkey -noout -out "$private_key"
+openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null
+printf 'image=%s\ndigest=%s\nrelease=%s\ncommit=%s\n' \
+	"$image" "$digest" "$tag" "$commit" > "$manifest"
+openssl dgst -sha256 -sign "$private_key" -out "$signature" "$manifest"
+
+verified=$("$script_dir/verify-release-image" "$public_key" "$manifest" "$signature" "$image" "$tag" "$commit")
+[[ "$verified" == "$image@$digest" ]]
+
+expect_failure() {
+	if "$script_dir/verify-release-image" "$public_key" "$manifest" "$signature" "$@" > "$test_dir/result" 2>/dev/null; then
+		echo 'verification unexpectedly accepted a changed release' >&2
+		exit 1
+	fi
+	[[ ! -s "$test_dir/result" ]]
+}
+
+expect_failure ghcr.io/other/project-hydra-host "$tag" "$commit"
+expect_failure "$image" 1.2.4 "$commit"
+expect_failure "$image" "$tag" ffffffffffffffffffffffffffffffffffffffff
+
+printf '\n' >> "$manifest"
+expect_failure "$image" "$tag" "$commit"
+
+printf 'image=%s\ndigest=sha256:bad\nrelease=%s\ncommit=%s\n' \
+	"$image" "$tag" "$commit" > "$manifest"
+openssl dgst -sha256 -sign "$private_key" -out "$signature" "$manifest"
+expect_failure "$image" "$tag" "$commit"
+
+echo 'Hydra Host release signature checks passed'

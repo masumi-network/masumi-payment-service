@@ -27,6 +27,8 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	isHydraHeadOnPausedHost: jest.fn(async () => false),
 	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
 	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
+	getHydraHostPauseState: jest.fn(),
+	withHostPauseLease: jest.fn(),
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/auth', () => ({

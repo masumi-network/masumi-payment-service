@@ -42,6 +42,7 @@ import {
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
+import { applyControlPlaneLimits } from './server-limits.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -218,6 +219,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 			// writes (the proxy strips a same-name upstream header; raw-socket
 			// upgrade replies bypass it, but crawlers never send Upgrade).
 			response.setHeader('X-Robots-Tag', 'noindex, nofollow');
+			// Per response, so an answer pipelined behind a proxied one does not
+			// inherit its opt-out from the idle timeout.
+			response.setTimeout(server.timeout);
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
 
@@ -320,13 +324,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 		});
 	});
 
-	// Bound how long a connection may occupy the control plane. It normally sits
-	// behind a load balancer, but the peer plane is public and there is no reason
-	// to assume this port never will be. Proxied WebSockets opt out of this
-	// per-socket, since a quiet head is legitimately silent for long stretches.
-	server.headersTimeout = 15_000;
-	server.requestTimeout = 30_000;
-	server.keepAliveTimeout = 10_000;
+	// Proxied node traffic opts out of the idle timeout per socket, since a quiet
+	// head is legitimately silent for long stretches.
+	applyControlPlaneLimits(server, config.ports.capacity, (message) => logger.warn(message));
 
 	// WebSocket upgrades never reach the request handler, so they are
 	// authenticated and authorised here on their own path.
@@ -699,6 +699,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 			return;
 		}
 
+		// Only an authenticated caller gets here, and a node may take its time.
+		// Per response, not per socket: a pipelined response gets the socket,
+		// and with it this timeout, only when its turn comes. After the last
+		// answer Node arms the keep-alive timeout itself.
+		response.setTimeout(0);
 		proxyHttp(request, response, record.apiPort, target.subPath, query, (message) => logger.error(`[api] ${message}`));
 	}
 

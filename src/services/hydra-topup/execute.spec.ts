@@ -29,6 +29,7 @@ const mockFindUniqueHead = jest.fn() as AnyMock;
 const mockCreateHeadError = jest.fn() as AnyMock;
 const mockFindUniqueOrThrowHotWallet = jest.fn() as AnyMock;
 const mockUpdateManyTopup = jest.fn() as AnyMock;
+const mockUpdateTopup = jest.fn() as AnyMock;
 const mockFindFirstTopup = jest.fn() as AnyMock;
 const mockUpdateHead = jest.fn() as AnyMock;
 const mockTxFindFirst = jest.fn() as AnyMock;
@@ -47,6 +48,7 @@ const mockReserveAndSubmitHydraTopup = jest.fn() as AnyMock;
 const mockReconcilePendingHydraTopup = jest.fn() as AnyMock;
 const mockInterpretCardanoTxSubmitResult = jest.fn() as AnyMock;
 const mockLoggerError = jest.fn() as AnyMock;
+const mockCarveExactUtxo = jest.fn() as AnyMock;
 
 /** A stand-in for `HydraHttpResponseError`, without pulling in the real HTTP stack. */
 class FakeHydraHttpResponseError extends Error {
@@ -80,6 +82,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hydraHeadError: { create: mockCreateHeadError },
 		hotWallet: { findUniqueOrThrow: mockFindUniqueOrThrowHotWallet },
 		hydraTopup: {
+			update: mockUpdateTopup,
 			updateMany: mockUpdateManyTopup,
 			findFirst: mockFindFirstTopup,
 		},
@@ -138,7 +141,8 @@ jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 }));
 
 jest.unstable_mockModule('./pre-split', () => ({
-	carveExactUtxo: jest.fn(),
+	CARVE_VALIDITY_MS: 10 * 60 * 1000,
+	carveExactUtxo: mockCarveExactUtxo,
 	HydraPreSplitError: class extends Error {},
 }));
 
@@ -182,6 +186,7 @@ beforeEach(() => {
 	});
 	mockTxFindFirst.mockResolvedValue(null); // no active top-up
 	mockTxCreate.mockResolvedValue({ id: TOPUP_ID });
+	mockUpdateTopup.mockResolvedValue({ id: TOPUP_ID });
 	mockGenerateWalletExtended.mockResolvedValue({
 		wallet: {},
 		address: 'addr_test1...',
@@ -199,6 +204,66 @@ beforeEach(() => {
 	mockUpdateManyTopup.mockResolvedValue({ count: 1 });
 	mockUpdateHead.mockResolvedValue(undefined);
 	mockReleaseHotWalletAfterL1.mockResolvedValue(undefined);
+});
+
+describe('executeHydraTopup pre-split', () => {
+	it('stores the signed hash and bound before submission, then releases a confirmed carve after a draft refusal', async () => {
+		const carved = {
+			input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+			output: { address: 'addr_test1...', amount: [{ unit: 'lovelace', quantity: '5000000' }] },
+		};
+		const wallet = { getUtxos: jest.fn(async () => [carved]) };
+		mockGenerateWalletExtended.mockResolvedValue({
+			wallet,
+			address: 'addr_test1...',
+			utxos: [carved],
+			vKey: 'vkey',
+			blockchainProvider: {},
+		});
+		mockCarveExactUtxo.mockImplementation(
+			async (params: { onCarveSubmitted: (hash: string, slot: bigint) => Promise<void> }) => {
+				await params.onCarveSubmitted('b'.repeat(64), 600n);
+				return carved;
+			},
+		);
+		mockBuildValidatedHydraCommit.mockRejectedValue(new FakeHydraCommitFlowError('draft rejected'));
+
+		await expect(
+			executeHydraTopup({ headId: HEAD_ID, filter: 'ada-only', exact: { unit: 'lovelace', amount: 5_000_000n } }),
+		).rejects.toThrow('draft rejected');
+		expect(mockUpdateTopup).toHaveBeenCalledWith({
+			where: { id: TOPUP_ID, status: 'Preparing' },
+			data: { splitTxHash: 'b'.repeat(64), splitInvalidHereafterSlot: 600n },
+		});
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID, 'claim-token-1');
+	});
+});
+
+describe('executeHydraTopup deposit claim', () => {
+	it('refuses a second deposit while the earlier L1 deposit is confirmed but not absorbed', async () => {
+		mockTxFindFirst.mockImplementation(async (query: { where: { status: { in?: string[] } | string } }) => {
+			const status = query.where.status;
+			return typeof status === 'object' && status.in?.includes('Confirmed')
+				? { id: 'earlier-topup', status: 'Confirmed' }
+				: null;
+		});
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringContaining('not been absorbed or recovered'),
+		});
+
+		expect(mockTxFindFirst).toHaveBeenCalledWith({
+			where: {
+				hydraLocalParticipantId: PARTICIPANT_ID,
+				status: { in: ['Pending', 'Confirmed'] },
+			},
+			orderBy: { createdAt: 'desc' },
+		});
+		expect(mockTxCreate).not.toHaveBeenCalled();
+		expect(mockGenerateWalletExtended).not.toHaveBeenCalled();
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID, 'claim-token-1');
+	});
 });
 
 describe('executeHydraTopup — DepositTooLarge draft refusal', () => {

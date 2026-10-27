@@ -141,6 +141,7 @@ export async function createBoundHydraHead(input: {
 							select: {
 								id: true,
 								walletId: true,
+								hydraHostId: true,
 								hydraHeadId: true,
 								Wallet: {
 									select: {
@@ -155,6 +156,15 @@ export async function createBoundHydraHead(input: {
 						}
 						if (localParticipant.hydraHeadId !== null) {
 							throw createHttpError(409, 'Local participant is already assigned to a head');
+						}
+						// The reservation may have started before maintenance. Lock the
+						// Host row so a late adoption cannot create a head after the pause
+						// sampled its nodes, or while a token is being rotated.
+						const hostRows = await tx.$queryRaw<Array<{ pausedAt: Date | null }>>(Prisma.sql`
+							SELECT "pausedAt" FROM "HydraHost" WHERE "id" = ${localParticipant.hydraHostId} FOR SHARE
+						`);
+						if (hostRows.length !== 1 || hostRows[0].pausedAt !== null) {
+							throw createHttpError(409, 'the local participant Host is paused; resume it before creating a head');
 						}
 						if (localParticipant.walletId !== relation.localHotWalletId) {
 							throw createHttpError(400, 'Local participant does not belong to the Hydra relation wallet');

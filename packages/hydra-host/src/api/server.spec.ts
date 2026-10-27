@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import type { AddressInfo } from 'node:net';
-import { request as httpRequest, type Server } from 'node:http';
+import { connect, type AddressInfo, type Socket } from 'node:net';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadHostConfig, type EnvSource } from '../config.js';
-import { PortAllocator } from '../registry/ports.js';
+import { MAX_NODES_PER_NAMESPACE, PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
-import { createControlPlane } from './server.js';
+import { createControlPlane, type ServerDeps } from './server.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { deriveNodeToken } from './node-token.js';
 import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
@@ -43,6 +43,7 @@ let warnings: string[];
 let checkPeerTarget: ProvisionDeps['checkPeerTarget'];
 let resolvePeerHostname: PeerHostnameResolver;
 let exchangeStore: ExchangeStore;
+let serverDeps: ServerDeps;
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
@@ -65,7 +66,7 @@ beforeEach(async () => {
 	// The supervisor is only nudged by the API; its behaviour is tested elsewhere.
 	const supervisor = { tick: async () => undefined } as unknown as Supervisor;
 
-	server = createControlPlane({
+	serverDeps = {
 		config,
 		store,
 		exchange: exchangeStore,
@@ -80,7 +81,8 @@ beforeEach(async () => {
 			},
 			error: () => undefined,
 		},
-	});
+	};
+	server = createControlPlane(serverDeps);
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -115,7 +117,23 @@ describe('peer firewall refresh', () => {
 	});
 });
 
+function countConnections(target: Server): Promise<number> {
+	return new Promise((resolve, reject) =>
+		target.getConnections((error, count) => (error ? reject(error) : resolve(count))),
+	);
+}
+
+async function waitFor(condition: () => Promise<boolean>): Promise<void> {
+	for (let attempt = 0; attempt < 300; attempt += 1) {
+		if (await condition()) return;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error('condition not met');
+}
+
 afterEach(async () => {
+	// A failed socket test can leave a connection open, and close waits for it.
+	server.closeAllConnections();
 	await new Promise<void>((resolve) => server.close(() => resolve()));
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
@@ -222,6 +240,54 @@ describe('control plane auth', () => {
 	// /config there discloses signing-key paths.
 	it('does not proxy the node API', async () => {
 		expect((await call('GET', '/v1/nodes/node-1/config', { token: ADMIN })).status).toBe(404);
+	});
+});
+
+describe('control plane connection limits', () => {
+	it('refuses a connection past the cap and says so in the log', async () => {
+		const { port } = server.address() as AddressInfo;
+		const open = (): Promise<Socket> =>
+			new Promise((resolve, reject) => {
+				const socket = connect(port, '127.0.0.1', () => resolve(socket));
+				socket.on('error', reject);
+			});
+		const held: Socket[] = [];
+		try {
+			for (let index = 0; index < server.maxConnections; index += 1) held.push(await open());
+			await waitFor(async () => (await countConnections(server)) === server.maxConnections);
+
+			const refused = await open();
+			held.push(refused);
+			let isRefusedClosed = false;
+			refused.once('close', () => (isRefusedClosed = true)).resume();
+			await waitFor(async () => isRefusedClosed);
+
+			expect(warnings.some((warning) => warning.includes('connection cap'))).toBe(true);
+		} finally {
+			for (const socket of held) socket.destroy();
+		}
+	});
+
+	it('leaves connection headroom at the largest supported Head capacity', () => {
+		const overrides: Record<string, string> = {
+			HYDRA_HOST_PEER_PORT_START: '10000',
+			HYDRA_HOST_API_PORT_START: '20000',
+			HYDRA_HOST_MONITORING_PORT_START: '30000',
+			HYDRA_HOST_PEER_PORT_COUNT: String(MAX_NODES_PER_NAMESPACE),
+		};
+		const config = {
+			...loadHostConfig({ get: (key) => overrides[key] ?? env.get(key) }),
+			dataDir,
+		};
+		const ports = new PortAllocator(config.ports);
+		const highCapacityServer = createControlPlane({
+			...serverDeps,
+			config,
+			ports,
+			provision: { ...serverDeps.provision, ports },
+		});
+		expect(highCapacityServer.maxConnections).toBeGreaterThan(config.ports.capacity);
+		expect(highCapacityServer.maxConnections).toBeLessThan(config.ports.capacity * 16);
 	});
 });
 
@@ -390,6 +456,119 @@ describe('lifecycle guards over HTTP', () => {
 		await call('POST', `/v1/nodes/${created.nodeId}/escrow-ack`, { token: ADMIN });
 		return created.nodeId;
 	};
+
+	/** Point a running node record at a fake node that answers each API path after its delay, naming the path. */
+	const withSlowNode = async (
+		idempotencyKey: string,
+		delaysMs: Record<string, number>,
+		run: (nodeId: string) => Promise<void>,
+	): Promise<void> => {
+		const slowNode = createServer((request, response) => {
+			const { pathname } = new URL(request.url ?? '/', 'http://node');
+			setTimeout(() => response.end(JSON.stringify({ answered: pathname })), delaysMs[pathname] ?? 0);
+		});
+		await new Promise<void>((resolve) => slowNode.listen(0, '127.0.0.1', resolve));
+		try {
+			const nodeId = await provisionAndAck(idempotencyKey);
+			await new NodeRegistryStore(dataDir).update(nodeId, (current) => ({
+				...current,
+				state: 'Running',
+				desired: 'Running',
+				apiPort: (slowNode.address() as AddressInfo).port,
+			}));
+			await run(nodeId);
+		} finally {
+			slowNode.closeAllConnections();
+			await new Promise<void>((resolve) => slowNode.close(() => resolve()));
+		}
+	};
+
+	/**
+	 * Write raw HTTP/1.1 on one socket to the Host. Report what came back once
+	 * the socket closes, or once `isDone` holds, which then closes it.
+	 */
+	const rawExchange = (
+		payload: string,
+		isDone: (text: string) => boolean = () => false,
+	): Promise<{ text: string; closedAfterMs: number }> =>
+		new Promise((resolve) => {
+			const startedAt = Date.now();
+			let text = '';
+			const socket = connect((server.address() as AddressInfo).port, '127.0.0.1', () => socket.write(payload));
+			socket.on('data', (chunk: Buffer) => {
+				text += chunk.toString();
+				if (isDone(text)) socket.destroy();
+			});
+			socket.on('close', () => resolve({ text, closedAfterMs: Date.now() - startedAt }));
+		});
+
+	const proxiedGet = (nodeId: string, path: string): string =>
+		`GET /v1/nodes/${nodeId}/api${path} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${ADMIN}\r\n\r\n`;
+
+	// A node may take longer to answer than the idle timeout allows a caller
+	// who sends nothing. An authenticated proxy request waits for it.
+	it('lets a proxied request outlast the idle timeout while the node answers', async () => {
+		await withSlowNode('idem-slow-node', { '/head': 400 }, async (nodeId) => {
+			server.timeout = 200;
+
+			const answered = await call('GET', `/v1/nodes/${nodeId}/api/head`, { token: ADMIN });
+
+			expect(answered.status).toBe(200);
+			expect(await answered.text()).toBe('{"answered":"/head"}');
+		});
+	});
+
+	it('answers a proxied request pipelined behind another one past the idle timeout', async () => {
+		await withSlowNode('idem-pipelined', { '/head': 300, '/snapshot': 900 }, async (nodeId) => {
+			server.timeout = 200;
+
+			const bothAnswered = (received: string) =>
+				received.includes('{"answered":"/head"}') && received.includes('{"answered":"/snapshot"}');
+
+			const { text } = await rawExchange(proxiedGet(nodeId, '/head') + proxiedGet(nodeId, '/snapshot'), bothAnswered);
+
+			expect(bothAnswered(text)).toBe(true);
+		});
+	});
+
+	// The proxied answer opts out of the idle timeout. A Host answer queued
+	// behind it must not inherit that, or a caller who never reads it holds
+	// the socket open for good.
+	it('closes a slow reader of an answer pipelined behind a proxied one', async () => {
+		await withSlowNode('idem-slow-reader', {}, async (nodeId) => {
+			server.timeout = 300;
+			const hostSocketClosed = new Promise<number>((resolve) => {
+				server.once('connection', (hostSocket: Socket) => {
+					const startedAt = Date.now();
+					hostSocket.on('close', () => resolve(Date.now() - startedAt));
+				});
+			});
+			const bundle = 'GET /docs/assets/swagger-ui-bundle.js HTTP/1.1\r\nHost: x\r\n\r\n';
+			const reader = connect((server.address() as AddressInfo).port, '127.0.0.1', () => {
+				reader.pause();
+				reader.write(proxiedGet(nodeId, '/head') + bundle.repeat(20));
+			});
+			reader.on('error', () => undefined);
+			try {
+				expect(await hostSocketClosed).toBeLessThan(3_000);
+			} finally {
+				reader.destroy();
+			}
+		});
+	}, 10_000);
+
+	it('closes an idle keep-alive socket on the keep-alive timeout after a proxied answer', async () => {
+		await withSlowNode('idem-keep-alive', {}, async (nodeId) => {
+			server.keepAliveTimeout = 100;
+			server.timeout = 5_000;
+
+			const { text, closedAfterMs } = await rawExchange(proxiedGet(nodeId, '/head'));
+
+			expect(text).toContain('{"answered":"/head"}');
+			// Node adds a one-second buffer to the keep-alive timeout.
+			expect(closedAfterMs).toBeLessThan(3_000);
+		});
+	});
 
 	// Removal destroys the persistence dir — the only copy of head state here.
 	// A node can only hold that state once it has peers, because --peer becomes

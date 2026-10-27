@@ -33,19 +33,19 @@ export function outstandingOwnTopupWhere(topupId: string): Prisma.HydraTopupWher
 /**
  * Whether the wallet can be handed back now.
  *
- * A signed carve is a transaction that may be in the mempool, and a failure
- * afterwards says nothing about that: until it settles, the inputs it spends
- * still read as unspent, so handing the wallet back lets the next batch tick
- * build over them and lose one of the two to `BadInputsUTxO`. A confirmed
- * deposit settles the carve too, since the deposit spends the carve's output.
+ * A signed carve may be in the mempool. Until it confirms, its inputs still
+ * read as unspent, so handing the wallet back lets a batch tick build over
+ * them. A confirmed carve is safe to release when no deposit is outstanding.
+ * A confirmed deposit also settles the carve because it spends its output.
  */
 export function canReleaseTopupWallet(state: {
 	outstandingOwnTopup: boolean;
 	carveTxHash: string | null;
+	carveConfirmed: boolean;
 	depositConfirmed: boolean;
 }): boolean {
 	if (state.outstandingOwnTopup) return false;
-	return state.carveTxHash === null || state.depositConfirmed;
+	return state.carveTxHash === null || state.carveConfirmed || state.depositConfirmed;
 }
 
 /**
