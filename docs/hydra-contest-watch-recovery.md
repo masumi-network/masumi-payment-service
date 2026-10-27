@@ -7,9 +7,11 @@ contestation period, bounded to one through five minutes. `L1_OBSERVER_UNAVAILAB
 means the separate chain lookup
 failed for that long while the node remained observable.
 
-VERIFIED from `src/services/monitoring/scheduler/jobs.ts`: the watch runs once
-a minute, so an alert can arrive up to two minutes after that bound. One tick
-on which the node or the lookup works again restarts the clock.
+VERIFIED from `src/services/monitoring/scheduler/jobs.ts` and
+`src/utils/async-interval/index.ts`: each watch run starts 60 seconds after the
+previous run ends. A run with slow nodes or a slow chain lookup takes longer, so
+an alert can arrive more than one run after that bound. A run that finds no
+problem clears the clock.
 
 1. On `HEAD_CLOSED`, check the Head's current L1 state and contestation
    deadline. Keep the local node running so it can post a Contest. Confirm on

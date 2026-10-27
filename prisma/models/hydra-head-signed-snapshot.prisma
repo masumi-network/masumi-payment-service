@@ -3,8 +3,8 @@
 /// survives the loss of the node's own persistence. It is evidence, and the
 /// input a contest needs. A stock hydra-node 2.3.0 restored after storage
 /// loss did not accept it by side-load (`SideLoadSvNumberInvalid`).
-/// The party signatures cover the snapshot's output multiset only. The UTxO
-/// reference keys and the confirmed transaction list stored with it are not signed.
+/// The party signatures do not cover the UTxO reference keys or the confirmed
+/// transaction list stored with it.
 model HydraHeadSignedSnapshot {
   hydraHeadId String    @id
   HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
