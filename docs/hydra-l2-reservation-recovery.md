@@ -50,7 +50,9 @@ the confirmation that would resolve the reservation. Resolve the stall first.
 The recovery job requires healthy, verified Head history and a fresh Head
 clock past the body's validity bound plus grace. For an initial lock with
 recorded inputs and a trusted value floor, it records and submits a release
-nudge that spends those inputs. It releases the reservation only when the
+nudge. The nudge spends exactly those inputs. Its one output carries at least
+the purchases' paid funds, which are the value floor. It releases the
+reservation only when the
 nudge's exact nonce-tagged output bytes appear in a verified current snapshot.
 For a Final Head, it also requires that output in the verified final snapshot
 and a confirmed L1 fanout. See `l2-release-nudge-proof.ts`,
@@ -76,8 +78,13 @@ reserved wallet, and restores request state in one serializable transaction.
    `POST /api/v1/hydra/head/l2-reservations/release` with `headId`,
    `transactionId`, `expectedUpdatedAt` from step 2, and
    `acknowledgeUnprovable: true`. The server rechecks the row and live Head
-   evidence and may refuse the release. A closed or Final Head cannot use
-   this endpoint.
+   evidence and may refuse the release. Only an Open Head that is not
+   closing can use this endpoint.
+
+A Final Head with a held reservation whose nudge never applied has no
+supported release. The pending L2 transaction also blocks the Head's final
+handoff (`final-handoff.ts`). Do not change the rows by hand. Escalate it to
+the payment service maintainers with the Head id and the transaction id.
 
 This is an operator risk decision, **not proof that the body never applied**.
 The admin route stamps `l2ReleasedByOperatorAt` and restores wallet and request

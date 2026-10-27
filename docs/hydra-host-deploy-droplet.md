@@ -863,11 +863,19 @@ update `src/services/hydra-host/reviewed-catalogue.ts` before placement. Press
    your administrative range.
 6. Install `/usr/local/sbin/hydra-peer-firewall`. Run `baseline` before the
    Host starts. Run `refresh` on its timer and after membership changes.
-7. Use separate TLS Control and Exchange Plane load balancers. Set TCP health
-   checks on backend ports 8443 and 8444. Keep the local 401 request as a
-   manual check.
-8. Volume snapshots scheduled and restore tested; unlock secret and escrowed keys
-   stored separately.
+7. Enable `hydra-peer-firewall-baseline.service`.
+8. Install `/usr/local/sbin/hydra-peer-egress` and
+   `/etc/default/hydra-peer-egress`. Run `baseline`, then `verify`.
+9. Include `/etc/nftables.d/hydra-peer.nft` and
+   `/etc/nftables.d/hydra-peer-egress.nft` from `/etc/nftables.conf`, after
+   `flush ruleset`.
+10. The Host unit runs `hydra-peer-firewall baseline` and
+    `hydra-peer-egress baseline` as `ExecStartPre`.
+11. Use separate TLS Control and Exchange Plane load balancers. Set TCP health
+    checks on backend ports 8443 and 8444. Keep the local 401 request as a
+    manual check.
+12. Volume snapshots scheduled and restore tested; unlock secret and escrowed
+    keys stored separately.
 
 ## Related
 
