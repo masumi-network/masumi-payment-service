@@ -398,6 +398,67 @@ describe('runHydraContestWatch', () => {
 		},
 	);
 
+	it('records a snapshot gap while the L1 observer still hangs', async () => {
+		mockFindMany.mockResolvedValue([{ ...watchHead(), status: HydraHeadStatus.Closed }] as never);
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.Closed,
+			closedSnapshotNumber: 3n,
+			verifiedSnapshotNumber: 5n,
+		});
+		let answerObserver!: (value: { state: 'closed'; latestTxHash: string }) => void;
+		mockObserveHeadChain.mockReturnValue(
+			new Promise((resolve) => {
+				answerObserver = resolve;
+			}),
+		);
+		const running = watch.runHydraContestWatch();
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			expect(mockUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ contestGapSignature: '3<5' }) }),
+			);
+		} finally {
+			answerObserver({ state: 'closed', latestTxHash: 'c'.repeat(64) });
+			await running;
+		}
+	});
+
+	// A lagging L1 read of Open must not hide the node's own evidence of a Close.
+	it('compares a Closed node while the L1 observer still reads Open', async () => {
+		mockFindMany.mockResolvedValue([{ ...watchHead(), status: HydraHeadStatus.Closed }] as never);
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.Closed,
+			closedSnapshotNumber: 3n,
+			verifiedSnapshotNumber: 5n,
+		});
+		await watch.runHydraContestWatch();
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestGapSignature: '3<5' }) }),
+		);
+		// The disagreement itself is still an issue for an operator.
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: 'NODE_UNOBSERVABLE' }) }),
+		);
+	});
+
+	it('keeps a node that answered observable when the gap write fails', async () => {
+		mockFindMany.mockResolvedValue([{ ...watchHead(), status: HydraHeadStatus.Closed }] as never);
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.Closed,
+			closedSnapshotNumber: 3n,
+			verifiedSnapshotNumber: 5n,
+		});
+		mockUpdateMany.mockImplementation((async (args: { data: Record<string, unknown> }) => {
+			if ('contestGapSignature' in args.data) throw new Error('database unavailable');
+			return { count: 1 };
+		}) as never);
+		mockObserveHeadChain.mockResolvedValue({ state: 'closed', latestTxHash: 'c'.repeat(64) });
+		await watch.runHydraContestWatch();
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: 'NODE_UNOBSERVABLE' }) }),
+		);
+	});
+
 	it('keeps watching a disabled Closed head through a separate read-only socket', async () => {
 		mockFindMany.mockResolvedValue([
 			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: false, ...empty },

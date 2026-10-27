@@ -136,6 +136,18 @@ describe('carveExactUtxo', () => {
 		expect(recorded).toEqual([TX]);
 	});
 
+	// The carve already went out, so the caller must see a pre-split failure, not a raw database error.
+	it('reports a carve it could not record after submission as a pre-split failure', async () => {
+		const params = baseParams({
+			submitCarveTx: jest.fn(async () => TX) as AnyMock,
+			onCarveSubmitted: async () => {
+				throw new Error('record to update not found');
+			},
+		});
+
+		await expect(carveExactUtxo(params)).rejects.toThrow(HydraPreSplitError);
+	});
+
 	it('signs a finite validity bound and records it with the hash before submission', async () => {
 		const wallet = { signTx: jest.fn(async () => 'signed'), submitTx: jest.fn(async (_signed: string) => TX) };
 		const record = jest.fn(async (_hash: string, _slot: bigint) => {

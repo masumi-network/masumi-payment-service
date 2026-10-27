@@ -7,6 +7,12 @@ contestation period, bounded to one through five minutes. `L1_OBSERVER_UNAVAILAB
 means the separate chain lookup
 failed for that long while the node remained observable.
 
+VERIFIED from `src/services/monitoring/scheduler/jobs.ts` and
+`src/utils/async-interval/index.ts`: each watch run starts 60 seconds after the
+previous run ends. A run with slow nodes or a slow chain lookup takes longer, so
+an alert can arrive more than one run after that bound. A run that finds no
+problem clears the clock.
+
 1. On `HEAD_CLOSED`, check the Head's current L1 state and contestation
    deadline. Keep the local node running so it can post a Contest. Confirm on
    L1 that a Contest with the latest signed snapshot lands before the deadline.
@@ -17,6 +23,9 @@ failed for that long while the node remained observable.
    original keys and volume. Do not create a new Head identity. Repeat the L1
    check after the node reconnects. A restarted node may need time to replay
    its history before it can compare snapshots.
+   A paused Host stops its nodes, so every Open Head on it raises this alert
+   once the pause outlasts the bound above.
+   Resume the Host before the contestation deadline.
 3. If node persistence is lost, use the stored `initChainSlot` and
    `initChainHash` as the pre-Init replay point for `--start-chain-from`.
    REPORTED: [the preprod recovery drill](hydra-persistence-recovery-verification.md)
