@@ -59,7 +59,6 @@ import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame
 import { assertSafeFirstHistorySnapshot, isIdenticalSignedSnapshotRedelivery } from './node-history-snapshot-guards';
 import { pageClosedBeforeHeadExisted } from './node-history-page';
 import type { HistoryReplayHost } from './node-history-replay-host';
-import { toConfirmedSnapshotPayload } from './signed-snapshot';
 import { HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
@@ -611,9 +610,6 @@ export class HydraHistoryReplay {
 		const accumulator = computeAccumulator([...signed.outputs.values()]);
 		const adopt = (computedAccumulator: string) => {
 			const verifiedSnapshot = completeHydraSnapshotVerification(signed, computedAccumulator);
-			// Every party signed it, so it can win a contest even when this replay
-			// rejects the transition that led to it.
-			this.host.onSignedSnapshotVerified?.(toConfirmedSnapshotPayload(parsedMessage));
 			return this.adoptHistorySnapshot(parsedMessage, verifiedSnapshot, pass);
 		};
 		const failCurrent = (error: unknown) => {
@@ -675,6 +671,14 @@ export class HydraHistoryReplay {
 			),
 		];
 		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
+			// Every party signed it, so it can win a contest even though this replay
+			// rejects the transition that led to it. Store it before failing.
+			this.host.persistVerifiedSnapshot?.(parsedMessage)?.catch((error: unknown) =>
+				logger.warn('[HydraNode] Could not store a signed snapshot whose transition failed', {
+					number: verifiedSnapshot.number,
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			);
 			// Name the transition. This rejection stops the head forming a live
 			// session at all, so it is the last thing anyone hears before every L2
 			// operation starts failing closed; "somewhere in the history" is not

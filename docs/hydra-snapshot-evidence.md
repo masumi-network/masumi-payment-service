@@ -2,7 +2,7 @@
 
 ## Storage behavior
 
-- VERIFIED (code): `src/lib/hydra/hydra/node-history-replay.ts` calls `persistVerifiedSnapshot` only after party signatures and the accumulator pass. It also checks the predecessor transition for snapshots after the first one. Replay waits for the write before it adopts a new snapshot. A failed write fails the history pass.
+- VERIFIED (code): `src/lib/hydra/hydra/node-history-replay.ts` calls `persistVerifiedSnapshot` only after party signatures and the accumulator pass. It also checks the predecessor transition for snapshots after the first one. Replay waits for the write before it adopts a new snapshot. A failed write fails the history pass. When the predecessor transition fails, replay still starts the write for the snapshot that transition reached, logs a failed write, and then fails the pass.
 - VERIFIED (code): `src/services/hydra-snapshot-store/store.ts` writes one append-only row per head, snapshot number, and snapshot version. It compares authenticated fields and signatures on redelivery. A conflicting signed commitment fails closed. A different UTxO reference map with the same signed commitment leaves the first stored map intact.
 - VERIFIED (code): The row contains the snapshot number, version, accumulator, UTxO partitions, deposit transaction ID, and party signatures. It excludes the unsigned `confirmed` transaction list. Hydra 2.3 signatures bind the output multiset, not each UTxO reference. The stored reference map therefore remains endpoint-trusted evidence, not signed evidence.
 - VERIFIED (code): The connection manager and read-only contest observer both pass verified frames to the store. The Prisma migration must be applied before enabling this code.

@@ -487,16 +487,17 @@ will show them exactly once before sealing them. Without them you cannot
 recover funds from a head whose service database is gone. The head details
 dialog warns until you do it.
 
-**The newest signed snapshot is kept outside the node.** Each time the service
-verifies that every party signed a snapshot, it stores the newest one for that
-head in `HydraHeadSignedSnapshot`. When the replay rejects a transition, it
-still stores the snapshot that transition reached. It stores no later snapshot,
-because the replay stops there. The row holds `ConfirmedSnapshot` JSON equivalent
-to what `GET /snapshot` returns. No API or admin page shows it, so read it with
-SQL. If a node loses its own persistence, this row is the evidence of what the
-head last agreed. It does not make a restored node
-contest by itself: in our hydra-node 2.3.0 test, a node restored after storage
-loss refused a side-load of the stored snapshot (`SideLoadSvNumberInvalid`).
+**Signed snapshots are kept outside the node.** Each time the service
+verifies that every party signed a snapshot, it stores that snapshot in
+`HydraStoredSnapshot`, one row per snapshot number and version. When the replay
+rejects a transition, it still stores the snapshot that transition reached. It
+stores no later snapshot, because the replay stops there. No API or admin page
+shows these rows, so read them with SQL. See
+[hydra-snapshot-evidence.md](hydra-snapshot-evidence.md) for what a row holds.
+If a node loses its own persistence, these rows are the evidence of what the
+head agreed. They do not make a restored node contest by itself: in our
+hydra-node 2.3.0 test, a node restored after storage loss refused a side-load
+of the stored snapshot (`SideLoadSvNumberInvalid`).
 
 **Closing.** Close from the head's action menu. Keep the node online through
 the contestation period so it can contest an old snapshot. This service never
