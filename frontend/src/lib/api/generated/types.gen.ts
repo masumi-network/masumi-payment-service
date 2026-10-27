@@ -14753,7 +14753,7 @@ export type PostHydraHeadTopupData = {
 
 export type PostHydraHeadTopupErrors = {
     /**
-     * Head has no local participant, or `exactAmount` is below the minimum a UTxO can hold
+     * Head has no local participant, `exactAmount` is below the minimum a UTxO can hold, the wallet holds less than `exactAmount` on L1, or no wallet UTxO matches the filter
      */
     400: unknown;
     /**
@@ -14765,11 +14765,11 @@ export type PostHydraHeadTopupErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, not yet identified on chain, or its node is still catching up
+     * Head not open, disabled, closing, not yet identified on chain, or its node is still catching up; the wallet is busy with another transaction; or an earlier top-up is still being prepared, pending, or confirmed but not yet absorbed
      */
     409: unknown;
     /**
-     * No live connection to the head
+     * No live connection to the head, the head could not be verified on chain, or the first L1 transaction could not be built
      */
     502: unknown;
 };

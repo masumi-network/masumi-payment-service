@@ -21,6 +21,7 @@ const mockFindTopups = jest.fn() as AnyMock;
 const mockGetHead = jest.fn() as AnyMock;
 const mockAssertReady = jest.fn() as AnyMock;
 const mockExecute = jest.fn() as AnyMock;
+const mockLoggerError = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	HOST_LEASE_WAIT_MS: 10_000,
@@ -41,7 +42,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: jest.fn(), error: mockLoggerError, debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
@@ -187,5 +188,52 @@ describe('topup list paging', () => {
 			take: 10,
 			cursor: { id: 'topup-9' },
 		});
+	});
+});
+
+describe('topupHeadPost answers on acceptance', () => {
+	it('R1 answers with the executor refusal when it refuses before accepting', async () => {
+		mockExecute.mockRejectedValue(
+			Object.assign(
+				new Error(
+					'The wallet for this top-up is busy with another transaction. It is released when that one finishes; try again then',
+				),
+				{ statusCode: 409, status: 409 },
+			),
+		);
+		await expect(topupHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('busy'),
+		});
+	});
+
+	it('R2 does not answer before the executor accepts', async () => {
+		let accept: () => void = () => undefined;
+		mockExecute.mockImplementation((params: { onAccepted: () => void }) => {
+			accept = params.onAccepted;
+			return new Promise(() => undefined); // keeps running after the answer
+		});
+		let answered = false;
+		const answer = topupHeadPost.handler({ input }).then(() => {
+			answered = true;
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(answered).toBe(false);
+		accept();
+		await answer;
+		expect(answered).toBe(true);
+		expect(mockExecute).toHaveBeenCalledWith(
+			expect.objectContaining({ headId: 'head-1', onAccepted: expect.any(Function) }),
+		);
+	});
+
+	it('R3 still answers accepted when the executor fails after accepting, and logs the failure', async () => {
+		mockExecute.mockImplementation(async (params: { onAccepted: () => void }) => {
+			params.onAccepted();
+			throw new Error('carve did not confirm');
+		});
+		await expect(topupHeadPost.handler({ input })).resolves.toMatchObject({ accepted: true });
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining('carve did not confirm'));
 	});
 });

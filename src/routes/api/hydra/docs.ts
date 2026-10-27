@@ -434,17 +434,26 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		security: secured,
 		request: { body: jsonBody(topupInput, { headId: HEAD_ID, assetFilter: 'ada-only', exactAmount: '50000000' }) },
 		responses: {
-			// The endpoint answers as soon as the deposit is reserved; everything
-			// about its progress is read from GET /hydra/head/topup afterwards.
+			// The endpoint answers once the top-up has a row and its first L1
+			// transaction is signed; its progress is read from GET /hydra/head/topup.
 			200: successResponse('Top-up accepted', topupOutput, { headId: HEAD_ID, accepted: true }),
 			...unauthorized,
 			...notFound,
-			// Everything the deposit itself can get wrong is reported against the
-			// top-up row and the head's errors, because it is built and submitted
-			// after this answers. These three are decided before that.
-			400: { description: 'Head has no local participant, or `exactAmount` is below the minimum a UTxO can hold' },
-			409: { description: 'Head not open, disabled, not yet identified on chain, or its node is still catching up' },
-			502: { description: 'No live connection to the head' },
+			// What fails after the answer (the carve not confirming, the node
+			// refusing the deposit) is reported against the top-up row and the
+			// head's errors. These are decided before it.
+			400: {
+				description:
+					'Head has no local participant, `exactAmount` is below the minimum a UTxO can hold, the wallet holds less than `exactAmount` on L1, or no wallet UTxO matches the filter',
+			},
+			409: {
+				description:
+					'Head not open, disabled, closing, not yet identified on chain, or its node is still catching up; the wallet is busy with another transaction; or an earlier top-up is still being prepared, pending, or confirmed but not yet absorbed',
+			},
+			502: {
+				description:
+					'No live connection to the head, the head could not be verified on chain, or the first L1 transaction could not be built',
+			},
 		},
 	});
 	registerHydraWithdrawPaths({ registry, apiKeyAuth });

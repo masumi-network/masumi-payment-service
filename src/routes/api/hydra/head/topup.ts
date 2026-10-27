@@ -255,14 +255,15 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 });
 
 /**
- * Start a top-up. Does not wait for it.
+ * Start a top-up. Waits until it is claimed, then returns.
  *
  * The work is minutes long — an exact amount is split into its own L1 UTxO,
  * that split must confirm, then the deposit is built, submitted and confirmed —
  * and holding an HTTP request open across all of it gave an operator a spinner
- * with no way to tell progress from failure. Nothing is lost by returning
- * early: every state transition after submission is owned by reconciliation
- * anyway, which is what makes the deposit recoverable if this process dies.
+ * with no way to tell progress from failure. So the request waits only until
+ * the top-up has a row and its first transaction is signed: every refusal up to
+ * there is the answer, and every state transition after submission is owned by
+ * reconciliation, which is what makes the deposit recoverable if this process dies.
  *
  * The resulting HydraTopup rows are readable through listTopupsGet.
  */
@@ -271,12 +272,11 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: topupInput,
 	output: topupOutput,
 	handler: async ({ input }) => {
-		// Answered before the work is detached, the same as the withdraw endpoint.
-		// The refusals below are decided in milliseconds and are the operator's to
-		// see: without them a top-up of a head that does not exist, is disabled, or
-		// is not Open returned "Top-up started" and put the reason in a log the
-		// operator was never going to read. The executor re-checks all three —
-		// minutes pass before it acts, and the head can change in between.
+		// Checked before the executor starts. The refusals below are decided in
+		// milliseconds and are the operator's to see: without them a top-up of a
+		// head that does not exist, is disabled, or is not Open returned "Top-up
+		// started" and put the reason in a log the operator was never going to
+		// read. The executor re-checks all three, and the head can change in between.
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
 			select: { isEnabled: true, status: true, headIdentifier: true, LocalParticipant: { select: { id: true } } },
@@ -327,11 +327,21 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(400, `exactAmount: ${DATABASE_AMOUNT_MESSAGE}`);
 		}
 
-		// Detached deliberately. A rejection here is logged rather than returned
-		// because the caller has already been answered, and reconciliation — not
-		// this promise — decides what a submitted deposit finally becomes.
-		void executeHydraTopup({ headId: input.headId, filter, exact }).catch((error: unknown) => {
-			logger.error(`hydra: top-up of head ${input.headId} failed: ${(error as Error).message}`);
+		// Answered once the executor has claimed the wallet, written the row and
+		// signed the first L1 transaction, not before. A top-up refused because the
+		// wallet was busy, an earlier deposit was still in flight, or the wallet
+		// could not fund it used to answer `accepted` and leave the reason only in
+		// the head error list, with no row. The minutes-long rest keeps running
+		// after the answer, and reconciliation decides what a deposit becomes.
+		await new Promise<void>((resolve, reject) => {
+			void executeHydraTopup({ headId: input.headId, filter, exact, onAccepted: () => resolve() }).then(
+				() => resolve(),
+				(error: unknown) => {
+					logger.error(`hydra: top-up of head ${input.headId} failed: ${(error as Error).message}`);
+					// A no-op once accepted: the answer has already gone out.
+					reject(error instanceof Error ? error : new Error(String(error)));
+				},
+			);
 		});
 
 		return { headId: input.headId, accepted: true as const };
