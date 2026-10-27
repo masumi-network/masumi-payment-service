@@ -47,11 +47,13 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	HydraHostRequestError: class extends Error {},
 	acknowledgeEscrowOnHost: jest.fn(),
 	fetchHostCapabilities: jest.fn(),
+	fetchHostNodeHealth: jest.fn(),
 	hostNodeUrls: jest.fn(),
 	provisionNodeOnHost: mockProvision,
 	registerInviteOnHost: jest.fn(),
 	setHostNodePeers: jest.fn(),
 	startHostNode: jest.fn(),
+	stopHostNode: jest.fn(),
 	fetchHostNodePeers: jest.fn(),
 	checkHostPeerTarget: jest.fn(),
 }));

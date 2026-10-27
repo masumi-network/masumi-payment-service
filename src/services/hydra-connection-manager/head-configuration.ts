@@ -170,6 +170,11 @@ export async function loadValidatedHeadConfiguration(
 	});
 
 	const hostTransport = configuredHead.LocalParticipant.HydraHost;
+	// A queued reconnect may run after rotation closed the old session. The
+	// stopped Host must not admit another socket with the old saved token.
+	if (!options.readOnlyContestObserver && hostTransport.pauseStopRequestedAt != null) {
+		throw new Error(`Hydra Host for head ${hydraHeadId} has stopped nodes for maintenance`);
+	}
 	const persistedNodeHttpUrl = new URL(configuredHead.LocalParticipant.nodeHttpUrl);
 	if (persistedNodeHttpUrl.protocol === 'http:' && !hostTransport.allowInsecureHttp) {
 		throw new Error(`Hydra head ${hydraHeadId} uses HTTP without the Host's explicit allowInsecureHttp opt-in`);
