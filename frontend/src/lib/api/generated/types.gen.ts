@@ -14765,13 +14765,25 @@ export type PostHydraHeadTopupErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, closing, not yet identified on chain, or its node is still catching up; the wallet is busy with another transaction; or an earlier top-up is still being prepared, pending, or confirmed but not yet absorbed
+     * Head not open, disabled, closing, on a paused Hydra Host, not yet identified on chain, or its node is still catching up; the wallet is busy with another transaction; or an earlier top-up is still being prepared, pending, or confirmed but not yet absorbed
      */
     409: unknown;
+    /**
+     * Preparing the top-up failed for another reason, such as a payment source without an RPC provider or an L1 read that failed
+     */
+    500: unknown;
     /**
      * No live connection to the head, the head could not be verified on chain, or the first L1 transaction could not be built
      */
     502: unknown;
+    /**
+     * The Hydra Host has not recently confirmed the node's chain state; retry shortly
+     */
+    503: unknown;
+    /**
+     * The node did not answer while the deposit was drafted. Nothing was submitted on L1
+     */
+    504: unknown;
 };
 
 export type PostHydraHeadTopupResponses = {

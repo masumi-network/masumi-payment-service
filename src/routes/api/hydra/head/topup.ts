@@ -2,7 +2,6 @@ import createHttpError from 'http-errors';
 import { MIN_CARVE_LOVELACE } from '@/services/hydra-topup/pre-split';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@masumi/payment-core/logger';
 import { HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import type { CommitUtxoFilter } from '@/lib/hydra';
@@ -21,6 +20,7 @@ import {
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
+import { answerOnceAccepted } from '@/routes/api/hydra/head/executor-answer';
 
 export const topupInput = z.object({
 	headId: z.string().describe('The Hydra head to top up'),
@@ -333,16 +333,10 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 		// could not fund it used to answer `accepted` and leave the reason only in
 		// the head error list, with no row. The minutes-long rest keeps running
 		// after the answer, and reconciliation decides what a deposit becomes.
-		await new Promise<void>((resolve, reject) => {
-			void executeHydraTopup({ headId: input.headId, filter, exact, onAccepted: () => resolve() }).then(
-				() => resolve(),
-				(error: unknown) => {
-					logger.error(`hydra: top-up of head ${input.headId} failed: ${(error as Error).message}`);
-					// A no-op once accepted: the answer has already gone out.
-					reject(error instanceof Error ? error : new Error(String(error)));
-				},
-			);
-		});
+		await answerOnceAccepted(
+			(onAccepted) => executeHydraTopup({ headId: input.headId, filter, exact, onAccepted }),
+			`hydra: top-up of head ${input.headId} failed`,
+		);
 
 		return { headId: input.headId, accepted: true as const };
 	},

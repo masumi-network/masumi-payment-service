@@ -1,10 +1,8 @@
 import createHttpError from 'http-errors';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@masumi/payment-core/logger';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
-import { HydraTransportAmbiguousError } from '@/lib/hydra';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
 import { countLiveInHeadEscrows } from '@/services/hydra-decommit/live-escrows';
 import {
@@ -14,7 +12,6 @@ import {
 	WALLET_BUSY_MESSAGE,
 } from '@/services/hydra-decommit/refusals';
 import { staleWithdrawal } from '@/services/hydra-decommit/stale';
-import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import {
@@ -27,6 +24,7 @@ import {
 } from '@/routes/api/hydra/head/amounts';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
+import { answerOnceAccepted } from '@/routes/api/hydra/head/executor-answer';
 
 export const withdrawInput = z.object({
 	headId: z.string().describe('The Hydra head to withdraw from'),
@@ -276,44 +274,18 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		// Asking for more than is eligible, or an asset the wallet does not hold,
 		// used to answer `accepted` and fail the row a moment later; now it is the
 		// answer. The node's own verdict comes after and lands on the row.
-		let accepted = false;
-		await new Promise<void>((resolve, reject) => {
-			void executeHydraDecommit({
-				headId: input.headId,
-				lovelace: input.lovelace ? BigInt(input.lovelace) : null,
-				asset:
-					input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
-				drain: input.drain,
-				onAccepted: () => {
-					accepted = true;
-					resolve();
-				},
-			}).then(
-				() => resolve(),
-				(error: unknown) => {
-					// Once accepted the answer has gone out, and this log is where the error goes.
-					if (accepted) {
-						logger.error(`hydra: withdrawal from head ${input.headId} failed: ${describeErrorForOperator(error)}`);
-						return;
-					}
-					// Before that it is the answer, with the reason the row records, shown
-					// even for a 5xx: in production a hidden message reads only "Bad
-					// Gateway" or "Internal Server Error".
-					reject(
-						createHttpError.isHttpError(error)
-							? Object.assign(error, { expose: true })
-							: // The node did not answer the in-head split: it may still apply.
-								createHttpError(
-									error instanceof HydraTransportAmbiguousError ? 504 : 500,
-									describeErrorForOperator(error),
-									{
-										expose: true,
-									},
-								),
-					);
-				},
-			);
-		});
+		await answerOnceAccepted(
+			(onAccepted) =>
+				executeHydraDecommit({
+					headId: input.headId,
+					lovelace: input.lovelace ? BigInt(input.lovelace) : null,
+					asset:
+						input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
+					drain: input.drain,
+					onAccepted,
+				}),
+			`hydra: withdrawal from head ${input.headId} failed`,
+		);
 
 		return { headId: input.headId, accepted: true as const };
 	},
