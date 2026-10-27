@@ -119,6 +119,14 @@ These behaviours are intended. Reviewers do not need to report them again.
    - Operator action: supply mnemonics through a private secret source for unattended seeds. Treat captured seed output as wallet secret material and restrict access to it
    - When to revisit: if unattended mainnet seeding generates phrases or seed logs become visible beyond the wallet operators. Then require a private output channel or a supplied mnemonic
 
+7. **Hydra invite nonces are stored in plaintext**
+   - VERIFIED: the payment database keeps each invite nonce in plaintext in `HydraHeadInvite.nonce` (`prisma/schema.prisma`). The Hydra Host keeps the nonces of its open invites in plaintext in `/data/exchange.json`, with mode 0600 (`packages/hydra-host/src/registry/exchange-store.ts`)
+   - Effect: an open nonce is a bearer secret. A person with a copy of the database or of `/data` can redeem an open invite with their own wallet, until the invite expires after 7 days (`INVITE_TTL_MS` in `src/services/hydra-invite/invite-payload.ts`). That person then becomes the counterparty of the head. A redeemed or expired nonce gives nothing
+   - INFERRED: the attacker cannot move the issuer's funds, because a head moves funds only with the signature of each participant. The harm is griefing: the reserved node, its peer port and its fuel stay locked, and the intended counterparty cannot redeem
+   - Why accepted: the Host already keeps each head's `hydra.sk` and `cardano.sk` in plaintext under `/data` (see risk 5). Those keys are worth more than an open nonce, so encrypting `exchange.json` adds no real protection. Encryption also costs a new Host key with no rotation, a one-time migration at upgrade, and an upgrade that cannot be rolled back. In the payment database, a leaked nonce only lets an attacker grief open invites for up to 7 days. REPORTED: audit finding HYD-09. The operator accepted this risk on 27 October 2026, in place of masumi-network/masumi-payment-service#1300
+   - Operator action: treat database backups and `/data` backups as secret material. If a copy leaks, revoke every open invite (`DELETE /api/v1/hydra/invite`) and issue new ones
+   - When to revisit: if a redeemed invite can move funds, if the invite lifetime grows, or if the Host starts to encrypt node signing keys at rest. Then encrypt the nonces in the same change
+
 ### Maintenance
 
 1. **Updates**
