@@ -680,8 +680,11 @@ describe('executeHydraDecommit collateral drain', () => {
 			data: { collateralDrainedAt: expect.any(Date) },
 		});
 		const lockOrder = mockTxQueryRaw.mock.invocationCallOrder[0] ?? Infinity;
+		const hostLockOrder = mockIsPausedLocked.mock.invocationCallOrder[0] ?? -Infinity;
 		const markOrder = mockHeadUpdate.mock.invocationCallOrder[0] ?? Infinity;
 		const createOrder = mockDecommitCreate.mock.invocationCallOrder[0] ?? -Infinity;
+		// Top-up takes Head then Host. The drain must take the same lock order.
+		expect(lockOrder).toBeLessThan(hostLockOrder);
 		expect(lockOrder).toBeLessThan(markOrder);
 		expect(markOrder).toBeLessThan(createOrder);
 		expect(String(mockTxQueryRaw.mock.calls[0]?.[0]?.join?.('') ?? '')).toContain('FOR UPDATE');

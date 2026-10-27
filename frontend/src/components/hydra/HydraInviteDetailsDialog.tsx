@@ -1,7 +1,7 @@
 /**
  * Everything recorded about one invite, and the one action it still has.
  *
- * The list could only show a truncated nonce, a status and a role, which is
+ * The list shows an invite reference, a status and a role, which is
  * enough to tell two invites apart and nothing else. It could not answer the
  * questions an operator actually has about an outstanding one: which wallet did
  * I issue it with, which node is it holding, who redeemed it, and can I take it
@@ -9,6 +9,7 @@
  * place for the only thing you can do here.
  */
 
+import { useState } from 'react';
 import { Loader2, Ticket, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,31 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className="min-w-0 text-sm">{children}</span>
     </div>
+  );
+}
+
+function InviteNonce({ nonce }: { nonce: string }) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <span className="flex items-center gap-1">
+      <span
+        className="break-all font-mono text-xs"
+        aria-label={isVisible ? 'Invite nonce' : 'Hidden invite nonce'}
+      >
+        {isVisible ? nonce : '••••••••••••'}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-pressed={isVisible}
+        onClick={() => setIsVisible((visible) => !visible)}
+      >
+        {isVisible ? 'Hide' : 'Show'}
+      </Button>
+      {isVisible && <CopyButton value={nonce} />}
+    </span>
   );
 }
 
@@ -81,11 +107,8 @@ export function HydraInviteDetailsDialog({
         </DialogHeader>
 
         <div className="space-y-0">
-          <Row label="Code">
-            <span className="flex items-center gap-1">
-              <span className="break-all font-mono text-xs">{invite.nonce}</span>
-              <CopyButton value={invite.nonce} />
-            </span>
+          <Row label="Invite nonce">
+            <InviteNonce key={invite.id} nonce={invite.nonce} />
           </Row>
           <Row label="Issuer wallet">
             <HydraWalletLink address={invite.issuerWalletAddress} network={network} shorten={10} />

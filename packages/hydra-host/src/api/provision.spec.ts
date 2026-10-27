@@ -115,6 +115,25 @@ describe('provisionNode', () => {
 		await expect(provisionNode({ ...REQUEST, idempotencyKey: '  ' }, deps)).rejects.toThrow(/Idempotency-Key/);
 	});
 
+	it('refuses a direct mainnet provision below the dispute-window floor before reserving a node', async () => {
+		await expect(
+			provisionNode({ ...REQUEST, network: 'mainnet', contestationPeriodSeconds: 43_199 }, deps),
+		).rejects.toThrow(/at least 43200 seconds/);
+		expect(await deps.store.list()).toEqual([]);
+		expect(deps.ports.used).toBe(0);
+	});
+
+	it.each([
+		['deposit period', { depositPeriodSeconds: 299 }, /deposit period must be at least 300 seconds/],
+		['deposit activation', { depositActivationSeconds: 299 }, /deposit activation must be at least 300 seconds/],
+	])('refuses a mainnet %s below the floor before reserving a node', async (_name, periods, message) => {
+		await expect(
+			provisionNode({ ...REQUEST, network: 'mainnet', contestationPeriodSeconds: 43_200, ...periods }, deps),
+		).rejects.toThrow(message);
+		expect(await deps.store.list()).toEqual([]);
+		expect(deps.ports.used).toBe(0);
+	});
+
 	it('does not leak a port when provisioning fails', async () => {
 		const failing: ProvisionDeps = {
 			...deps,
@@ -137,6 +156,59 @@ describe('provisionNode', () => {
 		await expect(provisionNode(REQUEST, { ...deps, store, ports })).rejects.toThrow('disk full');
 		// The node never had peers, so the port must not wait for a refresh.
 		expect(ports.allocate().peerPort).toBe(LAYOUT.peerStart);
+	});
+
+	it('waits for every key write before removing a failed provision', async () => {
+		let releaseSlowRename: () => void = () => undefined;
+		let announceSlowRename: () => void = () => undefined;
+		const slowRenameGate = new Promise<void>((resolve) => {
+			releaseSlowRename = resolve;
+		});
+		const slowRenameStarted = new Promise<void>((resolve) => {
+			announceSlowRename = resolve;
+		});
+		let slowWriterSettled = false;
+		let removedBeforeWriterSettled = false;
+		const originalRename = fs.rename;
+		jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+			if (to.toString().endsWith('/hydra.sk')) {
+				announceSlowRename();
+				await slowRenameGate;
+				try {
+					return await originalRename(from, to);
+				} finally {
+					slowWriterSettled = true;
+				}
+			}
+			if (to.toString().endsWith('/cardano.sk')) {
+				await slowRenameStarted;
+				throw new Error('injected cardano key write failure');
+			}
+			return await originalRename(from, to);
+		});
+		const store = new NodeRegistryStore(dataDir);
+		const originalRemove = store.remove.bind(store);
+		jest.spyOn(store, 'remove').mockImplementation(async (nodeId) => {
+			removedBeforeWriterSettled = !slowWriterSettled;
+			return await originalRemove(nodeId);
+		});
+
+		const failed = provisionNode(REQUEST, { ...deps, store });
+		await slowRenameStarted;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		releaseSlowRename();
+		await expect(failed).rejects.toThrow('injected cardano key write failure');
+		expect(removedBeforeWriterSettled).toBe(false);
+		expect(await fs.readdir(path.join(dataDir, 'nodes'))).toEqual([]);
+	});
+
+	it('removes signing keys even when removing the whole failed node directory fails', async () => {
+		const store = new NodeRegistryStore(dataDir);
+		jest.spyOn(store, 'write').mockRejectedValueOnce(new Error('disk full'));
+		jest.spyOn(store, 'remove').mockRejectedValueOnce(new Error('registry cleanup failed'));
+
+		await expect(provisionNode(REQUEST, { ...deps, store })).rejects.toThrow('disk full');
+		await expect(fs.access(path.join(store.nodeDir('node-1'), 'keys'))).rejects.toMatchObject({ code: 'ENOENT' });
 	});
 
 	it('refuses once every slot is in use', async () => {

@@ -29,6 +29,8 @@ import {
 	HydraTransportError,
 } from '@/lib/hydra';
 import { assertSafeInitLedgerParams } from '@/services/hydra-host/init-ledger-admission';
+import { dispatchInitOnHost, HydraHostRequestError } from '@/services/hydra-host/client';
+import { decrypt } from '@/utils/security/encryption';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
@@ -59,7 +61,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
 			include: {
-				LocalParticipant: true,
+				LocalParticipant: {
+					include: { HydraHost: { select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true } } },
+				},
 				Invite: { select: { role: true } },
 				HydraRelation: {
 					select: {
@@ -154,13 +158,34 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				network: head.HydraRelation.network,
 				rpcProviderApiKey: head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey,
 			});
+			const host = head.LocalParticipant.HydraHost;
+			if (host.encryptedAdminToken === null) {
+				throw createHttpError(409, 'Hydra Host admin credential is required for admitted Init');
+			}
+			const adminToken = decrypt(host.encryptedAdminToken);
+			const nodeId = head.LocalParticipant.hostNodeId;
 
 			// True on the normal path and cleared when the timeout diagnosis has
 			// already drained frames, so the drain below runs exactly once per path.
 			let needsPostInitFlush = true;
 			try {
-				await hydraHead.init();
+				const dispatch = async (): Promise<void> => {
+					try {
+						await dispatchInitOnHost(host.baseUrl, adminToken, nodeId, {
+							allowInsecureHttp: host.allowInsecureHttp,
+						});
+					} catch (error) {
+						if (error instanceof HydraHostRequestError && error.status !== null && error.status < 500) {
+							throw error;
+						}
+						throw new HydraTransportAmbiguousError('Hydra Init dispatch outcome is ambiguous', { cause: error });
+					}
+				};
+				await hydraHead.init(undefined, dispatch);
 			} catch (initError) {
+				if (initError instanceof HydraHostRequestError && initError.status !== null && initError.status < 500) {
+					throw createHttpError(503, `Hydra Init was not sent: ${initError.message}`, { expose: true });
+				}
 				// The node said it dropped this Init because it is behind the chain. That
 				// is an answer, not a timeout: nothing was posted, so it is no failed
 				// command and needs no diagnosis or head error. An earlier Init held for

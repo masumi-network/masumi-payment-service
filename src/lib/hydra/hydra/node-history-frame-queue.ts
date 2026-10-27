@@ -8,7 +8,7 @@
  * synchronous and cheap, and gives the event loop a turn otherwise:
  *
  * - after `HISTORY_REPLAY_YIELD_BUDGET_MS` of continuous work, and
- * - while a frame waits on work done elsewhere (its accumulator, on a worker).
+ * - while a frame waits on a worker accumulator or durable snapshot storage.
  *
  * Order is the protocol — every frame is judged against the state the one
  * before it left — so nothing overtakes a waiting frame.

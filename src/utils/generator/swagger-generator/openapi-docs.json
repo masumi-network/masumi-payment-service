@@ -26704,7 +26704,8 @@
                                                                         "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                                         "HYDRA_HEAD_POST_TX_FAILED",
                                                                         "HYDRA_HEAD_CONTEST_MISSING",
-                                                                        "HYDRA_HEAD_UNOBSERVED"
+                                                                        "HYDRA_HEAD_UNOBSERVED",
+                                                                        "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                                                     ]
                                                                 }
                                                             },
@@ -26886,11 +26887,12 @@
                                                 "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                 "HYDRA_HEAD_POST_TX_FAILED",
                                                 "HYDRA_HEAD_CONTEST_MISSING",
-                                                "HYDRA_HEAD_UNOBSERVED"
+                                                "HYDRA_HEAD_UNOBSERVED",
+                                                "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                             ]
                                         },
                                         "minItems": 1,
-                                        "maxItems": 16,
+                                        "maxItems": 17,
                                         "description": "Array of event types to subscribe to"
                                     },
                                     "name": {
@@ -26971,7 +26973,8 @@
                                                             "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                             "HYDRA_HEAD_POST_TX_FAILED",
                                                             "HYDRA_HEAD_CONTEST_MISSING",
-                                                            "HYDRA_HEAD_UNOBSERVED"
+                                                            "HYDRA_HEAD_UNOBSERVED",
+                                                            "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                                         ]
                                                     }
                                                 },
@@ -27108,11 +27111,12 @@
                                                 "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                 "HYDRA_HEAD_POST_TX_FAILED",
                                                 "HYDRA_HEAD_CONTEST_MISSING",
-                                                "HYDRA_HEAD_UNOBSERVED"
+                                                "HYDRA_HEAD_UNOBSERVED",
+                                                "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                             ]
                                         },
                                         "minItems": 1,
-                                        "maxItems": 16,
+                                        "maxItems": 17,
                                         "description": "Array of event types to subscribe to"
                                     },
                                     "name": {
@@ -27191,7 +27195,8 @@
                                                             "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
                                                             "HYDRA_HEAD_POST_TX_FAILED",
                                                             "HYDRA_HEAD_CONTEST_MISSING",
-                                                            "HYDRA_HEAD_UNOBSERVED"
+                                                            "HYDRA_HEAD_UNOBSERVED",
+                                                            "HYDRA_HEAD_CONTEST_WATCH_ALERT"
                                                         ]
                                                     }
                                                 },

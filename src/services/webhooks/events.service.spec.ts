@@ -142,6 +142,15 @@ describe('Hydra webhook payment-source scope', () => {
 			isNodeSide: true,
 			checkedAt: '2026-10-26T00:05:00.000Z',
 		};
+		const contestWatchAlert = {
+			hydraHeadId: 'head-1',
+			headStatus: 'Open',
+			reason: 'NODE_UNOBSERVABLE' as const,
+			chainState: 'open' as const,
+			chainTxHash: 'a'.repeat(64),
+			unavailableSince: '2026-10-26T00:00:00.000Z',
+			checkedAt: '2026-10-26T00:10:00.000Z',
+		};
 
 		await webhookEventsService.triggerHydraHeadLowBalance(lowBalance);
 		await webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx as never, lowBalance);
@@ -149,6 +158,7 @@ describe('Hydra webhook payment-source scope', () => {
 		await webhookEventsService.triggerHydraHeadPostTxFailed(postTxFailed);
 		await webhookEventsService.queueHydraHeadContestMissingInTransaction(tx as never, contestMissing);
 		await webhookEventsService.queueHydraHeadUnobservedInTransaction(tx as never, unobserved);
+		await webhookEventsService.queueHydraHeadContestWatchAlertInTransaction(tx as never, contestWatchAlert);
 
 		expect(mockQueueWebhook).toHaveBeenCalledWith(
 			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
@@ -167,6 +177,7 @@ describe('Hydra webhook payment-source scope', () => {
 			[WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK, snapshotRound, 'head-1'],
 			[WebhookEventType.HYDRA_HEAD_CONTEST_MISSING, contestMissing, 'head-1'],
 			[WebhookEventType.HYDRA_HEAD_UNOBSERVED, unobserved, 'head-1'],
+			[WebhookEventType.HYDRA_HEAD_CONTEST_WATCH_ALERT, contestWatchAlert, 'head-1'],
 		] as const) {
 			expect(mockQueueWebhookInTransaction).toHaveBeenCalledWith(tx, eventType, payload, entityId, 'source-1');
 		}

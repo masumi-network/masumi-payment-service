@@ -47,6 +47,8 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 				authToken: nodeConfig.authToken,
 				guardHostDestination: nodeConfig.guardHostDestination,
 				computeSnapshotAccumulator: nodeConfig.computeSnapshotAccumulator,
+				onSignedSnapshotVerified: nodeConfig.onSignedSnapshotVerified,
+				persistVerifiedSnapshot: nodeConfig.persistVerifiedSnapshot,
 			});
 			this._nodes[nodeConfig.walletId] = node;
 			this._connected[nodeConfig.walletId] = false;
@@ -60,12 +62,12 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 		});
 	}
 
-	async init(timeoutMs?: number): Promise<void> {
+	async init(timeoutMs?: number, dispatch?: () => Promise<void>): Promise<void> {
 		this.assertMutationAllowed();
 		if (!this.mainNodeConnected) {
 			throw new Error('Main node not connected');
 		}
-		await this.mainNode.init(timeoutMs);
+		await this.mainNode.init(timeoutMs, dispatch);
 	}
 
 	async commit(

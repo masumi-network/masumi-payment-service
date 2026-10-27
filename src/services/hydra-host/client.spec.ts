@@ -9,6 +9,7 @@ let fetchHostNodeHealth: typeof import('./client').fetchHostNodeHealth;
 let forgetHostInvite: typeof import('./client').forgetHostInvite;
 let provisionNodeOnHost: typeof import('./client').provisionNodeOnHost;
 let removeUnclaimedHostNode: typeof import('./client').removeUnclaimedHostNode;
+let dispatchInitOnHost: typeof import('./client').dispatchInitOnHost;
 
 beforeAll(async () => {
 	({
@@ -18,7 +19,18 @@ beforeAll(async () => {
 		forgetHostInvite,
 		provisionNodeOnHost,
 		removeUnclaimedHostNode,
+		dispatchInitOnHost,
 	} = await import('./client'));
+});
+
+describe('admitted Host Init dispatch', () => {
+	it('uses the node-specific admin route after the caller admits Init', async () => {
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ dispatched: true }), { status: 202 }));
+		await dispatchInitOnHost('https://hydra.example.com', 'admin-token', 'node-1', { allowInsecureHttp: false });
+		const [url, options] = transportMock.mock.calls[0];
+		expect(url).toBe('https://hydra.example.com/v1/nodes/node-1/init');
+		expect(options).toMatchObject({ method: 'POST', headers: { Authorization: 'Bearer admin-token' } });
+	});
 });
 
 describe('Hydra Host node health freshness', () => {

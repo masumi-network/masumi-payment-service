@@ -1,0 +1,18 @@
+/// The newest snapshot every head party signed, as history replay verified it.
+/// Kept as JSON equivalent to what hydra-node serves on `GET /snapshot`, so it
+/// survives the loss of the node's own persistence. It is evidence, and the
+/// input a contest needs. A stock hydra-node 2.3.0 restored after storage
+/// loss did not accept it by side-load (`SideLoadSvNumberInvalid`).
+model HydraHeadSignedSnapshot {
+  hydraHeadId String    @id
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// Only a higher number overwrites the stored snapshot.
+  snapshotNumber    BigInt
+  snapshotVersion   BigInt
+  /// JSON text with integer literals, so quantities above 2^53 - 1 keep every digit.
+  confirmedSnapshot String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -200,8 +200,13 @@ function hasInFlightWork(inFlight: HydraHostPauseInFlight): boolean {
  *
  * A lease row rather than a database lock, so no connection is held across
  * the Host calls. Returns false without acting when another holder has it.
+ * The holder's deadline is passed to the action so a final database write can
+ * fence itself if the lease expired and another holder took over.
  */
-async function withHostPauseLease(hostId: string, action: () => Promise<void>): Promise<boolean> {
+export async function withHostPauseLease(
+	hostId: string,
+	action: (leaseUntil: Date) => Promise<void>,
+): Promise<boolean> {
 	const now = new Date();
 	const until = new Date(now.getTime() + PAUSE_LEASE_MS);
 	const claimed = await prisma.hydraHost.updateMany({
@@ -210,7 +215,7 @@ async function withHostPauseLease(hostId: string, action: () => Promise<void>): 
 	});
 	if (claimed.count === 0) return false;
 	try {
-		await action();
+		await action(until);
 	} finally {
 		// Fenced on this holder's own value: after an overrun, another holder may
 		// have claimed the expired lease, and this release must not clear theirs.
@@ -233,7 +238,7 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-export async function getHydraHostPauseState(hostId: string): Promise<HydraHostPauseState> {
+export async function getHydraHostPauseState(hostId: string, pendingUserToken?: string): Promise<HydraHostPauseState> {
 	const host = await loadHost(hostId);
 	const inFlight = await countInFlight(hostId);
 	const base = {
@@ -255,7 +260,9 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 
 	// The Host is the only witness of whether a node has actually stopped: the
 	// stop request returns at once, and the drain before it can take minutes.
-	const hostSecret = decrypt(host.encryptedUserToken);
+	// A Host may already have restarted with its new token during a rotation.
+	// Probe with that token before saving it in the payment service.
+	const hostSecret = pendingUserToken ?? decrypt(host.encryptedUserToken);
 	const nodes = await Promise.all(
 		host.pausedNodeIds.map(async (nodeId) => {
 			try {

@@ -33,6 +33,13 @@ The Masumi Payment Service handles financial transactions and requires secure wa
 
 ## Security Best Practices
 
+### Hydra Init command boundary
+
+- VERIFIED: `packages/hydra-host/src/api/proxy.ts` parses node WebSocket commands and rejects `Init` in ordinary sessions. The limit also covers a node-derived runtime token and the optional Host-wide user token.
+- VERIFIED: `src/routes/api/hydra/head/lifecycle.ts` checks the node's L2 parameters against current L1 parameters before it calls the Host's admin-only `POST /v1/nodes/{nodeId}/init` route. The Host opens one loopback WebSocket session, sends one Init, and closes that session.
+- VERIFIED: the Host admin route does not repeat the L1/L2 admission check. An operator holding the Host admin token can call it directly as a privileged override. Protect that token as a fleet control credential.
+- VERIFIED: a Host registration without an admin credential cannot dispatch Init. The payment API returns 409 before dispatch. New Host registration and node provisioning require an admin credential; an existing Host can lose it through an update.
+
 ### Service Security
 
 1. **Network Security**
@@ -82,13 +89,14 @@ These behaviours are intended. Reviewers do not need to report them again.
    - Why accepted: all of these secrets are preprod only. The wallets hold test ADA, and the Blockfrost key reaches preprod only. No mainnet key or production credential is in these jobs. Only internal team members can push branches to this repository. Fork pull requests get no secrets
    - When to revisit: if a job gets a mainnet or production secret, or if people outside the team get write access. Then put the secret-bearing jobs behind a reviewed Environment, or run them only from reviewed code
 
-3. **A Hydra Host registered without a user token runs on its admin token**
-   - Where: `registerHydraHost` in `src/services/hydra-host/registry.ts` stores the admin token in `encryptedUserToken` when the request has no `userToken`. The Host accepts the admin token for user operations (`packages/hydra-host/src/api/auth.ts`)
-   - Effect: every runtime call (node WebSocket, node HTTP API, health checks) sends the admin token. A leak on the runtime path, such as a proxy log or a memory dump, gives full control of the Host fleet (provision, reconfigure, delete), not only node access
-   - Why accepted: it keeps Host setup to one key. Both tokens sit in the same database under the same `ENCRYPTION_KEY`, and the same process reads them. So a split does not protect against a server compromise. It protects only against leaks on the runtime path, and the service runs behind the network allowlist
-   - HTTP: a Host with `allowInsecureHttp` sends the admin token in cleartext on every node call. The service does not block this. It logs a warning at registration and on each update of such a Host, also when the user token equals the admin token. The connect dialog shows a warning too. The service cannot see the case after an earlier update cleared the admin slot, so that Host gets no warning. For HTTP Hosts, set a separate `userToken` (the value of `HYDRA_HOST_USER_TOKEN`)
-   - Clearing the admin token: `adminToken: null` on update clears only the admin slot. The runtime slot still holds the old admin token. Rotate `userToken` at the same time
-   - When to revisit: if Hosts run on networks you do not control. Then make `userToken` required at registration and rotation
+3. **A Hydra Host registered without a user token keeps the admin secret in its runtime slot**
+   - VERIFIED: `registerHydraHost` stores the admin token in `encryptedUserToken` when registration omits `userToken` (`src/services/hydra-host/registry.ts:279-300`). The Host still accepts the raw admin token on control routes (`packages/hydra-host/src/api/auth.ts:55-64`)
+   - VERIFIED: node WebSocket and HTTP calls derive a token for each node from the stored runtime secret (`src/services/hydra-connection-manager/head-configuration.ts:84-103`). The Host grants that derived token access to its node, not to the whole fleet (`packages/hydra-host/src/api/auth.ts:67-102`). These calls do not send the raw admin token
+   - INFERRED: a leaked derived node token gives access to that node until the Host secret rotates. A database or process compromise can still expose the stored admin secret. A separate user token limits that exposure but does not protect a fully compromised service
+   - HTTP: a Host with `allowInsecureHttp` sends the derived node token in cleartext on node calls. Control calls, such as the capability check and node pause and resume, send the raw admin token in cleartext on such a Host, whatever the `userToken` is (`src/services/hydra-host/registry.ts`, `src/services/hydra-host/pause.ts`). The service permits this opt-in and warns at registration and update. For HTTP Hosts, set a separate `userToken` (the value of `HYDRA_HOST_USER_TOKEN`), and use HTTPS for any Host on a network you do not control
+   - Clearing the admin token: `adminToken: null` on update clears only the admin slot. The runtime slot still holds the old admin secret when registration copied it there. Rotate `userToken` at the same time
+   - Why accepted: one key simplifies Host setup. Both secrets sit in the same database under `ENCRYPTION_KEY`, and the service runs behind a network allowlist
+   - When to revisit: if Hosts run on networks you do not control, require a separate `userToken` at registration and rotation
 
 4. **A seed without a unique `ADMIN_KEY` creates a public admin key**
    - Where: `resolveAdminKey` in `prisma/seed.admin-key.ts` returns `DEFAULTS.DEFAULT_ADMIN_KEY` when `ADMIN_KEY` is not set. `seedAdminKey` then stores that key as an active key with `canAdmin: true`. `.env.example` publishes two more values, `ADMIN_KEY` and `ENCRYPTION_KEY`. All three are in `DEFAULTS` in `packages/payment-core/src/config.ts`. The seed and the server accept all three
@@ -117,6 +125,14 @@ These behaviours are intended. Reviewers do not need to report them again.
    - REPORTED: the operator accepted this risk on 27 October 2026. Printing the phrase gives the operator a way to back up a wallet created during seeding
    - Operator action: supply mnemonics through a private secret source for unattended seeds. Treat captured seed output as wallet secret material and restrict access to it
    - When to revisit: if unattended mainnet seeding generates phrases or seed logs become visible beyond the wallet operators. Then require a private output channel or a supplied mnemonic
+
+7. **Hydra invite nonces are stored in plaintext**
+   - VERIFIED: the payment database keeps each invite nonce in plaintext in `HydraHeadInvite.nonce` (`prisma/schema.prisma`). The Hydra Host keeps the nonces of its open invites in plaintext in `/data/exchange.json`, with mode 0600 (`packages/hydra-host/src/registry/exchange-store.ts`)
+   - Effect: an open nonce is a bearer secret. A person with a copy of the database or of `/data` can redeem an open invite with their own wallet, until the invite expires after 7 days (`INVITE_TTL_MS` in `src/services/hydra-invite/invite-payload.ts`). That person then becomes the counterparty of the head. A redeemed or expired nonce gives nothing
+   - INFERRED: the attacker cannot move the issuer's funds, because a head moves funds only with the signature of each participant. The harm is griefing: the reserved node, its peer port and its fuel stay locked, and the intended counterparty cannot redeem
+   - Why accepted: the Host already keeps each head's `hydra.sk` and `cardano.sk` in plaintext under `/data` (see risk 5). Those keys are worth more than an open nonce, so encrypting `exchange.json` adds no real protection. Encryption also costs a new Host key with no rotation, a one-time migration at upgrade, and an upgrade that cannot be rolled back. In the payment database, a leaked nonce only lets an attacker grief open invites for up to 7 days. REPORTED: audit finding HYD-09. The operator accepted this risk on 27 October 2026, in place of masumi-network/masumi-payment-service#1300
+   - Operator action: treat database backups and `/data` backups as secret material. If a copy leaks, revoke every open invite (`DELETE /api/v1/hydra/invite`) and issue new ones
+   - When to revisit: if a redeemed invite can move funds, if the invite lifetime grows, or if the Host starts to encrypt node signing keys at rest. Then encrypt the nonces in the same change
 
 ### Maintenance
 

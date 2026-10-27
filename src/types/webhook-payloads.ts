@@ -255,6 +255,20 @@ const hydraHeadUnobservedPayloadSchema = createWebhookPayloadSchema(
 	'Emitted once per gap, plus again each time a node-side cause follows a service-side one, at most once per grace period (see isNodeSide), when this service could not observe the node of an open or closed Hydra head for the grace period. The node may be down, not follow the head or the chain, or this service may not have verified its history. hydra-node contests a close on an older snapshot only while it runs, so restore a node that is down before any contestation deadline passes.',
 );
 
+const hydraHeadContestWatchAlertPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_CONTEST_WATCH_ALERT'),
+	z.object({
+		hydraHeadId: z.string(),
+		headStatus: z.string(),
+		reason: z.enum(['HEAD_CLOSED', 'NODE_UNOBSERVABLE', 'L1_OBSERVER_UNAVAILABLE']),
+		chainState: z.enum(['open', 'closed', 'gone']).nullable(),
+		chainTxHash: z.string().nullable(),
+		unavailableSince: z.string().datetime().nullable(),
+		checkedAt: z.string().datetime(),
+	}),
+	'Independent L1 Close or contest-watch availability alert. Restore a disconnected node before the contestation deadline.',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -273,6 +287,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	hydraHeadPostTxFailedPayloadSchema,
 	hydraHeadContestMissingPayloadSchema,
 	hydraHeadUnobservedPayloadSchema,
+	hydraHeadContestWatchAlertPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;
