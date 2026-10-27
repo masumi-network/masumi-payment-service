@@ -20,7 +20,7 @@ import {
 	startHostNode,
 	type HostPeer,
 } from '@/services/hydra-host/client';
-import { SHORT_HOST_ACTION_LEASE_WAIT_MS, withHostPauseLease } from '@/services/hydra-host/pause';
+import { HOST_LEASE_WAIT_MS, withHostPauseLease } from '@/services/hydra-host/pause';
 import { attemptRedemption, type ExchangeTransportOptions } from './exchange-client';
 import type { createHeadFromExchange } from './orchestrator';
 import type { RedemptionPorts, RedemptionState } from './redemption';
@@ -136,7 +136,7 @@ export function buildRedemptionPorts(input: {
 	 */
 	leaseWaitMs?: number;
 }): RedemptionPorts {
-	const { record, transport, createHead, leaseWaitMs = SHORT_HOST_ACTION_LEASE_WAIT_MS } = input;
+	const { record, transport, createHead, leaseWaitMs = HOST_LEASE_WAIT_MS } = input;
 	// The `updatedAt` this caller last saw. Every write that could end the record
 	// names it, so a claim by anyone else makes those writes find nothing.
 	let version = record.updatedAt;

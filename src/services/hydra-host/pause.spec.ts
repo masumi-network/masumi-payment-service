@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { deriveHostNodeToken } from './node-token';
 
@@ -120,7 +120,24 @@ async function stopsSentOnNextCycle(): Promise<number> {
 	return mockStopHostNode.mock.calls.length;
 }
 
+/** Run a lease-waiting call to its end on fake timers, so the test does not sleep for the whole wait. */
+async function afterLeaseWait<T>(call: Promise<T>): Promise<T> {
+	const settled = call.then(
+		(value) => ({ value }),
+		(error: unknown) => ({ error }),
+	);
+	await jest.advanceTimersByTimeAsync(pause.HOST_LEASE_WAIT_MS + 1_000);
+	const result = await settled;
+	if ('error' in result) throw result.error;
+	return result.value;
+}
+
+afterEach(() => {
+	jest.useRealTimers();
+});
+
 beforeEach(() => {
+	jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
 	jest.clearAllMocks();
 	pause.resetHydraHostPauseMemory();
 	setInFlight(0);
@@ -172,9 +189,9 @@ describe('pauseHydraHost', () => {
 		mockQueryRaw.mockResolvedValue([{ pausedAt: null, encryptedAdminToken: 'admin' }]);
 		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }]);
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
 
-		await expect(pause.pauseHydraHost('host-1', { force: true })).rejects.toMatchObject({
+		await expect(afterLeaseWait(pause.pauseHydraHost('host-1', { force: true }))).rejects.toMatchObject({
 			status: 409,
 			message: expect.stringMatching(/another pause action/),
 		});
@@ -382,10 +399,14 @@ describe('advanceHydraHostPause', () => {
 	// A dropped force would quietly wait for the in-flight work after all.
 	it('refuses a forced advance with 409 while another instance holds the lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
 
-		await expect(pause.advanceHydraHostPause('host-1', { force: true })).rejects.toMatchObject({ status: 409 });
+		await expect(afterLeaseWait(pause.advanceHydraHostPause('host-1', { force: true }))).rejects.toMatchObject({
+			status: 409,
+		});
 		expect(mockStopHostNode).not.toHaveBeenCalled();
+		// Short actions poll for the lease; a single try here would lose to every one of them.
+		expect(mockHostUpdateMany.mock.calls.length).toBeGreaterThan(1);
 	});
 
 	// isClosing stays set after Final, so it must not hold a pause forever.
@@ -579,10 +600,11 @@ describe('resumeHydraHost', () => {
 
 	it('refuses with 409 while an advance holds the lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
 
-		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
+		await expect(afterLeaseWait(pause.resumeHydraHost('host-1'))).rejects.toMatchObject({ status: 409 });
 		expect(mockStartHostNode).not.toHaveBeenCalled();
+		expect(mockHostUpdateMany.mock.calls.length).toBeGreaterThan(1);
 	});
 });
 
@@ -639,7 +661,7 @@ describe('withHostPauseLease', () => {
 		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValue({ count: 1 });
 		const action = jest.fn(async () => undefined);
 
-		await expect(pause.withHostPauseLease('host-1', action, 1_000)).resolves.toBe(true);
+		await expect(afterLeaseWait(pause.withHostPauseLease('host-1', action, 1_000))).resolves.toBe(true);
 		expect(action).toHaveBeenCalledTimes(1);
 	});
 
@@ -647,7 +669,7 @@ describe('withHostPauseLease', () => {
 		mockHostUpdateMany.mockResolvedValue({ count: 0 });
 		const action = jest.fn(async () => undefined);
 
-		await expect(pause.withHostPauseLease('host-1', action, 300)).resolves.toBe(false);
+		await expect(afterLeaseWait(pause.withHostPauseLease('host-1', action, 300))).resolves.toBe(false);
 		expect(action).not.toHaveBeenCalled();
 	});
 
@@ -657,7 +679,9 @@ describe('withHostPauseLease', () => {
 		mockHostCount.mockResolvedValue(0);
 		const action = jest.fn(async () => undefined);
 
-		await expect(pause.withHostPauseLease('host-1', action, 1_000)).rejects.toMatchObject({ status: 404 });
+		await expect(afterLeaseWait(pause.withHostPauseLease('host-1', action, 1_000))).rejects.toMatchObject({
+			status: 404,
+		});
 		expect(action).not.toHaveBeenCalled();
 	});
 });

@@ -26,6 +26,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 	getHydraConnectionManager: () => ({ queueDisconnect: mockQueueDisconnect }),
 }));
 jest.unstable_mockModule('./pause', () => ({
+	HOST_LEASE_WAIT_MS: 10_000,
 	getHydraHostPauseState: mockGetPauseState,
 	withHostPauseLease: mockWithPauseLease,
 }));

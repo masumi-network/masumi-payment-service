@@ -65,7 +65,7 @@ jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
-	SHORT_HOST_ACTION_LEASE_WAIT_MS: 10_000,
+	HOST_LEASE_WAIT_MS: 10_000,
 	withHostPauseLease: mockWithPauseLease,
 }));
 

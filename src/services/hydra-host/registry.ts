@@ -20,7 +20,7 @@ import { assertHostDestinationAllowed } from './destination';
 import { listHostIncompatibilities, oneLine } from './placement';
 import { describeRelease, type DescribedRelease } from '@/services/release/release-info';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
-import { getHydraHostPauseState, withHostPauseLease } from './pause';
+import { getHydraHostPauseState, HOST_LEASE_WAIT_MS, withHostPauseLease } from './pause';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
 export type PublicHydraHost = {
@@ -432,9 +432,13 @@ export async function updateHydraHost(
 	};
 	if (input.userToken === undefined) return updateAndDisconnect();
 	let result: PublicHydraHost | null = null;
-	const acted = await withHostPauseLease(id, async (leaseUntil) => {
-		result = await updateAndDisconnect(leaseUntil);
-	});
+	const acted = await withHostPauseLease(
+		id,
+		async (leaseUntil) => {
+			result = await updateAndDisconnect(leaseUntil);
+		},
+		HOST_LEASE_WAIT_MS,
+	);
 	if (!acted) throw createHttpError(409, 'another Host pause action is running; retry the token update shortly');
 	if (result === null) throw createHttpError(503, 'Host token update did not complete');
 	return result;

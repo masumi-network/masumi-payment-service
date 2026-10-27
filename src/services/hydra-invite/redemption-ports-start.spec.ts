@@ -18,7 +18,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	setHostNodePeers: jest.fn(),
 }));
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
-	SHORT_HOST_ACTION_LEASE_WAIT_MS: 10_000,
+	HOST_LEASE_WAIT_MS: 10_000,
 	withHostPauseLease: mockWithPauseLease,
 }));
 jest.unstable_mockModule('./exchange-client', () => ({ attemptRedemption: jest.fn() }));

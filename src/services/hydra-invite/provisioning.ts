@@ -26,7 +26,7 @@ import {
 } from '@/services/hydra-host/client';
 import { HostIncompatibleError, assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
 import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
-import { SHORT_HOST_ACTION_LEASE_WAIT_MS, withHostPauseLease } from '@/services/hydra-host/pause';
+import { HOST_LEASE_WAIT_MS, withHostPauseLease } from '@/services/hydra-host/pause';
 import { deriveNodeCardanoVkey } from './node-keys';
 
 /** The Host's answer when every node slot is in use (`PortExhaustedError`). */
@@ -372,7 +372,7 @@ export async function reserveNodeForExchange(
 			}
 			reserved = await reserveNodeOnSelectedHost(host, network, localHotWalletId, nonce, periods, autoFund);
 		},
-		SHORT_HOST_ACTION_LEASE_WAIT_MS,
+		HOST_LEASE_WAIT_MS,
 	);
 	if (!acted) throw createHttpError(409, 'another Host pause action is running; retry provisioning shortly');
 	if (reserved === null) throw createHttpError(503, 'Hydra node reservation did not complete');

@@ -22,7 +22,6 @@
  * stay short. The admin UI says so next to the timer.
  */
 
-import { setTimeout as sleep } from 'node:timers/promises';
 import createHttpError from 'http-errors';
 import {
 	HydraDecommitStatus,
@@ -74,13 +73,13 @@ export type HydraHostPauseState = {
  */
 const PAUSE_LEASE_MS = 15 * 60_000;
 /**
- * How long a short Host action, such as provisioning a node or starting one,
- * waits for the lease. Two such actions on one Host otherwise refuse each
- * other, although only a pause, Resume or token rotation must exclude them.
- * This covers a Host at normal latency. A holder can keep the lease for up to
- * three Host timeouts, so on a slow Host the waiter can still get the busy 409.
+ * How long an interactive Host action waits for a held lease: provisioning or
+ * starting a node, Resume, a forced pause, or a token rotation. Without it,
+ * two such actions on one Host refuse each other, and a stream of short ones
+ * keeps an operator's Resume out. A holder can keep the lease for several Host
+ * timeouts, so on a slow Host the waiter can still get the busy 409.
  */
-export const SHORT_HOST_ACTION_LEASE_WAIT_MS = 10_000;
+export const HOST_LEASE_WAIT_MS = 10_000;
 const LEASE_RETRY_INTERVAL_MS = 250;
 const BUSY_MESSAGE = 'another pause action is running on this hydra host; retry shortly';
 /**
@@ -234,7 +233,7 @@ export async function withHostPauseLease(
 		if ((await prisma.hydraHost.count({ where: { id: hostId } })) === 0) {
 			throw createHttpError(404, 'hydra host not found');
 		}
-		await sleep(LEASE_RETRY_INTERVAL_MS);
+		await new Promise((resolve) => setTimeout(resolve, LEASE_RETRY_INTERVAL_MS));
 	}
 	try {
 		await action(until);
@@ -381,62 +380,68 @@ export async function pauseHydraHost(hostId: string, options: { force: boolean }
  * when another pause action holds the lease and nothing was tried.
  */
 async function stopPausedNodes(hostId: string, options: { force: boolean }): Promise<boolean> {
-	return await withHostPauseLease(hostId, async () => {
-		const host = await loadHost(hostId);
-		if (host.pausedAt === null || host.encryptedAdminToken === null) return;
-		const stopRequestedAt = host.pauseStopRequestedAt;
+	// Only a forced pause is answered to an operator. The scheduler retries the rest.
+	const waitMs = options.force ? HOST_LEASE_WAIT_MS : 0;
+	return await withHostPauseLease(
+		hostId,
+		async () => {
+			const host = await loadHost(hostId);
+			if (host.pausedAt === null || host.encryptedAdminToken === null) return;
+			const stopRequestedAt = host.pauseStopRequestedAt;
 
-		if (stopRequestedAt === null && !options.force && hasInFlightWork(await countInFlight(hostId))) return;
+			if (stopRequestedAt === null && !options.force && hasInFlightWork(await countInFlight(hostId))) return;
 
-		// A head or an invite can still appear after the pause started, or while
-		// its stops keep failing: an adoption, a redemption or a provisioning
-		// already past its own pause check. Its node is stopped too, and recorded
-		// first so Resume starts it again.
-		const nodeIds = [...new Set([...host.pausedNodeIds, ...(await loadPauseNodeIds(prisma, hostId))])];
-		// Checked after the query, not before: an invite provisioned after the
-		// last full stop must still be stopped.
-		const hasNewNode = nodeIds.length !== host.pausedNodeIds.length;
-		if (stopRequestedAt !== null && !hasNewNode && fullyStoppedPauses.get(hostId) === stopRequestedAt.getTime()) {
-			return;
-		}
-		// Recorded before the first stop, not after the last: from here on every
-		// guard treats the nodes as down, and a stop that fails, forced or not,
-		// is sent again on the next cycle.
-		const requestedAt = stopRequestedAt ?? new Date();
-		if (stopRequestedAt === null || hasNewNode) {
-			const recorded = await prisma.hydraHost.updateMany({
-				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: stopRequestedAt },
-				data: { pausedNodeIds: nodeIds, pauseStopRequestedAt: requestedAt },
-			});
-			// The pause ended under an overrun lease. Stopping now would stop the
-			// nodes of an active Host.
-			if (recorded.count === 0) return;
-		}
-
-		const adminToken = decrypt(host.encryptedAdminToken);
-		const failures: string[] = [];
-		for (const nodeId of nodeIds) {
-			try {
-				await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
-			} catch (error) {
-				if (isHostNodeGone(error)) continue;
-				failures.push(`${nodeId}: ${errorMessage(error)}`);
-				// No answer at all, as while the Host redeploys: the next node would
-				// wait out the same timeout, and the lease would keep Resume out for
-				// a timeout per node.
-				if (error instanceof HydraHostRequestError && error.status === null) break;
+			// A head or an invite can still appear after the pause started, or while
+			// its stops keep failing: an adoption, a redemption or a provisioning
+			// already past its own pause check. Its node is stopped too, and recorded
+			// first so Resume starts it again.
+			const nodeIds = [...new Set([...host.pausedNodeIds, ...(await loadPauseNodeIds(prisma, hostId))])];
+			// Checked after the query, not before: an invite provisioned after the
+			// last full stop must still be stopped.
+			const hasNewNode = nodeIds.length !== host.pausedNodeIds.length;
+			if (stopRequestedAt !== null && !hasNewNode && fullyStoppedPauses.get(hostId) === stopRequestedAt.getTime()) {
+				return;
 			}
-		}
-		if (failures.length > 0) {
-			// Stop is idempotent on the Host, so the nodes that did stop are fine.
-			logger.warn('[HydraHostPause] could not stop every paused node; sending again next cycle', {
-				hostId,
-				failures,
-			});
-			return;
-		}
-		fullyStoppedPauses.set(hostId, requestedAt.getTime());
-	});
+			// Recorded before the first stop, not after the last: from here on every
+			// guard treats the nodes as down, and a stop that fails, forced or not,
+			// is sent again on the next cycle.
+			const requestedAt = stopRequestedAt ?? new Date();
+			if (stopRequestedAt === null || hasNewNode) {
+				const recorded = await prisma.hydraHost.updateMany({
+					where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: stopRequestedAt },
+					data: { pausedNodeIds: nodeIds, pauseStopRequestedAt: requestedAt },
+				});
+				// The pause ended under an overrun lease. Stopping now would stop the
+				// nodes of an active Host.
+				if (recorded.count === 0) return;
+			}
+
+			const adminToken = decrypt(host.encryptedAdminToken);
+			const failures: string[] = [];
+			for (const nodeId of nodeIds) {
+				try {
+					await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
+				} catch (error) {
+					if (isHostNodeGone(error)) continue;
+					failures.push(`${nodeId}: ${errorMessage(error)}`);
+					// No answer at all, as while the Host redeploys: the next node would
+					// wait out the same timeout, and the lease would keep Resume out for
+					// a timeout per node.
+					if (error instanceof HydraHostRequestError && error.status === null) break;
+				}
+			}
+			if (failures.length > 0) {
+				// Stop is idempotent on the Host, so the nodes that did stop are fine.
+				logger.warn('[HydraHostPause] could not stop every paused node; sending again next cycle', {
+					hostId,
+					failures,
+				});
+				return;
+			}
+			fullyStoppedPauses.set(hostId, requestedAt.getTime());
+		},
+		waitMs,
+	);
 }
 
 export async function advanceHydraHostPause(hostId: string, options: { force: boolean }): Promise<HydraHostPauseState> {
@@ -456,36 +461,40 @@ export async function advanceHydraHostPause(hostId: string, options: { force: bo
  * keeps refusing new work instead of sending it to a node that is still down.
  */
 export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseState> {
-	const acted = await withHostPauseLease(hostId, async () => {
-		const host = await loadHost(hostId);
-		if (host.pausedAt === null) return;
-		if (host.encryptedAdminToken === null) {
-			throw createHttpError(409, 'this hydra host is registered without an admin token, so it cannot be resumed');
-		}
-
-		const adminToken = decrypt(host.encryptedAdminToken);
-		const failures: string[] = [];
-		for (const nodeId of host.pausedNodeIds) {
-			try {
-				await startHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
-			} catch (error) {
-				// Skipped, not failed: a node the Host no longer has would otherwise
-				// keep the Host paused forever.
-				if (isHostNodeGone(error)) {
-					logger.warn('[HydraHostPause] paused node no longer exists on the host; skipped', { hostId, nodeId });
-					continue;
-				}
-				failures.push(`${nodeId}: ${errorMessage(error)}`);
+	const acted = await withHostPauseLease(
+		hostId,
+		async () => {
+			const host = await loadHost(hostId);
+			if (host.pausedAt === null) return;
+			if (host.encryptedAdminToken === null) {
+				throw createHttpError(409, 'this hydra host is registered without an admin token, so it cannot be resumed');
 			}
-		}
-		if (failures.length > 0) {
-			throw createHttpError(502, `could not start every paused node; the host stays paused: ${failures.join('; ')}`);
-		}
-		await prisma.hydraHost.updateMany({
-			where: { id: hostId, pausedAt: host.pausedAt },
-			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: new Date() },
-		});
-	});
+
+			const adminToken = decrypt(host.encryptedAdminToken);
+			const failures: string[] = [];
+			for (const nodeId of host.pausedNodeIds) {
+				try {
+					await startHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
+				} catch (error) {
+					// Skipped, not failed: a node the Host no longer has would otherwise
+					// keep the Host paused forever.
+					if (isHostNodeGone(error)) {
+						logger.warn('[HydraHostPause] paused node no longer exists on the host; skipped', { hostId, nodeId });
+						continue;
+					}
+					failures.push(`${nodeId}: ${errorMessage(error)}`);
+				}
+			}
+			if (failures.length > 0) {
+				throw createHttpError(502, `could not start every paused node; the host stays paused: ${failures.join('; ')}`);
+			}
+			await prisma.hydraHost.updateMany({
+				where: { id: hostId, pausedAt: host.pausedAt },
+				data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: new Date() },
+			});
+		},
+		HOST_LEASE_WAIT_MS,
+	);
 	if (!acted) {
 		throw createHttpError(409, BUSY_MESSAGE);
 	}
