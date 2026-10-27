@@ -2058,7 +2058,7 @@ describe('HydraNode', () => {
 			expect(node.confirmedTransactionHistoryError?.message).toMatch(/inconsistent signed-state transition/);
 			expect(mockLoggerError).toHaveBeenCalledWith(
 				'[HydraNode] Could not store a signed snapshot that this replay rejected',
-				expect.objectContaining({ number: third.snapshot.number, error: 'database down' }),
+				expect.objectContaining({ headId: third.headId, number: third.snapshot.number, error: 'database down' }),
 			);
 		});
 

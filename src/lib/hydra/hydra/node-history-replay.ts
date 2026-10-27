@@ -602,6 +602,7 @@ export class HydraHistoryReplay {
 		new Promise<void>((resolve) => resolve(this.host.persistVerifiedSnapshot?.(parsedMessage))).catch(
 			(error: unknown) =>
 				logger.error('[HydraNode] Could not store a signed snapshot that this replay rejected', {
+					headId: parsedMessage.headId,
 					number: parsedMessage.snapshot.number,
 					error: error instanceof Error ? error.message : String(error),
 				}),
