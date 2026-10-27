@@ -37,7 +37,7 @@ The Masumi Payment Service handles financial transactions and requires secure wa
 
 - VERIFIED: `packages/hydra-host/src/api/proxy.ts` parses node WebSocket commands and rejects `Init` in ordinary sessions. The limit also covers a node-derived runtime token and the optional Host-wide user token.
 - VERIFIED: `src/routes/api/hydra/head/lifecycle.ts` checks the node's L2 parameters against current L1 parameters before it calls the Host's admin-only `POST /v1/nodes/{nodeId}/init` route. The Host opens one loopback WebSocket session, sends one Init, and closes that session.
-- VERIFIED: the Host admin route does not repeat the L1/L2 admission check. An operator holding the Host admin token can call it directly as a privileged override. Protect that token as a fleet control credential.
+- VERIFIED: the Host admin route also reads the node's live L2 parameters and current L1 parameters from Blockfrost. It rejects an unsafe or unavailable result before sending Init. An operator holding the Host admin token cannot bypass this admission check. Protect that token as a fleet control credential.
 - VERIFIED: a Host registration without an admin credential cannot dispatch Init. The payment API returns 409 before dispatch. New Host registration and node provisioning require an admin credential; an existing Host can lose it through an update.
 
 ### Service Security

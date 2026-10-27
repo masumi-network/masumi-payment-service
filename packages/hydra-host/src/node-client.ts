@@ -134,6 +134,11 @@ export class NodeClient {
 		}
 	}
 
+	/** Read the parameters the running node will use for a new Head. */
+	async fetchProtocolParameters(): Promise<unknown> {
+		return this.request('/protocol-parameters', { redirect: 'error' }, 5_000);
+	}
+
 	/**
 	 * `timeoutMs` exists so a caller working to a deadline can bound the read.
 	 * The drain loop checks its budget only after this resolves, so with the
