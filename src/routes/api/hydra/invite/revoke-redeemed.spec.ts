@@ -61,14 +61,18 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 	...actualEncryption,
 	decrypt: (value: string) => value,
 }));
+const READABLE = {
+	invites: [{ nonce: 'nonce', redeemedAt: 1, redeemer: {}, redeemerSignature: {} }],
+	unreadableNonces: [],
+};
+// The Host lists only redeemed records, so one this service cannot parse is still held there.
+const UNREADABLE = { invites: [], unreadableNonces: ['nonce'] };
+let heldByHost: { invites: object[]; unreadableNonces: string[] } = READABLE;
 // Other Hydra modules the route loads import more of the client than this test drives.
 const actualClient = await import('@/services/hydra-host/client');
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	...actualClient,
-	fetchHostRedemptions: async () => ({
-		now: Date.now(),
-		invites: [{ nonce: 'nonce', redeemedAt: 1, redeemer: {}, redeemerSignature: {} }],
-	}),
+	fetchHostRedemptions: async () => ({ now: Date.now(), ...heldByHost }),
 	forgetHostInvite: forget,
 	removeHostNode: remove,
 }));
@@ -97,6 +101,7 @@ const revoke = (body: Record<string, unknown>) =>
 beforeEach(() => {
 	jest.clearAllMocks();
 	invite.status = 'Issued';
+	heldByHost = READABLE;
 	updateMany.mockResolvedValue({ count: 1 });
 	remove.mockResolvedValue(undefined);
 	forget.mockResolvedValue(undefined);
@@ -124,7 +129,11 @@ it('resumes the invite list from an inclusive cursor in stable newest-first orde
 	});
 });
 
-it('refuses a redeemed invite unless the operator asks to discard the redemption', async () => {
+it.each([
+	['a redeemed invite', READABLE],
+	['an invite whose redeemed record is unreadable', UNREADABLE],
+])('refuses %s unless the operator asks to discard the redemption', async (_scenario, held) => {
+	heldByHost = held;
 	const { responseMock } = await revoke({});
 	expect(responseMock.statusCode).toBe(409);
 	expect(updateMany).not.toHaveBeenCalled();
@@ -132,7 +141,11 @@ it('refuses a redeemed invite unless the operator asks to discard the redemption
 	expect(forget).not.toHaveBeenCalled();
 });
 
-it('cancels an unadopted redemption: revoked, node force-removed, then forgotten and released', async () => {
+it.each([
+	['an unadopted redemption', READABLE],
+	['an unreadable redemption', UNREADABLE],
+])('cancels %s: revoked, node force-removed, then forgotten and released', async (_scenario, held) => {
+	heldByHost = held;
 	const { responseMock } = await revoke({ discardRedemption: true });
 	expect(responseMock.statusCode).toBe(200);
 	expect(responseMock._getJSONData().data).toEqual({ id: 'invite', status: 'Revoked' });

@@ -123,9 +123,12 @@ Host remembers that on its volume.
 ### 5. Check the Host
 
 Press **Check** on the Host. Confirm that the release shows the new version and
-that the Host status is `Active`. If the `hydra-node` version changed, also
-re-pin `HYDRA_EXPECTED_VERSION` and `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH` in
-the payment service. See [hydra-operations.md](hydra-operations.md).
+that the Host status is `Active`. If the `hydra-node` version changed, record
+the reviewed binary version and full script catalogue in
+`src/services/hydra-host/reviewed-catalogue.ts` before using the Host. Its
+hash must match the parsed catalogue from the reviewed binary. Do not copy a
+fingerprint from the Host to make a failed compatibility check pass. See
+[hydra-operations.md](hydra-operations.md).
 
 ### 6. Resume
 
@@ -172,3 +175,34 @@ The payment service image comes from the same tag:
 main page of the admin UI. Upgrade it the same way you deploy it today, and run
 its database migrations as part of the deploy. See
 [deployment.md](deployment.md).
+
+## Rotate Host tokens
+
+The Host reads its admin and user tokens at startup. The payment service saves
+new tokens through `PATCH /hydra/host`. If the Host owns any node, the service
+refuses a user token update until every paused node reports `Stopped`.
+The update then drops the old Head sessions. The
+session sweep connects them with the new token after Resume.
+
+1. Pause the Host and wait until its phase is **Paused**. Keep this window short:
+   a stopped node cannot contest a Close.
+2. Replace the tokens in the Host's protected environment file. Restart the
+   same Host image with the same data volume and shutdown grace period.
+3. Send `PATCH /hydra/host` with the Host `id` and each changed `userToken` or
+   `adminToken`. Do this before Resume, since Resume uses the saved admin token.
+   The service checks that each node is stopped with the new user token, then
+   drops old Head sessions while the Host is paused. The ordinary pause status
+   may show `Stopping` between steps 2 and 3 because it still uses the old token.
+4. Resume the Host. Check that each node starts and each enabled Head reconnects.
+   If a session stays down, send the same `userToken` again to retry the refresh.
+
+VERIFIED (`src/services/hydra-host/registry.ts:435`,
+`src/services/hydra-invite/provisioning.ts:365`,
+`src/services/hydra-invite/redemption-ports.ts:219`): The token update, node
+provisioning, and redemption starts share the Host pause lease. A concurrent
+request gets `409` and can be retried after the token update finishes. Head
+adoption waits until Resume (`src/routes/api/hydra/head/create-head.ts:167`).
+
+An admin-only change does not restart node sessions. If you rotate both tokens,
+send both in the same PATCH request. Do not put token values in logs or shell
+history.
