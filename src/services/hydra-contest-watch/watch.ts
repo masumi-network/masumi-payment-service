@@ -284,6 +284,98 @@ export async function applyContestGapObservation(
 	return decision.action;
 }
 
+const watchedHeadSelect = {
+	id: true,
+	headIdentifier: true,
+	status: true,
+	isEnabled: true,
+	contestGapSignature: true,
+	contestGapSince: true,
+	contestGapAlertedAt: true,
+	contestationPeriod: true,
+	contestWatchClosedAlertedAt: true,
+	contestWatchIssueSignature: true,
+	contestWatchIssueSince: true,
+	contestWatchIssueAlertedAt: true,
+	HydraRelation: {
+		select: {
+			network: true,
+			LocalHotWallet: {
+				select: { PaymentSource: { select: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } } } },
+			},
+		},
+	},
+} satisfies Prisma.HydraHeadSelect;
+type WatchedHead = Prisma.HydraHeadGetPayload<{ select: typeof watchedHeadSelect }>;
+
+/** What the node showed. `compared` means the snapshot gap check ran on its numbers. */
+type NodeEvidence = 'open' | 'fanningOut' | 'compared' | null;
+
+/**
+ * Compare the node's close with its verified snapshot. This uses the node only:
+ * an L1 read that lags or fails must never hide or delay a gap.
+ */
+async function compareHeadWithNode(
+	head: WatchedHead,
+	connectionManager: ReturnType<typeof getHydraConnectionManager>,
+	needsReadOnlyObserver: Set<string>,
+): Promise<NodeEvidence> {
+	let node = head.isEnabled ? connectionManager.getNode(head.id) : null;
+	if (!node) {
+		needsReadOnlyObserver.add(head.id);
+		node = await readOnlyContestNode(head.id);
+	}
+	// Durable status may still say Open after a lifecycle write failed.
+	// Use the pinned node's observed close status, never that stale row.
+	// A closed socket keeps its last status but loses its authenticated sessions.
+	if (node.hasVerifiedPinnedSessions && node.status === HydraHeadStatus.Open) return 'open';
+	if (node.hasVerifiedPinnedSessions && node.status === HydraHeadStatus.FanningOut) return 'fanningOut';
+	if (node.status !== HydraHeadStatus.Closed && node.status !== HydraHeadStatus.FanoutPossible) return null;
+	const closedSnapshotNumber = node.closedSnapshotNumber;
+	let verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+	if (head.headIdentifier) {
+		try {
+			const stored = await prisma.hydraStoredSnapshot.findFirst({
+				where: { hydraHeadId: head.id, headIdentifier: head.headIdentifier },
+				orderBy: [{ snapshotNumber: 'desc' }, { snapshotVersion: 'desc' }],
+				select: { snapshotNumber: true },
+			});
+			if (stored && (verifiedSnapshotNumber === undefined || stored.snapshotNumber > verifiedSnapshotNumber)) {
+				verifiedSnapshotNumber = stored.snapshotNumber;
+			}
+		} catch (error) {
+			logger.warn('[HydraContestWatch] could not read stored signed snapshot', {
+				hydraHeadId: head.id,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+	}
+	if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) return null;
+	await applyContestGapObservation(
+		head,
+		{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
+		new Date(),
+	);
+	return 'compared';
+}
+
+async function observeHeadOnChain(head: WatchedHead): Promise<ChainObservation | null> {
+	try {
+		const apiKey = head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+		if (!head.headIdentifier || !apiKey) throw new Error('Independent L1 observer is not configured');
+		return await observeHydraHeadIsOpenOnChain({
+			observer: getBlockfrostInstance(head.HydraRelation.network, apiKey),
+			headId: head.headIdentifier,
+		});
+	} catch (error) {
+		logger.warn('[HydraContestWatch] independent L1 observation failed', {
+			hydraHeadId: head.id,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+		return null;
+	}
+}
+
 /** Compare authenticated node history even while the payment session is quarantined. */
 export async function runHydraContestWatch(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
@@ -292,121 +384,45 @@ export async function runHydraContestWatch(): Promise<void> {
 			retiredAt: null,
 			LocalParticipant: { isNot: null },
 		},
-		select: {
-			id: true,
-			headIdentifier: true,
-			status: true,
-			isEnabled: true,
-			contestGapSignature: true,
-			contestGapSince: true,
-			contestGapAlertedAt: true,
-			contestationPeriod: true,
-			contestWatchClosedAlertedAt: true,
-			contestWatchIssueSignature: true,
-			contestWatchIssueSince: true,
-			contestWatchIssueAlertedAt: true,
-			HydraRelation: {
-				select: {
-					network: true,
-					LocalHotWallet: {
-						select: { PaymentSource: { select: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } } } },
-					},
-				},
-			},
-		},
+		select: watchedHeadSelect,
 	});
 	const connectionManager = getHydraConnectionManager();
 	const needsReadOnlyObserver = new Set<string>();
-	// Bound Blockfrost calls while continuing past each unavailable observer.
-	await mapWithConcurrency(
-		heads,
-		CONTEST_WATCH_CONCURRENCY,
-		async (head) => {
-			const now = new Date();
-			let chain: ChainObservation | null = null;
+	const nodeEvidence = new Map<string, NodeEvidence>();
+	// The gap check runs first and for every head at once: an unavailable node or
+	// a slow L1 read must not delay alerts for another head's deadline.
+	await Promise.allSettled(
+		heads.map(async (head) => {
 			try {
-				const apiKey = head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
-				if (!head.headIdentifier || !apiKey) throw new Error('Independent L1 observer is not configured');
-				chain = await observeHydraHeadIsOpenOnChain({
-					observer: getBlockfrostInstance(head.HydraRelation.network, apiKey),
-					headId: head.headIdentifier,
-				});
-			} catch (error) {
-				logger.warn('[HydraContestWatch] independent L1 observation failed', {
-					hydraHeadId: head.id,
-					error: error instanceof Error ? error.message : 'Unknown error',
-				});
-			}
-			let isNodeObservable = false;
-			try {
-				let node = head.isEnabled ? connectionManager.getNode(head.id) : null;
-				if (!node) {
-					needsReadOnlyObserver.add(head.id);
-					node = await readOnlyContestNode(head.id);
-				}
-				// Durable status may still say Open after a lifecycle write failed.
-				// Use the pinned node's observed close status, never that stale row.
-				// A closed socket keeps its last status but loses its authenticated sessions.
-				if (node.hasVerifiedPinnedSessions && node.status === HydraHeadStatus.Open && chain?.state !== 'closed') {
-					isNodeObservable = true;
-				} else if (node.hasVerifiedPinnedSessions && node.status === HydraHeadStatus.FanningOut) {
-					isNodeObservable = true;
-				} else if (
-					(node.status === HydraHeadStatus.Closed || node.status === HydraHeadStatus.FanoutPossible) &&
-					chain?.state !== 'open'
-				) {
-					const closedSnapshotNumber = node.closedSnapshotNumber;
-					let verifiedSnapshotNumber = node.verifiedSnapshotNumber;
-					if (head.headIdentifier) {
-						try {
-							const stored = await prisma.hydraStoredSnapshot.findFirst({
-								where: { hydraHeadId: head.id, headIdentifier: head.headIdentifier },
-								orderBy: [{ snapshotNumber: 'desc' }, { snapshotVersion: 'desc' }],
-								select: { snapshotNumber: true },
-							});
-							if (stored && (verifiedSnapshotNumber === undefined || stored.snapshotNumber > verifiedSnapshotNumber)) {
-								verifiedSnapshotNumber = stored.snapshotNumber;
-							}
-						} catch (error) {
-							logger.warn('[HydraContestWatch] could not read stored signed snapshot', {
-								hydraHeadId: head.id,
-								error: error instanceof Error ? error.message : 'Unknown error',
-							});
-						}
-					}
-					if (closedSnapshotNumber !== undefined && verifiedSnapshotNumber !== undefined) {
-						isNodeObservable = true;
-						await applyContestGapObservation(
-							head,
-							{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
-							now,
-						);
-					}
-				}
+				nodeEvidence.set(head.id, await compareHeadWithNode(head, connectionManager, needsReadOnlyObserver));
 			} catch (error) {
 				logger.warn('[HydraContestWatch] could not compare the head with the chain', {
 					hydraHeadId: head.id,
 					error: error instanceof Error ? error.message : 'Unknown error',
 				});
 			}
-			if (chain?.state !== 'gone') {
-				const issue: WatchIssue | null = !isNodeObservable
-					? 'NODE_UNOBSERVABLE'
-					: chain === null
-						? 'L1_OBSERVER_UNAVAILABLE'
-						: null;
-				try {
-					await applyIndependentContestWatchAlerts(head, chain, issue, now);
-				} catch (error) {
-					logger.error('[HydraContestWatch] could not record independent contest alert', {
-						hydraHeadId: head.id,
-						error: error instanceof Error ? error.message : 'Unknown error',
-					});
-				}
-			}
+		}),
+	);
+	// Bound Blockfrost calls while continuing past each unavailable observer.
+	await mapWithConcurrency(
+		heads,
+		CONTEST_WATCH_CONCURRENCY,
+		async (head) => {
+			const now = new Date();
+			const chain = await observeHeadOnChain(head);
+			if (chain?.state === 'gone') return;
+			const evidence = nodeEvidence.get(head.id) ?? null;
+			const isNodeObservable =
+				evidence === 'compared' || evidence === 'fanningOut' || (evidence === 'open' && chain?.state !== 'closed');
+			const issue: WatchIssue | null = !isNodeObservable
+				? 'NODE_UNOBSERVABLE'
+				: chain === null
+					? 'L1_OBSERVER_UNAVAILABLE'
+					: null;
+			await applyIndependentContestWatchAlerts(head, chain, issue, now);
 		},
 		(error, head) => {
-			logger.error('[HydraContestWatch] head observation failed', {
+			logger.error('[HydraContestWatch] could not record independent contest alert', {
 				hydraHeadId: head.id,
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
