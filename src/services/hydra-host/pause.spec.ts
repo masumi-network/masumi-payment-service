@@ -396,6 +396,14 @@ describe('advanceHydraHostPause', () => {
 		expect(mockStopHostNode).not.toHaveBeenCalled();
 	});
 
+	// A Resume that wins the lease first ends the pause; a 200 would read as a stopped Host.
+	it('refuses a forced advance whose pause a Resume ended while it waited', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow({ pausedAt: null, pausedNodeIds: [] }));
+
+		await expect(pause.advanceHydraHostPause('host-1', { force: true })).rejects.toMatchObject({ status: 409 });
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
 	// A dropped force would quietly wait for the in-flight work after all.
 	it('refuses a forced advance with 409 while another instance holds the lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
