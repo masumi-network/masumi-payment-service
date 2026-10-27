@@ -454,7 +454,7 @@ export async function advanceHydraHostPause(hostId: string, options: { force: bo
 	const state = await getHydraHostPauseState(hostId);
 	// A Resume can take the lease first and end the pause while a forced stop waits.
 	if (options.force && state.phase === 'Active') {
-		throw createHttpError(409, 'a Resume ended this pause while the forced stop waited; pause the Host again');
+		throw createHttpError(409, 'a Resume ended this pause before the forced pause finished; pause the Host again');
 	}
 	return state;
 }
