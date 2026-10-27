@@ -116,6 +116,7 @@ beforeEach(() => {
 	});
 	mockFindFirst.mockResolvedValue(null);
 	mockHostFindUnique.mockResolvedValue({
+		status: 'Active',
 		pausedAt: null,
 		baseUrl: 'https://host',
 		allowInsecureHttp: false,
@@ -153,6 +154,7 @@ describe('reserveNodeForExchange', () => {
 	// A token update can run while this call waits for the lease; the old token would be refused.
 	it('provisions with the admin token read under the lease', async () => {
 		mockHostFindUnique.mockResolvedValue({
+			status: 'Active',
 			pausedAt: null,
 			baseUrl: 'https://host',
 			allowInsecureHttp: false,
@@ -168,6 +170,22 @@ describe('reserveNodeForExchange', () => {
 			PERIODS,
 			expect.anything(),
 		);
+	});
+
+	// Placement picked an Active Host, but the operator may change its status during the wait.
+	it('refuses a Host that stopped being Active while the call waited for the lease', async () => {
+		mockHostFindUnique.mockResolvedValue({
+			status: 'Draining',
+			pausedAt: null,
+			baseUrl: 'https://host',
+			allowInsecureHttp: false,
+			encryptedAdminToken: 'enc:admin-token',
+		});
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockProvision).not.toHaveBeenCalled();
 	});
 
 	// Two invites minted on one Host at once must not refuse each other.

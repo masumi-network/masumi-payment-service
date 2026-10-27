@@ -368,9 +368,15 @@ export async function reserveNodeForExchange(
 			// Read again under the lease: a token update may have run while this call waited for it.
 			const current = await prisma.hydraHost.findUnique({
 				where: { id: host.id },
-				select: { pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
+				select: { status: true, pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
 			});
 			if (!current) throw createHttpError(404, 'the selected hydra host no longer exists');
+			if (current.status !== 'Active') {
+				throw createHttpError(
+					409,
+					'the selected hydra host is no longer active; retry to place the node on another host',
+				);
+			}
 			if (current.pausedAt !== null) {
 				throw createHttpError(409, 'the selected hydra host is paused; resume it before provisioning a node');
 			}
