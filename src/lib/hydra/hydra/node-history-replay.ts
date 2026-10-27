@@ -584,7 +584,11 @@ export class HydraHistoryReplay {
 			};
 			return true;
 		};
-		const pending = this.host.persistVerifiedSnapshot?.(parsedMessage);
+		// Named here: fail() would report any other error as a frame that failed validation.
+		const pending = this.host.persistVerifiedSnapshot?.(parsedMessage).catch((error: unknown) => {
+			if (error instanceof HydraProtocolError) throw error;
+			throw new HydraProtocolError('Hydra verified snapshot could not be stored', { cause: error });
+		});
 		return pending ? pending.then(capture) : (capture(), undefined);
 	}
 

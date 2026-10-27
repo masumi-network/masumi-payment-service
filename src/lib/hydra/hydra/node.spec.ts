@@ -1019,6 +1019,8 @@ describe('HydraNode', () => {
 			await new Promise((resolve) => setImmediate(resolve));
 
 			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+			// The recorded head error must say storage failed, not that a frame was invalid.
+			expect(node.confirmedTransactionHistoryError?.message).toBe('Hydra verified snapshot could not be stored');
 			expect((node.confirmedTransactionHistoryError as HydraProtocolError & { cause: Error })?.cause).toEqual(
 				expect.objectContaining({
 					message: 'snapshot database unavailable',
