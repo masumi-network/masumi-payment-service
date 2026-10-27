@@ -488,7 +488,7 @@ recover funds from a head whose service database is gone. The head details
 dialog warns until you do it.
 
 **Signed snapshots are kept outside the node.** Each time the service
-verifies that every party signed a snapshot, it stores that snapshot in
+verifies that every party signed a new snapshot, it stores that snapshot in
 `HydraStoredSnapshot`, one row per snapshot number and version. When the replay
 rejects a signed snapshot for how the history reached it (a bad first snapshot
 or a bad transition), it still starts a write for that snapshot. That write is
