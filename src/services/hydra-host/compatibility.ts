@@ -1,11 +1,13 @@
 import { Network } from '@/generated/prisma/client';
 import type { ExpectedHostCapabilities } from './placement';
+import { REVIEWED_HYDRA_RELEASE } from './reviewed-catalogue';
 
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 /** Hydra release reviewed by this service. Override only as part of an upgrade. */
-export const DEFAULT_EXPECTED_HYDRA_VERSION = '2.4.1';
+export const DEFAULT_EXPECTED_HYDRA_VERSION = REVIEWED_HYDRA_RELEASE.version;
+export const DEFAULT_EXPECTED_SCRIPT_CATALOGUE_HASH = REVIEWED_HYDRA_RELEASE.catalogueHash;
 
 /**
  * Hash of the reviewed preprod file committed at
@@ -32,18 +34,6 @@ function requiredSha256(value: string | undefined, name: string, hint: string): 
 }
 
 /**
- * How to obtain the catalogue fingerprint.
- *
- * Deliberately not "hash the CLI output": the value is taken over the parsed
- * catalogue document re-serialised by this service, so hashing
- * `hydra-node --hydra-script-catalogue` directly yields a different digest and
- * the mismatch only surfaces later, at placement.
- */
-const CATALOGUE_HASH_HINT =
-	'Connect the host, press Check on it, and copy the Scripts fingerprint from the node details ' +
-	'(see docs/hydra-operations.md). It cannot be reproduced by hashing the hydra-node CLI output directly.';
-
-/**
  * Independent compatibility manifest for Hydra Host placement.
  *
  * Values come from service configuration and reviewed repository artifacts,
@@ -57,12 +47,19 @@ export function expectedHostCapabilitiesForNetwork(
 	if (!VERSION_PATTERN.test(hydraVersion)) {
 		throw new HostCompatibilityConfigError('HYDRA_EXPECTED_VERSION must be an exact semantic version');
 	}
+	if (hydraVersion !== DEFAULT_EXPECTED_HYDRA_VERSION) {
+		throw new HostCompatibilityConfigError(
+			'HYDRA_EXPECTED_VERSION is not the reviewed Hydra binary. Review its catalogue and update reviewed-catalogue.ts before changing the version',
+		);
+	}
 
-	const scriptCatalogueHash = requiredSha256(
-		env.HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH,
-		'HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH',
-		CATALOGUE_HASH_HINT,
-	);
+	const configuredCatalogueHash = env.HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH?.trim().toLowerCase();
+	if (configuredCatalogueHash && configuredCatalogueHash !== DEFAULT_EXPECTED_SCRIPT_CATALOGUE_HASH) {
+		throw new HostCompatibilityConfigError(
+			'HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH differs from the reviewed catalogue in reviewed-catalogue.ts',
+		);
+	}
+	const scriptCatalogueHash = DEFAULT_EXPECTED_SCRIPT_CATALOGUE_HASH;
 	const ledgerParamsHash = requiredSha256(
 		network === Network.Preprod
 			? env.HYDRA_EXPECTED_LEDGER_PARAMS_HASH_PREPROD || DEFAULT_PREPROD_LEDGER_PARAMS_HASH
