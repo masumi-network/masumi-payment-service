@@ -8,6 +8,7 @@ const mockHostFindUnique = jest.fn() as AnyMock;
 const mockHostUpdate = jest.fn() as AnyMock;
 const mockHostUpdateMany = jest.fn() as AnyMock;
 const mockHostFindMany = jest.fn() as AnyMock;
+const mockHostCount = jest.fn() as AnyMock;
 const mockParticipantFindMany = jest.fn() as AnyMock;
 const mockParticipantFindUnique = jest.fn() as AnyMock;
 const mockInviteFindMany = jest.fn() as AnyMock;
@@ -34,6 +35,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockHostFindUnique,
 			updateMany: mockHostUpdateMany,
 			findMany: mockHostFindMany,
+			count: mockHostCount,
 		},
 		hydraLocalParticipant: { findUnique: mockParticipantFindUnique, findMany: mockParticipantFindMany },
 		hydraHeadInvite: { findMany: mockInviteFindMany },
@@ -123,6 +125,7 @@ beforeEach(() => {
 	pause.resetHydraHostPauseMemory();
 	setInFlight(0);
 	mockHostUpdateMany.mockResolvedValue({ count: 1 });
+	mockHostCount.mockResolvedValue(1);
 	mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }, { hostNodeId: 'node-b' }]);
 	mockInviteFindMany.mockResolvedValue([]);
 	mockStopHostNode.mockResolvedValue(undefined);
@@ -645,6 +648,16 @@ describe('withHostPauseLease', () => {
 		const action = jest.fn(async () => undefined);
 
 		await expect(pause.withHostPauseLease('host-1', action, 300)).resolves.toBe(false);
+		expect(action).not.toHaveBeenCalled();
+	});
+
+	// The claim cannot tell a held lease from a missing Host; waiting would end in a false busy.
+	it('reports a deleted Host instead of waiting on it', async () => {
+		mockHostUpdateMany.mockResolvedValue({ count: 0 });
+		mockHostCount.mockResolvedValue(0);
+		const action = jest.fn(async () => undefined);
+
+		await expect(pause.withHostPauseLease('host-1', action, 1_000)).rejects.toMatchObject({ status: 404 });
 		expect(action).not.toHaveBeenCalled();
 	});
 });

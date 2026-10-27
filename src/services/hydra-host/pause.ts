@@ -228,6 +228,10 @@ export async function withHostPauseLease(
 		});
 		if (claimed.count > 0) break;
 		if (Date.now() + LEASE_RETRY_INTERVAL_MS > deadline) return false;
+		// A deleted Host matches no row either, and would read as busy for the whole wait.
+		if ((await prisma.hydraHost.count({ where: { id: hostId } })) === 0) {
+			throw createHttpError(404, 'hydra host not found');
+		}
 		await sleep(LEASE_RETRY_INTERVAL_MS);
 	}
 	try {
