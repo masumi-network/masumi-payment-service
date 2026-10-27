@@ -421,7 +421,10 @@ export async function runHydraContestWatch(): Promise<void> {
 			if (chain?.state === 'gone') return;
 			const evidence = nodeEvidence.get(head.id) ?? null;
 			const isNodeObservable =
-				evidence === 'compared' || evidence === 'fanningOut' || (evidence === 'open' && chain?.state !== 'closed');
+				// A node and an L1 lookup that disagree on Close still need an operator.
+				(evidence === 'compared' && chain?.state !== 'open') ||
+				evidence === 'fanningOut' ||
+				(evidence === 'open' && chain?.state !== 'closed');
 			const issue: WatchIssue | null = !isNodeObservable
 				? 'NODE_UNOBSERVABLE'
 				: chain === null

@@ -435,7 +435,8 @@ describe('runHydraContestWatch', () => {
 		expect(mockUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ contestGapSignature: '3<5' }) }),
 		);
-		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+		// The disagreement itself is still an issue for an operator.
+		expect(mockUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: 'NODE_UNOBSERVABLE' }) }),
 		);
 	});
@@ -451,6 +452,7 @@ describe('runHydraContestWatch', () => {
 			if ('contestGapSignature' in args.data) throw new Error('database unavailable');
 			return { count: 1 };
 		}) as never);
+		mockObserveHeadChain.mockResolvedValue({ state: 'closed', latestTxHash: 'c'.repeat(64) });
 		await watch.runHydraContestWatch();
 		expect(mockUpdateMany).not.toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ contestWatchIssueSignature: 'NODE_UNOBSERVABLE' }) }),
