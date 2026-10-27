@@ -17,17 +17,23 @@ consequence of one of them:
 
 1. **A head is per counterparty.** It is opened between your wallet and one
    other wallet, and it carries payments between those two only. An agent
-   whose seller wallet is not the head's counterparty settles on L1, and the
-   payment succeeds — it is simply slower and costs a fee.
+   whose seller wallet is not the head's counterparty can use L1 when the
+   purchase uses automatic routing. Normal L1 validation and settlement still
+   apply. A purchase forced to Hydra does not switch to L1.
 2. **Money must be inside the head to be spent there.** Funds are put in when
    the head opens, and added later through a deposit. Neither is instant.
 3. **Opening and closing are L1 transactions.** They take minutes and cost
    fees. A head is worth opening when you expect a stream of payments with the
    same counterparty, not for a single one.
 
-If you take one thing from this page: **Hydra is a speed optimisation with a
-setup cost, and L1 is always the fallback.** Nothing is stuck on L2 that
-cannot come back.
+Hydra has a setup cost. An automatically routed purchase can use L1 before
+the service reserves its L2 inputs. A purchase forced to Hydra waits or fails
+when no usable head exists. Funds already in a head return through a valid
+withdrawal or a completed Close and fanout. An unabsorbed deposit needs
+**Recover**. An unburned L2 mint or an output that L1 cannot carry can block
+final fanout. Keep the node running and monitor settlement until the head is
+`Final`; see [Take money out](#5-take-money-out) and
+[stalled fanout](#a-head-that-stays-in-fanoutpossible-or-fanningout).
 
 ## What you need
 
@@ -455,9 +461,11 @@ close within five days.
 
 ## Day to day
 
-**Payments route themselves.** A purchase between two wallets with an open head
-goes through it; anything else goes to L1. There is no per-payment switch, and
-a head that is not usable is never an error — it is a slower payment.
+**Payments route by the selected layer and available head.** Automatic routing
+tries a usable head first. Before an L2 reservation, a request can use L1 if
+no usable head is available. A purchase forced to Hydra waits while a head
+wallet is busy and fails if no suitable head exists. It does not silently use
+L1. Once L2 inputs are reserved, a failed submission stays held for recovery.
 
 **Watch the node balance.** Each head's node holds about 30 ADA of its own to
 pay for opening, depositing and closing. It is topped up automatically from the
@@ -469,9 +477,11 @@ will show them exactly once before sealing them. Without them you cannot
 recover funds from a head whose service database is gone. The head details
 dialog warns until you do it.
 
-**Closing.** Close from the head's action menu. What is inside the head returns
-to L1 after the dispute window, then fans out, and nothing needs watching in
-between.
+**Closing.** Close from the head's action menu. Keep the node online through
+the contestation period so it can contest an old snapshot. After the deadline,
+watch fanout until the head reaches `Final`. A stalled `FanoutPossible` or
+`FanningOut` head needs investigation and may need partial fanout. An unburned
+L2 mint or an output that L1 cannot carry can stop final fanout.
 
 One thing does not come back that way: a deposit the head never absorbed is not
 part of the fanout. It returns only through **Recover**, which needs this
