@@ -256,8 +256,11 @@ export function proxyWebSocket(
 		try {
 			server.handleUpgrade(request, clientSocket, head, (client) => {
 				upgraded = true;
-				const clientStream = createWebSocketStream(client, { readableObjectMode: true, readableHighWaterMark: 1 });
-				const upstreamStream = createWebSocketStream(upstream, { readableObjectMode: true, readableHighWaterMark: 1 });
+				// Text messages read as strings. Without decodeStrings: false the
+				// writable side turns them into Buffers, which ws sends as binary frames.
+				const streamOptions = { readableObjectMode: true, readableHighWaterMark: 1, decodeStrings: false };
+				const clientStream = createWebSocketStream(client, streamOptions);
+				const upstreamStream = createWebSocketStream(upstream, streamOptions);
 				const commandGate = new Transform({
 					writableObjectMode: true,
 					readableObjectMode: true,

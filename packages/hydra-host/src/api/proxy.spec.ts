@@ -495,6 +495,7 @@ describe('node api websocket proxy', () => {
 		commands: string[];
 		pings: string[];
 		pongs: string[];
+		binaryCommands: boolean[];
 		pingFromNode: () => void;
 		sendThenClose: (message: string) => void;
 	}> {
@@ -504,6 +505,7 @@ describe('node api websocket proxy', () => {
 		const commands: string[] = [];
 		const pings: string[] = [];
 		const pongs: string[] = [];
+		const binaryCommands: boolean[] = [];
 		let pingFromNode = (): void => {
 			throw new Error('node websocket has not opened');
 		};
@@ -519,7 +521,7 @@ describe('node api websocket proxy', () => {
 					send: (d: string) => void;
 					close: () => void;
 					ping: (d: string) => void;
-					on: (e: string, cb: (d: Buffer) => void) => void;
+					on: (e: string, cb: (d: Buffer, isBinary: boolean) => void) => void;
 				},
 				request: { url?: string; headers: IncomingMessage['headers'] },
 			) => {
@@ -533,8 +535,9 @@ describe('node api websocket proxy', () => {
 				socket.send(JSON.stringify({ tag: 'Greetings' }));
 				socket.on('ping', (data: Buffer) => pings.push(data.toString()));
 				socket.on('pong', (data: Buffer) => pongs.push(data.toString()));
-				socket.on('message', (data: Buffer) => {
+				socket.on('message', (data: Buffer, isBinary: boolean) => {
 					commands.push(data.toString());
+					binaryCommands.push(isBinary);
 					socket.send(data.toString());
 				});
 			},
@@ -548,6 +551,7 @@ describe('node api websocket proxy', () => {
 			commands,
 			pings,
 			pongs,
+			binaryCommands,
 			pingFromNode: () => pingFromNode(),
 			sendThenClose: (message) => sendThenClose(message),
 		};
@@ -619,14 +623,16 @@ describe('node api websocket proxy', () => {
 		const upstream = await upgradeableNode();
 		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
 		const socket = await openNodeSocket(USER);
-		const answer = new Promise<string>((resolve) =>
-			socket.on('message', (data: Buffer) => {
-				if (data.toString().includes('Abort')) resolve(data.toString());
+		const answer = new Promise<{ text: string; isBinary: boolean }>((resolve) =>
+			socket.on('message', (data: Buffer, isBinary: boolean) => {
+				if (data.toString().includes('Abort')) resolve({ text: data.toString(), isBinary });
 			}),
 		);
 		socket.send('{"tag":"Abort"}');
-		expect(await answer).toBe('{"tag":"Abort"}');
+		// The payment client refuses binary frames (src/lib/hydra/hydra/connection.ts).
+		expect(await answer).toEqual({ text: '{"tag":"Abort"}', isBinary: false });
 		expect(upstream.commands).toEqual(['{"tag":"Abort"}']);
+		expect(upstream.binaryCommands).toEqual([false]);
 		socket.close();
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
