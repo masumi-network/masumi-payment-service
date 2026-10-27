@@ -134,7 +134,7 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		tier: 'admin',
 		summary: 'Dispatch one Init to this node',
 		description:
-			"Admin only. Before dispatch, the Host reads this node's live L2 parameters and current L1 parameters from Blockfrost. Init is refused when those checks fail.",
+			"Admin only. The Host permits one Init attempt per node and keeps that admission across restarts. Before dispatch, it reads this node's live L2 parameters and current L1 parameters from Blockfrost. Init is refused when those checks fail. An uncertain attempt requires operator reconciliation before retry.",
 	},
 	{ path: '/v1/nodes/{nodeId}/stop', method: 'post', kind: 'stopNode', tier: 'admin', summary: 'Stop the node' },
 	{

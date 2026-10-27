@@ -114,6 +114,14 @@ describe('NodeRegistryStore', () => {
 		await expect(store.read('node-1')).rejects.toThrow(/invalid peerKeysGeneration/);
 	});
 
+	it('fails closed on a malformed persisted Init marker', async () => {
+		await store.write(record());
+		const file = path.join(store.nodeDir('node-1'), 'node.json');
+		const saved = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>;
+		await fs.writeFile(file, JSON.stringify({ ...saved, initDispatchAttemptedAt: null }), 'utf8');
+		await expect(store.read('node-1')).rejects.toThrow(/invalid initDispatchAttemptedAt/);
+	});
+
 	it('refuses a nodeId that would escape the nodes directory', () => {
 		expect(() => store.nodeDir('../escape')).toThrow(RegistryError);
 		expect(() => store.nodeDir('a/b')).toThrow(RegistryError);

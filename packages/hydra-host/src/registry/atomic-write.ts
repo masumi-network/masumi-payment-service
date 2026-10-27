@@ -11,16 +11,16 @@ import fs from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
-export async function fsyncDir(dir: string): Promise<void> {
-	// Renaming is only durable once the *directory* entry is flushed. Not all
-	// platforms permit opening a directory for fsync, so failures here are
-	// tolerated rather than fatal.
+export async function fsyncDir(dir: string, strict = false): Promise<void> {
+	// Renaming is only durable once the directory entry is flushed. Some
+	// platforms disallow directory fsync. An Init admission must fail closed.
 	let handle: FileHandle | undefined;
 	try {
 		handle = await fs.open(dir, 'r');
 		await handle.sync();
-	} catch {
-		// best effort
+	} catch (error) {
+		if (strict) throw error;
+		// best effort for records that do not gate an irreversible command
 	} finally {
 		await handle?.close().catch(() => undefined);
 	}
@@ -31,7 +31,7 @@ let tempCounter = 0;
 export async function writeFileAtomic(
 	filePath: string,
 	contents: string,
-	options: { mode?: number } = {},
+	options: { mode?: number; strictDirectorySync?: boolean } = {},
 ): Promise<void> {
 	const dir = path.dirname(filePath);
 	// The temp name must be unique per write. A shared name lets two concurrent
@@ -50,5 +50,5 @@ export async function writeFileAtomic(
 		await handle?.close().catch(() => undefined);
 	}
 	await fs.rename(tmp, filePath);
-	await fsyncDir(dir);
+	await fsyncDir(dir, options.strictDirectorySync === true);
 }
