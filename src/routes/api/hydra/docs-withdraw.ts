@@ -23,7 +23,7 @@ export function registerHydraWithdrawPaths({ registry, apiKeyAuth }: SwaggerRegi
 		path: '/hydra/head/withdraw',
 		summary: 'Withdraw funds from an open head back to L1. (admin access required)',
 		description:
-			"Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns once the withdrawal is built, signed and recorded Pending. Every refusal up to there is the answer, with its reason in the message. The head must then sign a snapshot removing the funds before its node posts the L1 payout. A head that does not confirm the split holds the answer for a minute or more before the 504.",
+			"Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head (free, and about a second), while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head: the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns once the withdrawal is built, signed and recorded Pending. Every refusal up to there is the answer, with its reason in the message. The head must then sign a snapshot removing the funds before its node posts the L1 payout. A head that does not confirm the split holds the answer for a minute or more before the 504.",
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(withdrawInput, { headId: HEAD_ID, lovelace: '10000000', drain: false }) },
@@ -36,20 +36,21 @@ export function registerHydraWithdrawPaths({ registry, apiKeyAuth }: SwaggerRegi
 			// that removes the funds, the L1 payout) is reported against the row.
 			400: {
 				description:
-					'Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant; or the wallet holds nothing eligible, less than was asked for, or too little to leave the remainder an output needs',
+					'Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant; or the wallet holds nothing eligible, less than was asked for, or too little to leave the remainder an output needs; or the withdrawn output, or carving an asset onto its own output, needs more lovelace than is eligible',
 			},
 			409: {
 				description:
-					'Head not open, disabled, not yet identified on chain, or its node is still catching up; its participants, payment sources or network no longer valid, or the head changed during on-chain verification; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy',
+					'Head not open, disabled, on a paused Hydra Host, not yet identified on chain, or its node is still catching up; its participants, payment sources or network no longer valid, or the head changed during on-chain verification; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy',
 			},
 			422: { description: 'The withdrawal transaction would be larger than the head accepts' },
 			500: {
-				description: 'Preparing the withdrawal failed for another reason, such as the node refusing the in-head split',
+				description:
+					'Preparing the withdrawal failed for another reason, such as the node refusing the in-head split or not answering a read of the in-head funds',
 			},
 			503: { description: "The Hydra Host has not recently confirmed the node's chain state; retry shortly" },
 			502: {
 				description:
-					'No live connection to the head, the head could not be verified on chain, the head state could not be read, or the in-head split confirmed without the expected output',
+					'No live connection to the head, the head could not be verified on chain, the head state could not be read, the head reported invalid ledger parameters, or the in-head split confirmed without the expected output',
 			},
 			504: {
 				description:
