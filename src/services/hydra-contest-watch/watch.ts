@@ -32,6 +32,14 @@ const CONTEST_WATCH_CONCURRENCY = 8;
 type ChainObservation = { state: HydraHeadChainState; latestTxHash: string };
 type WatchIssue = 'NODE_UNOBSERVABLE' | 'L1_OBSERVER_UNAVAILABLE';
 
+/** Head error text per outage. A Close is only a webhook: a planned close is not an error. */
+const WATCH_ISSUE_MESSAGES: Record<WatchIssue, (since: string) => string> = {
+	NODE_UNOBSERVABLE: (since) =>
+		`This service has not observed the node for this head since ${since}. hydra-node contests a close on an older snapshot only while it runs and follows the chain. Restore the existing node before any contestation deadline passes.`,
+	L1_OBSERVER_UNAVAILABLE: (since) =>
+		`The separate L1 lookup for this head has failed since ${since}, so this service cannot see a close by itself. The node can still contest while it runs. Restore the payment source's chain access.`,
+};
+
 type StoredWatchAlert = {
 	id: string;
 	status: HydraHeadStatus;
@@ -114,6 +122,16 @@ async function applyIndependentContestWatchAlerts(
 			data: { contestWatchIssueAlertedAt: now },
 		});
 		if (claimed.count !== 1) return;
+		await tx.hydraHeadError.create({
+			data: {
+				hydraHeadId: head.id,
+				errorType: HydraErrorType.ContestWatchAlert,
+				errorMessage: WATCH_ISSUE_MESSAGES[issue](head.contestWatchIssueSince!.toISOString()),
+				headStatus: head.status,
+				clientInput: 'ContestWatch',
+				errorAt: now,
+			},
+		});
 		await webhookEventsService.queueHydraHeadContestWatchAlertInTransaction(tx, {
 			hydraHeadId: head.id,
 			headStatus: head.status,

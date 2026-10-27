@@ -13,6 +13,10 @@ previous run ends. A run with slow nodes or a slow chain lookup takes longer, so
 an alert can arrive more than one run after that bound. A run that finds no
 problem clears the clock.
 
+VERIFIED: the two outage reasons also add a `ContestWatchAlert` error to the
+Head's error list, so an operator without a webhook receiver still sees them.
+`HEAD_CLOSED` is only a webhook, because a planned Close is not an error.
+
 1. On `HEAD_CLOSED`, check the Head's current L1 state and contestation
    deadline. Keep the local node running so it can post a Contest. Confirm on
    L1 that a Contest with the latest signed snapshot lands before the deadline.

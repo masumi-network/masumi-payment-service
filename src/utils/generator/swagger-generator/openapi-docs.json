@@ -37399,7 +37399,8 @@
                                                                     "PostTxOnChainFailed",
                                                                     "TxInvalid",
                                                                     "InvalidInput",
-                                                                    "ContestMissing"
+                                                                    "ContestMissing",
+                                                                    "ContestWatchAlert"
                                                                 ]
                                                             },
                                                             "errorMessage": {

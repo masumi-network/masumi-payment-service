@@ -1679,6 +1679,7 @@ enum HydraErrorType {
   InvalidInput
   /// The head was closed on an older snapshot than this node holds and no contest landed.
   ContestMissing
+  ContestWatchAlert
 }
 
 /// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
