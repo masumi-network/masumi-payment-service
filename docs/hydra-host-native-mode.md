@@ -120,12 +120,17 @@ afterwards. See
 
 ### 2. Start the Host
 
+Generate `HYDRA_HOST_EXCHANGE_KEY` once with `openssl rand -hex 32`. Store it
+in a mode 600 file outside `.hydra-data`, and load that same value before each
+start. Keep a backup. A changed key cannot read outstanding invites.
+
 ```bash
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
 HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
+HYDRA_HOST_EXCHANGE_KEY="$HYDRA_HOST_EXCHANGE_KEY" \
 HYDRA_NODE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" \
 HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
 BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \

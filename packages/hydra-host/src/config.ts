@@ -39,6 +39,10 @@ export type HostConfig = {
 	ledgerProtocolParametersFile: string;
 	adminToken: string;
 	userToken: string;
+	/** Stable operator-held key for the encrypted exchange log. Keep it outside dataDir. */
+	exchangeEncryptionKey: Buffer;
+	/** One-time opt-in to convert an existing plaintext exchange.json at boot. */
+	allowPlaintextExchangeMigration: boolean;
 	ports: PortLayout;
 	/** Operator override. Absent keys are derived per node from its unsynced period. */
 	drift: Partial<DriftThresholds>;
@@ -274,6 +278,16 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 			);
 		}
 	}
+	const exchangeKeyHex = required(env, 'HYDRA_HOST_EXCHANGE_KEY');
+	if (!/^[0-9a-fA-F]{64}$/.test(exchangeKeyHex)) {
+		throw new ConfigError('HYDRA_HOST_EXCHANGE_KEY must be 64 hex characters from 32 random bytes');
+	}
+	if (
+		exchangeKeyHex.toLowerCase() === adminToken.toLowerCase() ||
+		exchangeKeyHex.toLowerCase() === userToken.toLowerCase()
+	) {
+		throw new ConfigError('HYDRA_HOST_EXCHANGE_KEY must differ from the Host bearer tokens');
+	}
 
 	const ports: PortLayout = {
 		peerStart: integer(env, 'HYDRA_HOST_PEER_PORT_START', 5001),
@@ -326,6 +340,8 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		ledgerProtocolParametersFile: optional(env, 'HYDRA_HOST_LEDGER_PARAMS_FILE', `/opt/hydra/params/${network}.json`),
 		adminToken,
 		userToken,
+		exchangeEncryptionKey: Buffer.from(exchangeKeyHex, 'hex'),
+		allowPlaintextExchangeMigration: strictBoolean(env, 'HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION', false),
 		ports,
 		drift,
 		// Positive, not merely whole: a provision that omits its own period falls

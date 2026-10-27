@@ -13,6 +13,8 @@ import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
 import type { ProvisionDeps } from './provision.js';
 
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 const ADMIN = 'a'.repeat(40);
 const USER = 'u'.repeat(40);
 /** Long enough that only a hung response reaches it. */
@@ -29,6 +31,7 @@ const env: EnvSource = {
 			HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.hydra1.example.com:8444/exchange',
 			HYDRA_HOST_ADMIN_TOKEN: ADMIN,
 			HYDRA_HOST_USER_TOKEN: USER,
+			HYDRA_HOST_EXCHANGE_KEY: '42'.repeat(32),
 			HYDRA_HOST_PEER_PORT_COUNT: '4',
 		})[key],
 };
@@ -105,7 +108,7 @@ beforeEach(async () => {
 	host = createControlPlane({
 		config,
 		store,
-		exchange: new ExchangeStore(dataDir),
+		exchange: new ExchangeStore(dataDir, TEST_EXCHANGE_KEY),
 		ports,
 		// Held open until afterEach, so the record keeps the state the API left it
 		// in: the window between a request and the supervisor acting on it.

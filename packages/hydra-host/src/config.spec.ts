@@ -3,6 +3,7 @@ import { ConfigError, advertiseAddress, loadHostConfig, type EnvSource } from '.
 
 const TOKEN_A = 'a'.repeat(40);
 const TOKEN_B = 'b'.repeat(40);
+const EXCHANGE_KEY = '42'.repeat(32);
 
 function env(overrides: Record<string, string> = {}): EnvSource {
 	const values = new Map<string, string>(
@@ -11,6 +12,7 @@ function env(overrides: Record<string, string> = {}): EnvSource {
 			HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.hydra1.example.com:8444/exchange',
 			HYDRA_HOST_ADMIN_TOKEN: TOKEN_A,
 			HYDRA_HOST_USER_TOKEN: TOKEN_B,
+			HYDRA_HOST_EXCHANGE_KEY: EXCHANGE_KEY,
 			...overrides,
 		}),
 	);
@@ -24,12 +26,32 @@ describe('loadHostConfig', () => {
 		expect(config.network).toBe('preprod');
 		expect(config.ports.capacity).toBe(32);
 		expect(config.listenPort).toBe(8443);
+		expect(config.exchangeEncryptionKey).toEqual(Buffer.from(EXCHANGE_KEY, 'hex'));
+		expect(config.allowPlaintextExchangeMigration).toBe(false);
 		expect(config.hydraScriptsTxIds).toEqual([]);
 		expect(config.allowPrivatePeers).toBe(false);
 		expect(config.requirePeerEgressFirewall).toBe(false);
 		expect(loadHostConfig(env({ HYDRA_HOST_ALLOW_PRIVATE_PEERS: 'true' })).allowPrivatePeers).toBe(true);
 		expect(config.allowAutoSideLoad).toBe(false);
 		expect(loadHostConfig(env({ HYDRA_HOST_AUTO_SIDELOAD: 'true' })).allowAutoSideLoad).toBe(true);
+	});
+
+	it('requires an independent exchange encryption key and an explicit migration opt-in', () => {
+		expect(() => loadHostConfig(env({ HYDRA_HOST_EXCHANGE_KEY: '' }))).toThrow(/HYDRA_HOST_EXCHANGE_KEY is required/);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_EXCHANGE_KEY: 'not-hex' }))).toThrow(/64 hex characters/);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_EXCHANGE_KEY: TOKEN_A }))).toThrow(/64 hex characters/);
+		expect(() =>
+			loadHostConfig(env({ HYDRA_HOST_ADMIN_TOKEN: EXCHANGE_KEY, HYDRA_HOST_EXCHANGE_KEY: EXCHANGE_KEY })),
+		).toThrow(/must differ from the Host bearer tokens/);
+		expect(() =>
+			loadHostConfig(env({ HYDRA_HOST_USER_TOKEN: EXCHANGE_KEY.toUpperCase(), HYDRA_HOST_EXCHANGE_KEY: EXCHANGE_KEY })),
+		).toThrow(/must differ from the Host bearer tokens/);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION: 'yes' }))).toThrow(
+			/must be true or false/,
+		);
+		expect(
+			loadHostConfig(env({ HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION: 'true' })).allowPlaintextExchangeMigration,
+		).toBe(true);
 	});
 
 	it('refuses private peers when the host-network egress gate is required', () => {

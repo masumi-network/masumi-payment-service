@@ -10,6 +10,8 @@ import { ExchangeStore } from './exchange-store.js';
 import type { ExchangeMaterial, ExchangeSignature } from './exchange-types.js';
 import { hashRedemptionPayload, verifyRedemptionSignature } from './redemption-signature.js';
 
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 const NETWORK = 'Preprod' as const;
 const NONCE = 'nonce-signed01';
 
@@ -102,7 +104,7 @@ describe('redeeming over the Exchange Plane with real signatures', () => {
 	beforeEach(async () => {
 		jest.clearAllMocks();
 		dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-exchange-sig-'));
-		store = new ExchangeStore(dataDir);
+		store = new ExchangeStore(dataDir, TEST_EXCHANGE_KEY);
 		server = createExchangePlane({
 			store,
 			logger,

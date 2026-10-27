@@ -19,6 +19,8 @@ import path from 'node:path';
 import { ExchangeStore, INVITE_RETENTION_MS } from './exchange-store.js';
 import type { ExchangeMaterial, ExchangeSignature } from './exchange-types.js';
 
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 const REDEEMER: ExchangeMaterial = {
 	hydraVerificationKey: `5820${'ab'.repeat(32)}`,
 	cardanoVerificationKey: `5820${'cd'.repeat(32)}`,
@@ -33,7 +35,7 @@ let store: ExchangeStore;
 
 beforeEach(async () => {
 	directory = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-exchange-'));
-	store = new ExchangeStore(directory);
+	store = new ExchangeStore(directory, TEST_EXCHANGE_KEY);
 	await store.registerInvite({
 		nonce: 'nonce-one',
 		hostNodeId: 'node-1',

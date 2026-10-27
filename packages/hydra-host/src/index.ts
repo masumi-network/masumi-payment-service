@@ -163,7 +163,14 @@ async function main(): Promise<void> {
 	if (shuttingDown) return;
 
 	const store = new NodeRegistryStore(config.dataDir);
-	const exchange = new ExchangeStore(config.dataDir);
+	const exchange = new ExchangeStore(
+		config.dataDir,
+		config.exchangeEncryptionKey,
+		config.allowPlaintextExchangeMigration,
+	);
+	// Convert a legacy log before listeners or recovery work can use its nonces.
+	await exchange.ensureSealed();
+	if (shuttingDown) return;
 
 	// Port allocation is rebuilt from the durable registry rather than kept in
 	// memory, so a restart cannot reissue a live node's peer port.

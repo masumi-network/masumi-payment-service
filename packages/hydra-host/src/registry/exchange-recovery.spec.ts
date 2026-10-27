@@ -6,6 +6,8 @@ import { ExchangeStore } from './exchange-store.js';
 import { NodeRegistryStore } from './store.js';
 import type { NodeRecord } from './types.js';
 
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 let dataDir: string;
 let exchange: ExchangeStore;
 let nodes: NodeRegistryStore;
@@ -19,7 +21,7 @@ const material = {
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-exchange-recovery-'));
-	exchange = new ExchangeStore(dataDir);
+	exchange = new ExchangeStore(dataDir, TEST_EXCHANGE_KEY);
 	nodes = new NodeRegistryStore(dataDir);
 	await exchange.registerInvite({
 		nonce: 'nonce-pending',
@@ -47,7 +49,7 @@ describe('redemption setup retention', () => {
 			.mockResolvedValue({ peers: [{ advertise: material.advertise }] } as unknown as NodeRecord);
 
 		expect(await exchange.forgetInvite('nonce-pending', nodes)).toBe(false);
-		expect((await new ExchangeStore(dataDir).listInvites())[0]?.redeemerSignature).toEqual({
+		expect((await new ExchangeStore(dataDir, TEST_EXCHANGE_KEY).listInvites())[0]?.redeemerSignature).toEqual({
 			signature: 'sig',
 			key: 'key',
 		});
@@ -61,7 +63,7 @@ describe('redemption setup retention', () => {
 			nodes: NodeRegistryStore,
 		) => Promise<boolean>;
 		expect(await forget('nonce-pending', nodes)).toBe(false);
-		expect((await new ExchangeStore(dataDir).listInvites())[0]?.redeemer).toEqual(material);
+		expect((await new ExchangeStore(dataDir, TEST_EXCHANGE_KEY).listInvites())[0]?.redeemer).toEqual(material);
 	});
 
 	it('allows forgetting a redeemed invite after removal is requested', async () => {

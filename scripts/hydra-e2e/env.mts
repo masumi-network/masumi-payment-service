@@ -16,6 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -154,6 +155,8 @@ export function hostEnv(spec: HostSpec): NodeJS.ProcessEnv {
 		HYDRA_HOST_NETWORK: 'preprod',
 		HYDRA_HOST_ADMIN_TOKEN: spec.adminToken,
 		HYDRA_HOST_USER_TOKEN: spec.userToken,
+		// Fixture-only stable key: restarts in the same test run must reopen the log.
+		HYDRA_HOST_EXCHANGE_KEY: createHash('sha256').update(`test-exchange:${spec.adminToken}`).digest('hex'),
 		HYDRA_HOST_PEER_PORT_START: String(spec.peerPortStart),
 		HYDRA_HOST_API_PORT_START: String(spec.apiPortStart),
 		HYDRA_HOST_MONITORING_PORT_START: String(spec.monitoringPortStart),

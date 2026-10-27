@@ -19,6 +19,8 @@ import { peerTargetRejection } from '../peer-target-policy.js';
 // The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
 // because that is what the redemption is checked against: they are written
 // verbatim into the files hydra-node parses at startup.
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 const MATERIAL = {
 	walletAddress: 'addr_test1them',
 	hydraVerificationKey: `5820${'11'.repeat(32)}`,
@@ -82,7 +84,7 @@ async function post(pathname: string, body: unknown) {
 beforeEach(async () => {
 	jest.clearAllMocks();
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-exchange-'));
-	store = new ExchangeStore(dataDir);
+	store = new ExchangeStore(dataDir, TEST_EXCHANGE_KEY);
 	onRedeemed = jest.fn(async () => undefined) as typeof onRedeemed;
 	verifyRedemption = jest.fn<ExchangeDeps['verifyRedemption']>(async () => true);
 	checkPeerTarget = jest.fn<ExchangeDeps['checkPeerTarget']>(async () => null);

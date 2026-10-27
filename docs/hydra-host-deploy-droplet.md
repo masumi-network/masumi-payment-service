@@ -104,29 +104,43 @@ install -o 10001 -g 10001 -m 600 /dev/null /srv/hydra/blockfrost.txt
 cat > /srv/hydra/blockfrost.txt
 ```
 
-### The token file
+### The Host secret file
 
-Keep the two Host tokens in a root-owned file with mode 600. Do not pass them
+Keep the two Host tokens and the exchange key in a root-owned file with mode 600. Do not pass them
 as `-e NAME=value` arguments. Those arguments are visible in the process list
 to every local user while the command runs. With `--env-file`, the Docker client
 reads the file itself, so the tokens never appear in process arguments.
 
 ```bash
 install -o root -g root -m 600 /dev/null /srv/hydra/host.env
-# Type the two lines below with the real tokens, then Ctrl-D.
+# Type the three lines below with real secrets, then Ctrl-D.
 # Avoids leaving the tokens in shell history.
 cat > /srv/hydra/host.env
 ```
 
-The file contains exactly these two lines:
+The file contains these three lines. Generate the exchange key once with
+`openssl rand -hex 32`, then keep it outside the `/data` volume. Keep a separate
+backup of the key. Changing it without re-encrypting `exchange.json` prevents
+the Host from reading outstanding invites.
 
 ```
 HYDRA_HOST_ADMIN_TOKEN=<admin token>
 HYDRA_HOST_USER_TOKEN=<user token>
+HYDRA_HOST_EXCHANGE_KEY=<64 hex characters from 32 random bytes>
 ```
 
 Docker reads each line literally. Do not put quotes around a value, because the
 quotes become part of the token.
+
+VERIFIED: The Host encrypts `exchange.json` before publishing listeners
+(`packages/hydra-host/src/index.ts`, `packages/hydra-host/src/registry/exchange-store.ts`).
+For a volume written by an older Host, add
+`HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION=true` to `host.env` for the first
+start only.
+Check that `exchange.json` contains `"format":"hydra-exchange-v1"`, then remove
+the migration flag and restart. Keep old volume backups and old
+`.exchange.json.*.tmp` files restricted. They may contain plaintext invite
+nonces.
 
 ## 2. Run the container
 

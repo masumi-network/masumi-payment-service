@@ -74,6 +74,7 @@ beforeEach(async () => {
 		HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.example.com/exchange',
 		HYDRA_HOST_ADMIN_TOKEN: 'a'.repeat(40),
 		HYDRA_HOST_USER_TOKEN: 'u'.repeat(40),
+		HYDRA_HOST_EXCHANGE_KEY: '42'.repeat(32),
 		HYDRA_HOST_LEDGER_PARAMS_FILE: path.resolve('packages/hydra-host/params/preprod.json'),
 	});
 	const { NodeRegistryStore } = await import('./registry/store.js');
@@ -207,6 +208,20 @@ async function loseLease(): Promise<void> {
 }
 
 describe('Host startup failure shutdown', () => {
+	it('refuses a plaintext exchange log before recovery or listeners without migration opt-in', async () => {
+		await fs.writeFile(path.join(dataDir, 'exchange.json'), JSON.stringify({ invites: [] }));
+		const { ExchangeStore } = await import('./registry/exchange-store.js');
+		const recovery = jest.spyOn(ExchangeStore.prototype, 'listInvites');
+		await import('./index.js');
+		await exitReached;
+		expect(recovery).not.toHaveBeenCalled();
+		expect(servers).toHaveLength(0);
+		expect(jest.mocked(console.error).mock.calls.flat().join(' ')).toContain(
+			'HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION=true',
+		);
+		expect(events).toContain('exit:1');
+	});
+
 	it('does not adopt or launch a stored node without the required egress firewall receipt', async () => {
 		process.env.HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL = 'true';
 		const { Supervisor } = await import('./supervisor/supervisor.js');

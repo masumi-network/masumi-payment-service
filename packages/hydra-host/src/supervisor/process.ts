@@ -29,9 +29,10 @@ export type SpawnRequest = {
 /**
  * The only environment variables a hydra-node inherits from the Host.
  *
- * The Host process holds HYDRA_HOST_ADMIN_TOKEN and HYDRA_HOST_USER_TOKEN, and
+ * The Host process holds HYDRA_HOST_ADMIN_TOKEN, HYDRA_HOST_USER_TOKEN and
+ * HYDRA_HOST_EXCHANGE_KEY. Only allowlisted values reach hydra-node.
  * `spawn` without `env` hands every child the whole parent environment. This
- * keeps the tokens out of anything a node logs or dumps. It is no barrier to
+ * keeps these secrets out of anything a node logs or dumps. It is no barrier to
  * code execution in a node: the node runs as the Host's uid and can read
  * `/proc/<Host pid>/environ`.
  *

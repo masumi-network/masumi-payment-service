@@ -16,6 +16,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { writeFileAtomic } from './atomic-write.js';
+import { openExchangeState, sealExchangeState } from './exchange-seal.js';
 import { isPlainObject } from './json.js';
 import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchange-types.js';
 import type { NodeRegistryStore } from './store.js';
@@ -73,29 +74,31 @@ function emptyState(): ExchangeState {
 	return { invites: [] };
 }
 
-function parseState(raw: string): ExchangeState {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		throw new ExchangeStoreError('exchange.json is not valid JSON; the exchange log may be damaged');
-	}
+function parseState(parsed: unknown): ExchangeState {
 	if (!isPlainObject(parsed)) {
 		throw new ExchangeStoreError('exchange.json does not contain an exchange state');
 	}
 	const state = parsed as unknown as Partial<ExchangeState>;
+	if (!Array.isArray(state.invites)) {
+		throw new ExchangeStoreError('exchange.json has no invite list; the exchange log may be damaged');
+	}
 	return {
-		invites: Array.isArray(state.invites) ? state.invites : [],
+		invites: state.invites,
 	};
 }
 
 export class ExchangeStore {
 	private readonly file: string;
+	private readonly encryptionKey: Buffer;
+	private readonly allowPlaintextMigration: boolean;
 	private queue: Promise<unknown> = Promise.resolve();
 	private state: ExchangeState | undefined;
 
-	constructor(dataDir: string) {
+	constructor(dataDir: string, encryptionKey: Buffer, allowPlaintextMigration = false) {
+		if (encryptionKey.length !== 32) throw new ExchangeStoreError('exchange encryption key must be 32 bytes');
 		this.file = path.join(dataDir, EXCHANGE_FILE);
+		this.encryptionKey = Buffer.from(encryptionKey);
+		this.allowPlaintextMigration = allowPlaintextMigration;
 	}
 
 	private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -111,7 +114,18 @@ export class ExchangeStore {
 		try {
 			// Older native Host runs could leave open invite nonces in a 0644 file.
 			await fs.chmod(this.file, EXCHANGE_FILE_MODE);
-			this.state = parseState(await fs.readFile(this.file, 'utf8'));
+			const opened = openExchangeState(await fs.readFile(this.file, 'utf8'), this.encryptionKey);
+			const state = parseState(opened.state);
+			if (opened.isLegacy) {
+				if (!this.allowPlaintextMigration) {
+					throw new ExchangeStoreError(
+						'exchange.json is plaintext; set HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION=true once to encrypt it',
+					);
+				}
+				await this.write(state);
+			} else {
+				this.state = state;
+			}
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
 				this.state = emptyState();
@@ -119,15 +133,24 @@ export class ExchangeStore {
 				throw error;
 			}
 		}
-		return { invites: this.state.invites.map(copyInvite) };
+		const state = this.state;
+		if (state === undefined) throw new ExchangeStoreError('exchange state could not be loaded');
+		return { invites: state.invites.map(copyInvite) };
 	}
 
 	private async write(state: ExchangeState): Promise<void> {
 		await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
-		await writeFileAtomic(this.file, `${JSON.stringify(state, null, 2)}\n`, { mode: EXCHANGE_FILE_MODE });
+		await writeFileAtomic(this.file, sealExchangeState(state, this.encryptionKey), { mode: EXCHANGE_FILE_MODE });
 		// Publish only durable changes. Copies also keep caller-owned records
 		// and redemption results from changing the cache after the write.
 		this.state = { invites: state.invites.map(copyInvite) };
+	}
+
+	/** Authenticate or migrate the exchange log before the Host opens listeners. */
+	async ensureSealed(): Promise<void> {
+		await this.enqueue(async () => {
+			await this.read();
+		});
 	}
 
 	async listInvites(): Promise<InviteRecord[]> {

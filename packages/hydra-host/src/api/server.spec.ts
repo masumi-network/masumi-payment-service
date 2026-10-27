@@ -15,6 +15,8 @@ import { deriveNodeToken } from './node-token.js';
 import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
 import type { PeerHostnameResolver } from './peer-allowlist.js';
 
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
 	hydraVerificationKey: `5820${'ab'.repeat(32)}`,
@@ -31,6 +33,7 @@ const env: EnvSource = {
 			HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.hydra1.example.com:8444/exchange',
 			HYDRA_HOST_ADMIN_TOKEN: ADMIN,
 			HYDRA_HOST_USER_TOKEN: USER,
+			HYDRA_HOST_EXCHANGE_KEY: '42'.repeat(32),
 			HYDRA_HOST_PEER_PORT_COUNT: '4',
 		})[key],
 };
@@ -52,7 +55,7 @@ beforeEach(async () => {
 	resolvePeerHostname = async () => [{ address: '8.8.8.8', family: 4 }];
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
-	exchangeStore = new ExchangeStore(dataDir);
+	exchangeStore = new ExchangeStore(dataDir, TEST_EXCHANGE_KEY);
 	const ports = new PortAllocator(config.ports);
 	const provision: ProvisionDeps = {
 		store,
@@ -524,7 +527,7 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 		refusingServer = createControlPlane({
 			config,
 			store,
-			exchange: new ExchangeStore(refusingDir),
+			exchange: new ExchangeStore(refusingDir, TEST_EXCHANGE_KEY),
 			ports,
 			supervisor: { tick: async () => undefined } as unknown as Supervisor,
 			provision: refusingProvision,
@@ -632,7 +635,7 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 		overrideServer = createControlPlane({
 			config,
 			store,
-			exchange: new ExchangeStore(overrideDir),
+			exchange: new ExchangeStore(overrideDir, TEST_EXCHANGE_KEY),
 			ports,
 			supervisor: { tick: async () => undefined } as unknown as Supervisor,
 			provision: {
@@ -715,7 +718,7 @@ describe('control plane with HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH set', () =
 		gatedServer = createControlPlane({
 			config,
 			store: gatedStore,
-			exchange: new ExchangeStore(gatedDir),
+			exchange: new ExchangeStore(gatedDir, TEST_EXCHANGE_KEY),
 			ports: gatedPorts,
 			supervisor: { tick: async () => undefined } as unknown as Supervisor,
 			provision: {
@@ -791,7 +794,7 @@ describe('node-scoped credentials', () => {
 		strictServer = createControlPlane({
 			config,
 			store: new NodeRegistryStore(dataDir),
-			exchange: new ExchangeStore(dataDir),
+			exchange: new ExchangeStore(dataDir, TEST_EXCHANGE_KEY),
 			ports,
 			supervisor: { tick: async () => undefined } as unknown as Supervisor,
 			provision: {

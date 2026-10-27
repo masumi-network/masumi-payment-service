@@ -63,6 +63,7 @@ block-storage volume, the systemd unit, the firewall, and backups end to end.
 
 ```bash
 # Local testing.
+# Set HYDRA_HOST_EXCHANGE_KEY to the saved value before this command.
 cd packages/hydra-host
 HYDRA_HOST_IMAGE=hydra-host:local \
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
@@ -70,13 +71,13 @@ HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
+HYDRA_HOST_EXCHANGE_KEY="$HYDRA_HOST_EXCHANGE_KEY" \
 BLOCKFROST_PROJECT_FILE=/srv/secrets/blockfrost.txt \
 HYDRA_HOST_MEMORY_LIMIT=4g \
 docker compose up -d --build
 ```
 
-Five settings carry over to any deployment, and four of them are the kind that
-only hurt later:
+Six settings carry over to any deployment:
 
 - **A durable volume at `/data`.** It holds a SQLite event store and etcd's raft
   WAL, both of which need real fsync — block storage, not a network filesystem.
@@ -91,6 +92,9 @@ only hurt later:
 - **One instance per Host identity.** The peer ports, the advertise address and
   the volume all belong to a specific Host. Do not scale it horizontally.
 - **The Blockfrost file, mounted read-only.**
+- **A stable exchange encryption key outside `/data`.** Generate
+  `HYDRA_HOST_EXCHANGE_KEY` once with `openssl rand -hex 32`, back it up, and
+  reuse it on every restart. A different key cannot open outstanding invites.
 - **A memory limit** (`--memory`, `mem_limit` from `HYDRA_HOST_MEMORY_LIMIT`,
   or `resources.limits.memory`). The peer plane is published, so a flood from
   a peer must not be able to take the whole machine. Size it for the number of

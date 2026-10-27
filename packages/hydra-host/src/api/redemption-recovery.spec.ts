@@ -9,6 +9,8 @@ import { PortAllocator } from '../registry/ports.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { createRedemptionRecovery } from './redemption-recovery.js';
 
+const TEST_EXCHANGE_KEY = Buffer.alloc(32, 0x42);
+
 const material = {
 	walletAddress: 'addr_test1them',
 	hydraVerificationKey: `5820${'11'.repeat(32)}`,
@@ -43,7 +45,7 @@ beforeEach(async () => {
 		deps,
 	);
 	await acknowledgeEscrow('node-1', deps);
-	exchange = new ExchangeStore(dataDir);
+	exchange = new ExchangeStore(dataDir, TEST_EXCHANGE_KEY);
 	await exchange.registerInvite({
 		nonce: 'nonce-pending',
 		hostNodeId: 'node-1',
@@ -73,7 +75,7 @@ describe('durable redemption recovery', () => {
 		expect((await deps.store.read('node-1'))?.peers).toHaveLength(1);
 	});
 	it('configures a persisted redemption after the host restarts before setup', async () => {
-		const restarted = new ExchangeStore(dataDir);
+		const restarted = new ExchangeStore(dataDir, TEST_EXCHANGE_KEY);
 		await createRedemptionRecovery(restarted, deps, logger)();
 		const node = await deps.store.read('node-1');
 		expect(node?.peers).toEqual([
@@ -112,7 +114,7 @@ describe('durable redemption recovery', () => {
 		await createRedemptionRecovery(exchange, deps, logger)();
 		await deps.store.update('node-1', (node) => ({ ...node, state: 'Running', desired: 'Stopped', pid: 123 }));
 		const update = jest.spyOn(deps.store, 'updateAsync');
-		await createRedemptionRecovery(new ExchangeStore(dataDir), deps, logger)();
+		await createRedemptionRecovery(new ExchangeStore(dataDir, TEST_EXCHANGE_KEY), deps, logger)();
 		expect(update).not.toHaveBeenCalled();
 		expect((await deps.store.read('node-1'))?.desired).toBe('Stopped');
 	});

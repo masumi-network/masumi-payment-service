@@ -71,6 +71,10 @@ services:
       # a counterparty — a user token can close a head.
       HYDRA_HOST_ADMIN_TOKEN: ${HYDRA_HOST_ADMIN_TOKEN:?required}
       HYDRA_HOST_USER_TOKEN: ${HYDRA_HOST_USER_TOKEN:?required}
+      # Stable 32-byte key, separate from /data and the bearer tokens.
+      HYDRA_HOST_EXCHANGE_KEY: ${HYDRA_HOST_EXCHANGE_KEY:?required}
+      # Set true for one boot when upgrading an existing plaintext exchange.json.
+      HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION: ${HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION:-false}
       # The user token reaches every node on this Host, Close and Fanout included.
       # A node's routes also open to a token derived for that node, which reaches
       # only that node. Set this to false once no payment service sends the user

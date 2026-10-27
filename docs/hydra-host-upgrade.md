@@ -95,6 +95,13 @@ Use the image built from the new tag:
 `ghcr.io/masumi-network/masumi-payment-service-hydra-host:<tag>`. Pin it by
 digest. Keep every flag, variable and the same volume.
 
+For this Host version, set a stable `HYDRA_HOST_EXCHANGE_KEY` outside the data
+volume before restart. Generate it once with `openssl rand -hex 32` and back it
+up. If the volume has a plaintext `exchange.json`, set
+`HYDRA_HOST_EXCHANGE_ALLOW_PLAINTEXT_MIGRATION=true` for one boot, then remove
+the flag after the file has `"format":"hydra-exchange-v1"`. The Host refuses
+startup without a key, and refuses a plaintext log without the migration flag.
+
 **Docker on a droplet**, from
 [hydra-host-deploy-droplet.md §9](hydra-host-deploy-droplet.md):
 

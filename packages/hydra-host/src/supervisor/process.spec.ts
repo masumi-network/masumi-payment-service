@@ -198,6 +198,7 @@ describe('NodeProcessManager child environment', () => {
 		const injected = {
 			HYDRA_HOST_ADMIN_TOKEN: 'admin-token-that-must-not-leak',
 			HYDRA_HOST_USER_TOKEN: 'user-token-that-must-not-leak',
+			HYDRA_HOST_EXCHANGE_KEY: 'exchange-key-that-must-not-leak',
 			ETCD_INITIAL_CLUSTER_STATE: 'existing',
 			ETCD_VERSION: '3.5.34',
 		};
@@ -226,6 +227,7 @@ describe('NodeProcessManager child environment', () => {
 			>;
 			expect(childEnv.HYDRA_HOST_ADMIN_TOKEN).toBeUndefined();
 			expect(childEnv.HYDRA_HOST_USER_TOKEN).toBeUndefined();
+			expect(childEnv.HYDRA_HOST_EXCHANGE_KEY).toBeUndefined();
 			expect(childEnv.ETCD_VERSION).toBeUndefined();
 			expect(childEnv.ETCD_INITIAL_CLUSTER_STATE).toBe('existing');
 			expect(childEnv.PATH).toBe(process.env.PATH);
