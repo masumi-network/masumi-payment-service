@@ -786,6 +786,14 @@ describe('node api websocket proxy', () => {
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
 
+	it('502s an upgrade the node refuses and keeps serving', async () => {
+		await store.update('node-1', (current) => ({ ...current, apiPort: 1 }));
+
+		expect((await connect('/v1/nodes/node-1/api', USER)).status).toBe(502);
+		await new Promise<void>((resolve) => setTimeout(resolve, 50));
+		expect((await call('GET', '/v1/nodes/node-1/api/head', USER)).status).toBe(502);
+	});
+
 	it('rejects an upgrade on any path other than the api root', async () => {
 		expect((await connect('/v1/nodes/node-1/api/config', USER)).status).toBe(404);
 	});

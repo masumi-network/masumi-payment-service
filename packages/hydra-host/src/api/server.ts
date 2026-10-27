@@ -332,6 +332,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 	// WebSocket upgrades never reach the request handler, so they are
 	// authenticated and authorised here on their own path.
 	server.on('upgrade', (request, socket, head) => {
+		// Node drops its own error listener from an upgrade socket. A client reset
+		// while the record is read or the node handshake runs would crash the Host.
+		socket.on('error', (error) => logger.warn(`[api] websocket upgrade socket failed: ${error.message}`));
 		void (async () => {
 			const rejectUpgrade = (status: number, reason: string): void => {
 				logger.warn(`[api] websocket upgrade rejected: ${reason}`);

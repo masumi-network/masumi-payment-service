@@ -219,8 +219,12 @@ export function proxyWebSocket(
 		handshakeTimeout: INIT_DISPATCH_TIMEOUT_MS,
 	});
 	let upgraded = false;
+	let failed = false;
+	// Before the upgrade, ws emits both 'error' and 'close'. A second end() on
+	// the client socket raises an unhandled write-after-end error.
 	const fail = (message: string): void => {
-		if (clientSocket.destroyed) return;
+		if (failed || clientSocket.destroyed) return;
+		failed = true;
 		onError(message);
 		if (upgraded) {
 			clientSocket.destroy();
