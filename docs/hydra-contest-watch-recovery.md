@@ -13,6 +13,14 @@ previous run ends. A run with slow nodes or a slow chain lookup takes longer, so
 an alert can arrive more than one run after that bound. A run that finds no
 problem clears the clock.
 
+VERIFIED from `src/services/hydra-contest-watch/watch.ts` and
+`src/lib/hydra/hydra/head-init-validation.ts`: every run reads L1 for every
+Open, Closed or FanoutPossible Head, with two Blockfrost requests per Head
+(`assetsTransactions`, then `txsUtxos`). At one run per minute that is up to
+2,880 requests per Head per day, on the payment source's Blockfrost key, for
+each service instance that runs the job. Size the Blockfrost plan for it: a
+spent quota also fails the payment paths that use the same key.
+
 VERIFIED: the two outage reasons also add a `ContestWatchAlert` error to the
 Head's error list, so an operator without a webhook receiver still sees them.
 `HEAD_CLOSED` is only a webhook, because a planned Close is not an error.
