@@ -2,6 +2,7 @@ import { prisma } from '@masumi/payment-core/db';
 import canonicalStringify from 'canonical-json';
 import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
+import { parseHydraJson, stringifyHydraJson } from '@/lib/hydra/hydra/json';
 import type { HydraSnapshotVerificationFrame } from '@/lib/hydra/hydra/snapshot-verification';
 
 /** Identify the verified signed commitment without unsigned UTxO references. */
@@ -33,7 +34,9 @@ export function signedSnapshotJson(frame: HydraSnapshotVerificationFrame): strin
 	};
 	// Drop absent optional output fields before canonicalizing key order. The
 	// same signed state can arrive with a different JSON object insertion order.
-	return canonicalStringify(JSON.parse(JSON.stringify(signedState)));
+	// Replay hands over schema-parsed frames whose quantities are bigints, which
+	// JSON.stringify cannot serialize; canonical-json prints them exactly.
+	return canonicalStringify(parseHydraJson(stringifyHydraJson(signedState)));
 }
 
 /**

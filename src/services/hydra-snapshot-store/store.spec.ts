@@ -10,6 +10,8 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 const { persistVerifiedHydraSnapshot, signedSnapshotJson, signedSnapshotIdentityJson } = await import('./store');
+const { parseHydraJson } = await import('@/lib/hydra/hydra/json');
+const { historySnapshotConfirmedMessageSchema } = await import('@/lib/hydra/hydra/schemas');
 
 const HEAD_ID = 'ab'.repeat(28);
 const output = {
@@ -120,5 +122,26 @@ describe('persistVerifiedHydraSnapshot', () => {
 	it('propagates database errors instead of accepting a snapshot without storage', async () => {
 		mockCreate.mockRejectedValueOnce(new Error('database unavailable'));
 		await expect(persistVerifiedHydraSnapshot('head-row', frame())).rejects.toThrow('database unavailable');
+	});
+
+	// Replay passes the schema-parsed frame, whose quantities are bigints. A
+	// JSON.stringify round trip threw on them and wedged replay for any head
+	// holding funds.
+	it('stores a schema-parsed node frame with exact bigint quantities', async () => {
+		const signature = 'aa'.repeat(64);
+		const raw = `{"tag":"SnapshotConfirmed","seq":5,"headId":"${HEAD_ID}","timestamp":"t",
+			"signatures":{"multiSignature":["${signature}","${signature}"]},
+			"snapshot":{"headId":"${HEAD_ID}","version":0,"number":2,"accumulator":"${'cd'.repeat(32)}","confirmed":[],
+			"utxo":{"${'ef'.repeat(32)}#0":{"address":"addr_test1snapshot",
+			"value":{"lovelace":2000000,"${'12'.repeat(28)}":{"746f6b656e":18446744073709551615}},
+			"referenceScript":null,"inlineDatum":null,"inlineDatumRaw":null,"datum":null}},
+			"utxoToCommit":null,"utxoToDecommit":null}}`;
+		const parsed = historySnapshotConfirmedMessageSchema.parse(parseHydraJson(raw));
+
+		await persistVerifiedHydraSnapshot('head-row', parsed);
+
+		const stored = mockCreate.mock.calls[0]?.[0]?.data?.signedSnapshotJson as string;
+		expect(stored).toContain('"lovelace":2000000');
+		expect(stored).toContain('"746f6b656e":18446744073709551615');
 	});
 });
