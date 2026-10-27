@@ -154,9 +154,6 @@ model HydraHead {
   /// Transactions submitted through this head (L2)
   Transactions Transaction[]
 
-  /// The newest snapshot every party signed, stored for evidence and contest.
-  SignedSnapshot HydraHeadSignedSnapshot?
-
   /// The redeemed invite that produced this head.
   Invite HydraHeadInvite?
 

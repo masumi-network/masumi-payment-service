@@ -2,12 +2,12 @@
 
 ## Storage behavior
 
-- VERIFIED (code): `src/lib/hydra/hydra/node-history-replay.ts` calls `persistVerifiedSnapshot` only after party signatures and the accumulator pass. It also checks the predecessor transition for snapshots after the first one. Replay waits for the write before it adopts a new snapshot. A failed write fails the history pass.
+- VERIFIED (code): `src/lib/hydra/hydra/node-history-replay.ts` calls `persistVerifiedSnapshot` only after party signatures and the accumulator pass. It also checks the predecessor transition for snapshots after the first one. Replay waits for the write before it adopts a new snapshot. A failed write fails the history pass. When a signed snapshot fails the first-snapshot guard or the predecessor transition check, replay starts the write for that snapshot and fails the pass without waiting. That write ends after the pass fails. A failed write logs an error, and the next pass that reaches the same rejection starts the write again.
 - VERIFIED (code): `src/services/hydra-snapshot-store/store.ts` writes one append-only row per head, snapshot number, and snapshot version. It compares authenticated fields and signatures on redelivery. A conflicting signed commitment fails closed. A different UTxO reference map with the same signed commitment leaves the first stored map intact.
 - VERIFIED (code): The row contains the snapshot number, version, accumulator, UTxO partitions, deposit transaction ID, and party signatures. It excludes the unsigned `confirmed` transaction list. Hydra 2.3 signatures bind the output multiset, not each UTxO reference. The stored reference map therefore remains endpoint-trusted evidence, not signed evidence.
 - VERIFIED (code): The connection manager and read-only contest observer both pass verified frames to the store. The Prisma migration must be applied before enabling this code.
 - VERIFIED (code): `prisma/models/hydra-stored-snapshot.prisma` deletes stored snapshots with their head. The guarded relation delete at `src/routes/api/hydra/relation/index.ts:306-359` permits this only after Final status, fanout, reconciliation, and settlement checks. Export required evidence before deleting a final relation.
-- VERIFIED (code): `src/services/hydra-contest-watch/watch.ts` compares a closed node's observed on-chain snapshot number with the latest stored signed snapshot number. It uses the stored number when the restarted node reports an older number or no verified number.
+- VERIFIED (code): `src/services/hydra-contest-watch/watch.ts` compares a closed node's observed on-chain snapshot number with the latest stored signed snapshot number. It uses the stored number when the restarted node reports an older number or no verified number. That stored number can come from a snapshot that replay rejected, because every party signed it.
 
 ## Recovery limit
 

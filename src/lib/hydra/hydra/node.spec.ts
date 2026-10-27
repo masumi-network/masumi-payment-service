@@ -1966,35 +1966,100 @@ describe('HydraNode', () => {
 			},
 		);
 
-		it('hands each verified snapshot to the signed-snapshot store, and no forged one', async () => {
-			const onSignedSnapshotVerified = jest.fn();
-			const { historyConnection } = await startSignedNode({ onSignedSnapshotVerified });
+		it('stores each verified snapshot, and no forged one', async () => {
+			const persisted: unknown[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(JSON.parse(stringifyHydraJson({ snapshot: frame.snapshot, signatures: frame.signatures })));
+				},
+			});
 			const { frames } = signedHistoryChain();
 			const [first, second, third] = frames;
 			const forged = structuredClone(third);
 			forged.signatures.multiSignature[1] = forged.signatures.multiSignature[0];
 
 			for (const frame of [first, second, forged]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
 
-			const stored = onSignedSnapshotVerified.mock.calls.map(([payload]) => JSON.parse(stringifyHydraJson(payload)));
-			expect(stored).toEqual([
-				{ tag: 'ConfirmedSnapshot', snapshot: first.snapshot, signatures: first.signatures },
-				{ tag: 'ConfirmedSnapshot', snapshot: second.snapshot, signatures: second.signatures },
+			expect(node.confirmedTransactionHistoryError).toBeDefined();
+			expect(persisted).toEqual([
+				{ snapshot: first.snapshot, signatures: first.signatures },
+				{ snapshot: second.snapshot, signatures: second.signatures },
 			]);
 		});
 
 		it('stores a signed snapshot even when its transition fails the replay', async () => {
-			const onSignedSnapshotVerified = jest.fn();
-			const { node, historyConnection } = await startSignedNode({ onSignedSnapshotVerified });
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+				},
+			});
 			const [first, , third] = signedHistoryChain().frames;
 
 			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
 
 			expect(node.confirmedTransactionHistoryError).toBeDefined();
-			const storedNumbers = onSignedSnapshotVerified.mock.calls.map(
-				([payload]) => (payload as { snapshot: { number: number } }).snapshot.number,
+			expect(persisted).toEqual([first.snapshot.number, third.snapshot.number]);
+		});
+
+		it('stores a signed first snapshot that the first-snapshot guard rejects', async () => {
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+				},
+			});
+			const [, second] = signedHistoryChain().frames;
+
+			historyConnection.emit('message', JSON.stringify(second));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/snapshot gap/);
+			expect(persisted).toEqual([second.snapshot.number]);
+		});
+
+		it('fails the pass without waiting for the rejected snapshot write', async () => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: () => new Promise<void>(() => undefined),
+			});
+			const [, second] = signedHistoryChain().frames;
+
+			historyConnection.emit('message', JSON.stringify(second));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/snapshot gap/);
+		});
+
+		it.each([
+			{
+				label: 'rejects',
+				persist: async (number: number) => {
+					if (number > 1) throw new Error('database down');
+				},
+			},
+			{
+				label: 'throws',
+				persist: (number: number) => {
+					if (number > 1) throw new Error('database down');
+					return Promise.resolve();
+				},
+			},
+		])('keeps the transition error and logs when storing the rejected snapshot $label', async ({ persist }) => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: (frame) => persist(frame.snapshot.number),
+			});
+			const [first, , third] = signedHistoryChain().frames;
+
+			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/inconsistent signed-state transition/);
+			expect(mockLoggerError).toHaveBeenCalledWith(
+				'[HydraNode] Could not store a signed snapshot that this replay rejected',
+				expect.objectContaining({ headId: third.headId, number: third.snapshot.number, error: 'database down' }),
 			);
-			expect(storedNumbers).toEqual([first.snapshot.number, third.snapshot.number]);
 		});
 
 		it('pages a large replay without trusting a partial prefix as complete', async () => {

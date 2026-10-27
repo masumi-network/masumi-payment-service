@@ -1,7 +1,6 @@
 import type { HydraProtocolError } from './errors';
 import type * as l2Mint from './l2-mint-tally';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
-import type { HydraConfirmedSnapshotPayload } from './signed-snapshot';
 import type { DecommitSettledData, DepositRecordedData, HydraConfirmedTransaction } from './types';
 import type { HydraSnapshotVerificationFrame } from './snapshot-verification';
 
@@ -14,8 +13,6 @@ export interface HistoryReplayHost {
 	readonly orderedSnapshotVerificationKeys: string[] | undefined;
 	/** Computes snapshot accumulators; defaults to the event loop. */
 	readonly computeSnapshotAccumulator?: HydraAccumulatorComputer;
-	/** Receives each snapshot whose party signatures and accumulator verified. Must not throw. */
-	readonly onSignedSnapshotVerified?: (snapshot: HydraConfirmedSnapshotPayload) => void;
 	/** Throws (and latches) when the frame announces event-log rotation. */
 	assertPersistenceReplayIsSupported(message: unknown): void;
 	bindSnapshotPartyOrder(message: unknown): void;
@@ -30,7 +27,10 @@ export interface HistoryReplayHost {
 	rememberReplayedDeposit(data: DepositRecordedData): void;
 	rememberReplayedDecommit(data: DecommitSettledData): void;
 	emitTxConfirmed(txId: string, transaction: HydraConfirmedTransaction): void;
-	/** Persist the verified signed state before it becomes this pass's anchor. */
+	/**
+	 * Persist the verified signed state before it becomes this pass's anchor. Also
+	 * called, without waiting, for a signed snapshot that replay rejects.
+	 */
 	persistVerifiedSnapshot?(frame: HydraSnapshotVerificationFrame): Promise<void>;
 	reportL2MintOutstanding(incident: l2Mint.L2MintIncident): void;
 	onProtocolDrift(description: string): void;

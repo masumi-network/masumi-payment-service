@@ -59,7 +59,6 @@ import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame
 import { assertSafeFirstHistorySnapshot, isIdenticalSignedSnapshotRedelivery } from './node-history-snapshot-guards';
 import { pageClosedBeforeHeadExisted } from './node-history-page';
 import type { HistoryReplayHost } from './node-history-replay-host';
-import { toConfirmedSnapshotPayload } from './signed-snapshot';
 import { HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
@@ -592,6 +591,24 @@ export class HydraHistoryReplay {
 		return pending ? pending.then(capture) : (capture(), undefined);
 	}
 
+	/**
+	 * Every party signed this snapshot, so it can win a contest even though this
+	 * replay rejects how the history reached it. The write is best effort: it
+	 * starts before the pass fails and ends after it. A later pass that reaches
+	 * the same rejection starts the write again.
+	 */
+	private storeRejectedSnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
+		// A synchronous throw must not replace the rejection that fails the pass.
+		new Promise<void>((resolve) => resolve(this.host.persistVerifiedSnapshot?.(parsedMessage))).catch(
+			(error: unknown) =>
+				logger.error('[HydraNode] Could not store a signed snapshot that this replay rejected', {
+					headId: parsedMessage.headId,
+					number: parsedMessage.snapshot.number,
+					error: error instanceof Error ? error.message : String(error),
+				}),
+		);
+	}
+
 	private recordHistorySnapshot(
 		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
 		pass: number,
@@ -611,9 +628,6 @@ export class HydraHistoryReplay {
 		const accumulator = computeAccumulator([...signed.outputs.values()]);
 		const adopt = (computedAccumulator: string) => {
 			const verifiedSnapshot = completeHydraSnapshotVerification(signed, computedAccumulator);
-			// Every party signed it, so it can win a contest even when this replay
-			// rejects the transition that led to it.
-			this.host.onSignedSnapshotVerified?.(toConfirmedSnapshotPayload(parsedMessage));
 			return this.adoptHistorySnapshot(parsedMessage, verifiedSnapshot, pass);
 		};
 		const failCurrent = (error: unknown) => {
@@ -654,7 +668,12 @@ export class HydraHistoryReplay {
 			return;
 		}
 		if (previousSnapshot == null) {
-			assertSafeFirstHistorySnapshot(parsedMessage, verifiedSnapshot);
+			try {
+				assertSafeFirstHistorySnapshot(parsedMessage, verifiedSnapshot);
+			} catch (error) {
+				this.storeRejectedSnapshot(parsedMessage);
+				throw error;
+			}
 			return this.captureVerifiedFrame(verifiedSnapshot, parsedMessage, pass)?.then(() => undefined);
 		}
 		// A decommit is a state-changing transaction that Hydra reports outside the
@@ -675,6 +694,7 @@ export class HydraHistoryReplay {
 			),
 		];
 		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
+			this.storeRejectedSnapshot(parsedMessage);
 			// Name the transition. This rejection stops the head forming a live
 			// session at all, so it is the last thing anyone hears before every L2
 			// operation starts failing closed; "somewhere in the history" is not

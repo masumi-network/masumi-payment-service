@@ -37,9 +37,11 @@ export function signedSnapshotJson(frame: HydraSnapshotVerificationFrame): strin
 }
 
 /**
- * Append after verification and before replay accepts the snapshot. A conflicting
- * signed commitment fails closed. UTxO references are not signed, so a valid
- * redelivery with different references retains the first stored map.
+ * Append after signature and accumulator verification. Replay awaits this before
+ * it accepts a snapshot, and a conflicting signed commitment then fails the pass.
+ * For a snapshot that replay rejects, the write is best effort and only logged.
+ * UTxO references are not signed, so a valid redelivery with different references
+ * retains the first stored map.
  *
  * Replay rescans the whole history on every reconnect, so a stored row is the
  * common case. It is read first: a failed insert per replayed snapshot costs a
