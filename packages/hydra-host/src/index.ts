@@ -164,6 +164,9 @@ async function main(): Promise<void> {
 	});
 	await startup.lock.acquire();
 	if (shuttingDown) return;
+	// Under the lease, and before any node boots: a socket directory that is not
+	// private would otherwise stop every node on each restart.
+	if (config.controlSocketPath !== undefined) preparePeerFirewallSocket(config.controlSocketPath);
 
 	const store = new NodeRegistryStore(config.dataDir);
 	const exchange = new ExchangeStore(config.dataDir);
@@ -297,7 +300,6 @@ async function main(): Promise<void> {
 		},
 	});
 	if (config.controlSocketPath !== undefined) {
-		preparePeerFirewallSocket(config.controlSocketPath);
 		startup.firewallSocketServer = createPeerFirewallSocketServer(startup.server);
 	}
 	startup.timer = setInterval(() => tickSupervisor('interval'), TICK_INTERVAL_MS);
