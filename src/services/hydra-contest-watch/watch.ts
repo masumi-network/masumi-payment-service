@@ -190,6 +190,7 @@ export async function runHydraContestWatch(): Promise<void> {
 		},
 		select: {
 			id: true,
+			headIdentifier: true,
 			status: true,
 			isEnabled: true,
 			contestGapSignature: true,
@@ -212,7 +213,24 @@ export async function runHydraContestWatch(): Promise<void> {
 				// Use the pinned node's observed close status, never that stale row.
 				if (node.status !== HydraHeadStatus.Closed && node.status !== HydraHeadStatus.FanoutPossible) return;
 				const closedSnapshotNumber = node.closedSnapshotNumber;
-				const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+				let verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+				if (head.headIdentifier) {
+					try {
+						const stored = await prisma.hydraStoredSnapshot.findFirst({
+							where: { hydraHeadId: head.id, headIdentifier: head.headIdentifier },
+							orderBy: [{ snapshotNumber: 'desc' }, { snapshotVersion: 'desc' }],
+							select: { snapshotNumber: true },
+						});
+						if (stored && (verifiedSnapshotNumber === undefined || stored.snapshotNumber > verifiedSnapshotNumber)) {
+							verifiedSnapshotNumber = stored.snapshotNumber;
+						}
+					} catch (error) {
+						logger.warn('[HydraContestWatch] could not read stored signed snapshot', {
+							hydraHeadId: head.id,
+							error: error instanceof Error ? error.message : 'Unknown error',
+						});
+					}
+				}
 				if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) return;
 				await applyContestGapObservation(
 					head,
