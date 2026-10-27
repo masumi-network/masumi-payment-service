@@ -59,6 +59,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		hydraLocalParticipant: { findUnique: mockFindParticipant, updateMany: mockUpdateParticipant },
 		hydraHeadError: { create: mockCreateHeadError },
+		hydraTopup: { findFirst: jest.fn(async () => null) },
 	},
 }));
 

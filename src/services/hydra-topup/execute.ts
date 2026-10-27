@@ -30,7 +30,7 @@ import {
 	HYDRA_HOST_PAUSED_MESSAGE,
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
-import { PREPARING_STALE_AFTER_MS } from './stale';
+import { blockingHydraTopupMessage, claimBlockingHydraTopup } from './blocking';
 import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
 import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 
@@ -184,35 +184,8 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					// writer locks the head before its top-up row: a close that commits
 					// first is seen here, and one that commits after counts this row.
 					await lockOpenHydraHeadForDeposit(tx, head.id);
-					const deposit = await tx.hydraTopup.findFirst({
-						where: {
-							hydraLocalParticipantId: localParticipant.id,
-							status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Confirmed] },
-						},
-						orderBy: { createdAt: 'desc' },
-					});
-					if (deposit !== null) return { claimed: false as const, active: deposit };
-					const active = await tx.hydraTopup.findFirst({
-						where: {
-							hydraLocalParticipantId: localParticipant.id,
-							status: HydraTopupStatus.Preparing,
-						},
-						orderBy: { createdAt: 'desc' },
-					});
-
-					if (active !== null) {
-						const isStalePreparation =
-							active.status === HydraTopupStatus.Preparing &&
-							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS;
-						if (!isStalePreparation) {
-							return { claimed: false as const, active };
-						}
-						await tx.hydraTopup.updateMany({
-							where: { id: active.id, status: HydraTopupStatus.Preparing },
-							data: { status: HydraTopupStatus.Failed },
-						});
-						logger.warn(`[HydraAPI] Failed a stale preparing top-up ${active.id} so a new one can start`);
-					}
+					const active = await claimBlockingHydraTopup(tx, localParticipant.id);
+					if (active !== null) return { claimed: false as const, active };
 
 					// Under FOR SHARE on the Host: a pause that commits first is seen here,
 					// and one that commits after counts this row as in flight.
@@ -243,14 +216,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		);
 
 		if (!claim.claimed) {
-			throw createHttpError(
-				409,
-				claim.active.status === HydraTopupStatus.Preparing
-					? 'A prior Hydra top-up is still being prepared on L1'
-					: claim.active.status === HydraTopupStatus.Pending
-						? 'A prior Hydra top-up remains pending independent L1 confirmation'
-						: 'A prior Hydra top-up is confirmed on L1 but has not been absorbed or recovered',
-			);
+			throw createHttpError(409, blockingHydraTopupMessage(claim.active.status));
 		}
 		preparingTopupId = claim.id;
 

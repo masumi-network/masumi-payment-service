@@ -26,6 +26,9 @@ const mockReserveCommit = jest.fn() as AnyMock;
 const mockGenerateWallet = jest.fn() as AnyMock;
 const mockReleaseWallet = jest.fn() as AnyMock;
 const mockGetHead = jest.fn() as AnyMock;
+const mockFindTopup = jest.fn() as AnyMock;
+const mockClaimWallet = jest.fn() as AnyMock;
+const mockReconcileCommit = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
@@ -44,6 +47,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hydraHeadError: { create: jest.fn() },
 		hotWallet: { findUniqueOrThrow: mockFindHotWallet },
 		hydraLocalParticipant: { findUnique: mockFindParticipant },
+		hydraTopup: { findFirst: mockFindTopup },
 	},
 }));
 
@@ -75,7 +79,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 }));
 jest.unstable_mockModule('@/services/hydra-commit-reconciliation', () => ({
 	HydraCommitReservationConflictError: class HydraCommitReservationConflictError extends Error {},
-	reconcilePendingHydraCommit: jest.fn(),
+	reconcilePendingHydraCommit: mockReconcileCommit,
 	reserveAndSubmitHydraCommit: mockReserveCommit,
 }));
 jest.unstable_mockModule('@/utils/generator/wallet-generator', () => ({ generateWalletExtended: mockGenerateWallet }));
@@ -86,7 +90,7 @@ jest.unstable_mockModule('@/utils/hydra/l2-slot-context', () => ({
 	resolveHydraL2EvidenceSlotConfig: () => ({ zeroTime: 0, zeroSlot: 0, slotLength: 1000 }),
 }));
 jest.unstable_mockModule('@/utils/db/hot-wallet-lock', () => ({
-	claimHotWalletForL1: jest.fn(async () => 'claim-token'),
+	claimHotWalletForL1: mockClaimWallet,
 	releaseHotWalletAfterL1: mockReleaseWallet,
 }));
 jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({ recordHeadError: jest.fn() }));
@@ -100,6 +104,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockFindTopup.mockResolvedValue(null);
+	mockClaimWallet.mockResolvedValue('claim-token');
 });
 
 function head(status: HydraHeadStatus) {
@@ -137,6 +143,57 @@ describe('commitHeadPost status guard', () => {
 		await expect(
 			commitHeadPost.handler({ input: { headId: 'head-1', lovelace: '10000000' }, options: {} }),
 		).rejects.toMatchObject({ status: 409 });
+		expect(mockCarve).not.toHaveBeenCalled();
+	});
+});
+
+describe('commitHeadPost top-up guard', () => {
+	// The reservation refuses this too, but only after the carve has paid an L1
+	// fee and left the wallet held for the stale-lock window.
+	it('refuses while a top-up is unabsorbed, before claiming the wallet or carving', async () => {
+		mockFindHead.mockResolvedValue({ ...head(HydraHeadStatus.Open), isClosing: false });
+		mockFindTopup.mockResolvedValueOnce({ id: 'topup-1', status: 'Confirmed', createdAt: new Date() });
+
+		await expect(
+			commitHeadPost.handler({ input: { headId: 'head-1', lovelace: '10000000' }, options: {} }),
+		).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/not been absorbed/) });
+		expect(mockClaimWallet).not.toHaveBeenCalled();
+		expect(mockCarve).not.toHaveBeenCalled();
+		// An earlier commit's own Pending row must not refuse its retry here, before
+		// the route can reconcile that commit.
+		for (const [query] of mockFindTopup.mock.calls) {
+			expect(query).toMatchObject({ where: { isInitialCommit: false } });
+		}
+	});
+});
+
+describe('commitHeadPost earlier commit', () => {
+	// A top-up may start once the earlier commit's row is absorbed, before the
+	// scheduler marks the participant committed. The retry must still report it.
+	it('reconciles a landed earlier commit instead of refusing for a top-up', async () => {
+		const earlier = head(HydraHeadStatus.Open);
+		mockFindHead.mockResolvedValue({
+			...earlier,
+			isClosing: false,
+			LocalParticipant: {
+				...earlier.LocalParticipant,
+				commitTxHash: 'd'.repeat(64),
+				commitInvalidHereafterSlot: 1_000n,
+			},
+		});
+		mockFindTopup.mockResolvedValue({ id: 'topup-1', status: 'Confirmed', createdAt: new Date() });
+		mockGetHead.mockReturnValue({ cardanoTransaction: jest.fn() });
+		mockAssertReady.mockResolvedValue(undefined);
+		mockFindHotWallet.mockResolvedValue({
+			Secret: { encryptedMnemonic: 'encrypted' },
+			PaymentSource: { network: 'Preprod', PaymentSourceConfig: { rpcProviderApiKey: 'key' } },
+		});
+		mockFindParticipant.mockResolvedValue(null);
+		mockReconcileCommit.mockResolvedValue('confirmed');
+
+		await expect(
+			commitHeadPost.handler({ input: { headId: 'head-1', lovelace: '10000000' }, options: {} }),
+		).resolves.toMatchObject({ committed: true, commitTxHash: 'd'.repeat(64) });
 		expect(mockCarve).not.toHaveBeenCalled();
 	});
 });

@@ -29,6 +29,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 import { carveExactUtxo, HydraPreSplitError } from '@/services/hydra-topup/pre-split';
+import { blockingHydraTopupMessage, claimBlockingHydraTopup } from '@/services/hydra-topup/blocking';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
@@ -115,6 +116,13 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		if (localParticipant.hasCommitted) {
 			throw createHttpError(409, 'Local participant has already committed');
+		}
+		// Rechecked under the head lock at reservation; refused here too so an
+		// unabsorbed top-up costs no carve. Not while an earlier commit is pending:
+		// its retry must reach the reconcile below, which may find it landed.
+		if (localParticipant.commitTxHash == null && localParticipant.commitInvalidHereafterSlot == null) {
+			const topup = await claimBlockingHydraTopup(prisma, localParticipant.id, { ignoreCommits: true });
+			if (topup !== null) throw createHttpError(409, blockingHydraTopupMessage(topup.status));
 		}
 		if (!head.headIdentifier) {
 			throw createHttpError(409, 'Cannot commit before the Hydra head identifier has been observed');
