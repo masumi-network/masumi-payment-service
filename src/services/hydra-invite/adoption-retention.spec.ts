@@ -5,12 +5,20 @@ const host = { id: 'host', baseUrl: 'https://host.example', encryptedAdminToken:
 const invite = {
 	id: 'invite',
 	nonce: 'nonce',
+	hydraHostId: 'host',
+	hostNodeId: 'node',
 	role: 'Issuer',
 	status: 'Completed',
 	hydraHeadId: null as string | null,
 };
 const fetchRedemptions =
-	jest.fn<(baseUrl: string, token: string, since: number) => Promise<{ now: number; invites: object[] }>>();
+	jest.fn<
+		(
+			baseUrl: string,
+			token: string,
+			since: number,
+		) => Promise<{ now: number; invites: object[]; unreadableNonces: string[] }>
+	>();
 const forget =
 	jest.fn<
 		(
@@ -55,7 +63,8 @@ beforeEach(() => {
 	fetchRedemptions.mockResolvedValue({
 		now: Date.now(),
 		// Older than any fixed lookback window: the Host keeps it until acknowledged.
-		invites: [{ nonce: 'nonce', redeemedAt: 1, redeemer: {}, redeemerSignature: {} }],
+		invites: [{ nonce: 'nonce', hostNodeId: 'node', redeemedAt: 1, redeemer: {}, redeemerSignature: {} }],
+		unreadableNonces: [],
 	});
 	forget.mockResolvedValue(undefined);
 });

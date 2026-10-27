@@ -159,9 +159,9 @@ export interface DecommitDistributedValue {
 
 export interface DecommitSettledData {
 	/**
-	 * Absent on finalization: DecommitFinalized does not carry one. The row is
-	 * then found by head and recorded Approved status. A Pending local row may
-	 * never have been sent, so head and event time alone do not identify it.
+	 * DecommitFinalized omits this field. The ordered stream recovers it from
+	 * its preceding DecommitApproved; an uncorrelated finalization is ignored.
+	 * Distributed output references belong to L1 and cannot identify it.
 	 */
 	decommitTxId?: string;
 	outcome: HydraDecommitOutcome;
@@ -172,9 +172,8 @@ export interface DecommitSettledData {
 	/**
 	 * When the head produced the event, as it reported it.
 	 *
-	 * Needed because a head replays its whole history on every reconnection: an
-	 * outcome that names no withdrawal can only be attributed to one that already
-	 * existed when the head produced it.
+	 * Preserve the head's event time when an outcome is replayed after a restart,
+	 * rather than replacing it with the time this process received the replay.
 	 */
 	observedAt?: Date;
 }

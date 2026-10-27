@@ -27,6 +27,7 @@ import {
 	readPostTxFailed,
 } from './node-frames';
 import { HeldBackEmissions } from './node-held-back';
+import { correlateDecommitOutcome, type DecommitOutcomeCursor } from './decommit-resolution';
 import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
 import {
 	DecommitSettledData,
@@ -103,7 +104,7 @@ export interface LiveFrameHost {
 	/** The snapshot the proven finalized head settled on, if its replay saw the close. */
 	finalizedSnapshotNumber(): number | undefined;
 	/** Replay the history again from the start: only a pass that starts now can give a verdict. */
-	rereadHistory(): void;
+	rereadHistory(reason?: string): void;
 	/** History sockets that opened. hydra-node streams the log again from each open. */
 	historyOpenCount(): number;
 	setNetworkConnected(connected: boolean): void;
@@ -160,6 +161,7 @@ export class LiveFrameProcessor {
 	 */
 	private _chainSynced: boolean | undefined;
 	private readonly _heldBack = new HeldBackEmissions();
+	private readonly _decommitOutcomeCursor: DecommitOutcomeCursor = {};
 
 	/**
 	 * Deposits approved for folding in but not yet finalized.
@@ -260,10 +262,11 @@ export class LiveFrameProcessor {
 	private bindFinalizedHead(): void {
 		this._evidenceHeld = false;
 		this._liveSessionHeadId = this.host.expectedHeadId;
+		const snapshotNumber = this.host.finalizedSnapshotNumber();
 		this.flushHeldBackWhenLive({ isPostTxFailureHeld: true });
 		// The close's snapshot is the tip the handoff checks the fanout against.
 		// A service that was down from Open to here never heard HeadIsClosed.
-		this.emitStatusChange(HydraHeadStatus.Final, this.host.expectedHeadId, this.host.finalizedSnapshotNumber());
+		this.emitStatusChange(HydraHeadStatus.Final, this.host.expectedHeadId, snapshotNumber);
 		// After the status change, as in processStatus: a listener records the
 		// failure with the node's status.
 		this.flushHeldBackWhenLive();
@@ -311,6 +314,7 @@ export class LiveFrameProcessor {
 		const hadLiveIdentity = this._liveSessionHeadId != null || this._livePartyIdentityVerified;
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
+		this._decommitOutcomeCursor.approval = undefined;
 		this._awaitingReplayVerdict = false;
 		this._headClock = undefined;
 		this._lastClosedSnapshotNumber = undefined;
@@ -322,6 +326,7 @@ export class LiveFrameProcessor {
 		this._status = HydraHeadStatus.Disconnected;
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
+		this._decommitOutcomeCursor.approval = undefined;
 		this._awaitingReplayVerdict = false;
 		this._evidenceHeld = false;
 		this._historyRereadPending = false;
@@ -385,6 +390,9 @@ export class LiveFrameProcessor {
 		// finalization that followed it.
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
+		if (this._heldBack.takeDecommitReplayRequirement()) {
+			this.host.rereadHistory('Hydra withdrawal outcomes exceeded the pre-authentication buffer; replaying them');
+		}
 		if (isPostTxFailureHeld) return;
 		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
 	}
@@ -559,7 +567,8 @@ export class LiveFrameProcessor {
 			if (envelope.tag === 'CommitRecorded') {
 				depositRecorded = readDepositRecorded(message);
 			}
-			decommitSettled = readDecommitSettled(envelope.tag, message);
+			const observed = readDecommitSettled(envelope.tag, message);
+			decommitSettled = observed && correlateDecommitOutcome(this._decommitOutcomeCursor, observed);
 			if (envelope.tag === 'PostTxOnChainFailed') {
 				const failure = readPostTxFailed(message, this.host.expectedHeadId, (headId) =>
 					logger.warn('[HydraNode] Ignoring a failed L1 transaction for another head', { headId }),
@@ -603,6 +612,7 @@ export class LiveFrameProcessor {
 					error instanceof Error ? error : new HydraProtocolError('Hydra live session identity validation failed');
 				this._liveSessionHeadId = undefined;
 				this._livePartyIdentityVerified = false;
+				this._decommitOutcomeCursor.approval = undefined;
 				this._awaitingReplayVerdict = false;
 				this._headClock = undefined;
 				// Whatever the replay held back came over a socket whose identity has
@@ -626,8 +636,7 @@ export class LiveFrameProcessor {
 			if (postTxFailed) this._heldBack.rememberPostTxFailure(postTxFailed);
 			return;
 		}
-		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
-		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
+		this.flushHeldBackWhenLive({ isPostTxFailureHeld: true });
 		if (decommitSettled) this.emitter.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		if (depositRecorded) this.emitter.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
 		const changeData = extractStatusChangeData(rawMessage, this.host.expectedHeadId);

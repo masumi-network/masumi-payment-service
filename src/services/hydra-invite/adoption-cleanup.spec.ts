@@ -7,6 +7,8 @@ import { requestRemoval } from '@masumi/hydra-host/api/transitions';
 import type { HostApiError } from '@masumi/hydra-host/api/http-error';
 
 const host = { id: 'host', baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
+let polledHost = host;
+let recordHostNodeId = 'node';
 const invite = {
 	id: 'invite',
 	nonce: 'nonce',
@@ -48,7 +50,7 @@ class HydraHostRequestError extends Error {
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
-		hydraHost: { findMany: async () => [host] },
+		hydraHost: { findMany: async () => [polledHost] },
 		hydraHeadInvite: { findUnique: async () => invite, updateMany },
 		hydraLocalParticipant: { count: participantCount, findFirst: unboundParticipant },
 		// No head an earlier pass orphaned, so the redemption is discarded.
@@ -62,7 +64,10 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	fetchHostRedemptions: async () => ({
 		now: Date.now(),
-		invites: [{ nonce: 'nonce', redeemedAt: Date.now(), redeemer: {}, redeemerSignature: {} }],
+		unreadableNonces: [],
+		invites: [
+			{ nonce: 'nonce', hostNodeId: recordHostNodeId, redeemedAt: Date.now(), redeemer: {}, redeemerSignature: {} },
+		],
 	}),
 	forgetHostInvite: forget,
 	removeHostNode: remove,
@@ -81,6 +86,8 @@ const { pollHydraRedemptions } = await import('./adoption');
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	polledHost = host;
+	recordHostNodeId = 'node';
 	removalRequested = false;
 	canRemove.mockResolvedValue(true);
 	remove.mockImplementation(async () => {
@@ -94,6 +101,23 @@ beforeEach(() => {
 	participantCount.mockResolvedValue(0);
 	unboundParticipant.mockResolvedValue(null);
 	verify.mockRejectedValue(new Error('invalid signature'));
+});
+
+it.each([
+	['another Host', 'other-host', 'node'],
+	['another node on this Host', 'host', 'other-node'],
+])('ignores a redemption attributed to %s before changing its reservation', async (_scenario, hostId, nodeId) => {
+	polledHost = { ...host, id: hostId };
+	recordHostNodeId = nodeId;
+
+	expect(await pollHydraRedemptions()).toEqual({ polled: 1, adopted: 0, rejected: 0 });
+	expect(verify).not.toHaveBeenCalled();
+	expect(updateMany).not.toHaveBeenCalled();
+	expect(participantCount).not.toHaveBeenCalled();
+	expect(unboundParticipant).not.toHaveBeenCalled();
+	expect(remove).not.toHaveBeenCalled();
+	expect(forget).not.toHaveBeenCalled();
+	expect(release).not.toHaveBeenCalled();
 });
 
 it('marks a forged redemption failed and force-removes the node it peered', async () => {

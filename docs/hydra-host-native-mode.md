@@ -39,7 +39,7 @@ embeds (see `HYDRA_HOST_USE_SYSTEM_ETCD` below). That etcd reads a peer lease
 request body without a limit, so any peer that can reach the peer port can
 exhaust the node's memory. The peer allowlist does not stop a peer that is on
 the allowlist. For production, run the container: it uses the patched etcd
-3.5.34 that the image bakes in.
+3.5.35 that the image bakes in.
 
 There is still no standalone `aarch64-linux` download. Building one from the
 Nix flake is possible in principle (haskell.nix plus a Rust accumulator), but it
@@ -60,7 +60,7 @@ and all three are configuration rather than code paths:
 | ---------------------------- | ------------------------------------------ | ------------------------------------------ |
 | `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux) | path to the Darwin arm64 build             |
 | `HYDRA_HOST_DATA_DIR`        | `/data` volume                             | a local directory                          |
-| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes etcd 3.5.34       | `false` — let `hydra-node` extract its own |
+| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes etcd 3.5.35       | `false` — let `hydra-node` extract its own |
 
 Native mode is a supported way to run the Host, not a workaround.
 
@@ -198,7 +198,7 @@ Running natively verifies the logic; it does not verify the image. The
 container additionally covers the build itself, the baked binaries being on
 `PATH`, the non-root user, volume permissions, and `--network host`. The path
 native mode cannot exercise at all is a node reaching `Running` _inside_ the
-container using the baked etcd: the baked 3.5.34 is on the same 3.5 line as the
+container using the baked etcd: the baked 3.5.35 is on the same 3.5 line as the
 3.5.25 that `hydra-node` embeds, but that is not proof it runs. Since 2.4.0 that test needs
 no amd64 machine. The image builds and runs on `linux/arm64` too, and
 `packages/hydra-host/Dockerfile` bakes an arm64 etcd beside the amd64 one.

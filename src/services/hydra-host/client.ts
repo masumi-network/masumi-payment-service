@@ -14,6 +14,7 @@ import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { readBoundedHttpResponse } from '@/lib/hydra/hydra/node-http-response';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { logger } from '@masumi/payment-core/logger';
+import { z } from '@masumi/payment-core/zod';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { normalizeReleaseInfo, type ReleaseInfo } from '@/services/release/release-info';
 import { fetchHydraHost } from './transport';
@@ -524,6 +525,41 @@ export type HostInviteRecord = {
 	startError: string | null;
 };
 
+// Match the Host's wire ceilings without constraining wallet or signature formats.
+const HOST_INVITE_LIMITS = {
+	identifier: 64,
+	walletAddress: 256,
+	verificationKey: 68,
+	advertise: 259,
+	exchangeUrl: 2048,
+	signature: 4096,
+};
+const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
+const hostTimestampSchema = z.number().finite().nonnegative().max(MAX_DATE_TIMESTAMP_MS);
+const hostInviteNonceSchema = z.object({ nonce: z.string().min(1).max(HOST_INVITE_LIMITS.identifier) });
+const hostInviteRecordSchema = hostInviteNonceSchema.extend({
+	hostNodeId: z.string().min(1).max(HOST_INVITE_LIMITS.identifier),
+	expiresAt: hostTimestampSchema,
+	redeemedAt: hostTimestampSchema.nullable(),
+	redeemer: z
+		.object({
+			walletAddress: z.string().min(1).max(HOST_INVITE_LIMITS.walletAddress),
+			hydraVerificationKey: z.string().min(1).max(HOST_INVITE_LIMITS.verificationKey),
+			cardanoVerificationKey: z.string().min(1).max(HOST_INVITE_LIMITS.verificationKey),
+			advertise: z.string().min(1).max(HOST_INVITE_LIMITS.advertise),
+			exchangeUrl: z.string().min(1).max(HOST_INVITE_LIMITS.exchangeUrl),
+		})
+		.nullable(),
+	redeemerSignature: z
+		.object({
+			signature: z.string().min(1).max(HOST_INVITE_LIMITS.signature),
+			key: z.string().min(1).max(HOST_INVITE_LIMITS.signature),
+		})
+		.nullable(),
+	startError: z.string().nullable(),
+});
+const hostInviteResponseSchema = z.object({ invites: z.array(z.unknown()), now: hostTimestampSchema });
+
 /**
  * Tell a Host to honour an invite we just minted.
  *
@@ -548,17 +584,33 @@ export async function fetchHostRedemptions(
 	adminToken: string,
 	redeemedSince: number,
 	transport: HostTransportOptions,
-): Promise<{ invites: HostInviteRecord[]; now: number }> {
+): Promise<{ invites: HostInviteRecord[]; unreadableNonces: string[]; now: number }> {
 	const body = await request(baseUrl, `/v1/invites?redeemedSince=${redeemedSince}`, adminToken, transport);
-	if (!isPlainObject(body)) {
+	// Reject the whole batch before adoption or watermark updates can use it.
+	const parsed = hostInviteResponseSchema.safeParse(body);
+	if (!parsed.success) {
 		throw new HydraProtocolError('hydra host returned a malformed invite list');
 	}
-	const invites = getOwnValue(body, 'invites');
-	const now = getOwnValue(body, 'now');
-	return {
-		invites: Array.isArray(invites) ? (invites as HostInviteRecord[]) : [],
-		now: typeof now === 'number' ? now : Date.now(),
-	};
+	// Skip a malformed record rather than the batch. It can never be adopted, and
+	// failing the batch would also block every other adoption, revoke and expiry
+	// sweep on this Host. The Host lists only redeemed records and refuses to
+	// forget one unless told to discard it, so revoke and the sweep must still
+	// count a skipped record's nonce as held.
+	const invites: HostInviteRecord[] = [];
+	const unreadableNonces: string[] = [];
+	for (const record of parsed.data.invites) {
+		const invite = hostInviteRecordSchema.safeParse(record);
+		if (invite.success) {
+			invites.push(invite.data);
+			continue;
+		}
+		const nonce = hostInviteNonceSchema.safeParse(record);
+		if (nonce.success) unreadableNonces.push(nonce.data.nonce);
+		logger.warn(
+			`hydra host listed a malformed invite record${nonce.success ? ` ${nonceLogRef(nonce.data.nonce)}` : ''}; skipping it`,
+		);
+	}
+	return { invites, unreadableNonces, now: parsed.data.now };
 }
 
 /**

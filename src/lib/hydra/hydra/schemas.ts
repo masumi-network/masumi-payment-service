@@ -205,10 +205,9 @@ const hydraOutputValueSchema = z.record(
  * message does not carry one. Requiring it made every finalization fail to
  * parse, which left settled withdrawals reading as still paying out forever.
  *
- * What it does carry is `distributedUTxO` — what landed, keyed by the in-head
- * reference of the output that was removed. That reference names a transaction
- * that only ever existed inside the head, so it is a description of the value
- * rather than a chain-explorer link.
+ * What it does carry is `distributedUTxO`: payout outputs zipped with the L1
+ * decrement's inputs (Hydra 2.4.1 observeDecrementTx). Its keys identify neither
+ * the in-head decommit nor the L1 transaction that produced the payout.
  */
 export const decommitFinalizedMessageSchema = z.looseObject({
 	tag: z.literal('DecommitFinalized'),
@@ -217,9 +216,8 @@ export const decommitFinalizedMessageSchema = z.looseObject({
 		.record(z.string(), z.looseObject({ address: z.string(), value: hydraOutputValueSchema }))
 		.optional(),
 	/**
-	 * When the head produced this. Load-bearing, not decoration: the whole
-	 * history replays on every reconnection, so an old finalization must not be
-	 * attributed to a withdrawal that was requested after it.
+	 * When the head produced this. The correlator drops a finalization older
+	 * than its approval, and the first observation records this time, not receipt time.
 	 */
 	timestamp: z.string().optional(),
 	headId: canonicalHydraHeadIdSchema,

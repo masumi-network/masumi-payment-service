@@ -72,7 +72,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 			continue;
 		}
 		const since = watermarks.get(host.id) ?? COLD_START_WATERMARK_MS;
-		let redemptions: { invites: HostInviteRecord[]; now: number };
+		let redemptions: { invites: HostInviteRecord[]; unreadableNonces: string[]; now: number };
 		try {
 			redemptions = await fetchHostRedemptions(host.baseUrl, decrypt(host.encryptedAdminToken), since, {
 				allowInsecureHttp: host.allowInsecureHttp,
@@ -97,7 +97,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		for (const record of redemptions.invites) {
 			let result: AdoptionResult;
 			try {
-				result = await adoptRedemption(record);
+				result = await adoptRedemption(record, host.id);
 			} catch (error) {
 				if (record.redeemedAt !== null) {
 					retryFromMs = retryFromMs === null ? record.redeemedAt : Math.min(retryFromMs, record.redeemedAt);
@@ -148,6 +148,10 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		// failure when there was one, so the next pass is offered it again.
 		// A redemption that was *rejected* rather than failed is not retried: its
 		// signature did not hold, and asking again cannot change that.
+		// An unreadable record whose nonce is readable has no trusted time to hold
+		// back to, so the watermark stays put: a fixed Host then offers it to
+		// adoption without a restart. One without a readable nonce matches no invite.
+		if (redemptions.unreadableNonces.length > 0) continue;
 		watermarks.set(host.id, retryFromMs !== null ? retryFromMs - 1 : redemptions.now);
 	}
 	return outcome;
@@ -368,7 +372,7 @@ function fundAdoptedNode(localParticipantId: string, hydraHeadId: string): void 
  * checked. If the signature does not hold, the head is never recorded and the
  * operator is left with a node to remove.
  */
-async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult> {
+async function adoptRedemption(record: HostInviteRecord, expectedHostId: string): Promise<AdoptionResult> {
 	if (record.redeemedAt === null || record.redeemer === null || record.redeemerSignature === null) {
 		return 'skipped';
 	}
@@ -377,7 +381,13 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 		where: { nonce: record.nonce },
 		include: { LocalHotWallet: true, HydraHost: true },
 	});
-	if (!invite || invite.role !== HydraInviteRole.Issuer) {
+	// Bind the report to its Host and reserved node before any state change or cleanup.
+	if (
+		!invite ||
+		invite.role !== HydraInviteRole.Issuer ||
+		invite.hydraHostId !== expectedHostId ||
+		invite.hostNodeId !== record.hostNodeId
+	) {
 		return 'skipped';
 	}
 	// Any status other than `Issued` is finished with, not just `Completed`: an
@@ -528,9 +538,13 @@ export async function reapExpiredInvites(): Promise<number> {
 				// counterparty's signed redemption there is, leaving them with a live
 				// head whose peer will never join and us with nothing to reconstruct
 				// it from. Adoption gets the next tick instead; the sweep gets it
-				// afterwards, when the invite is Completed or still unredeemed.
+				// afterwards, when the invite is Completed or still unredeemed. A
+				// redemption the Host lists unreadably waits for a discarding revoke.
 				const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
-				if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+				if (
+					held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null) ||
+					held.unreadableNonces.includes(invite.nonce)
+				) {
 					logger.info(
 						`hydra: not reaping expired invite ${nonceLogRef(invite.nonce)}; the Host is holding its redemption`,
 					);
