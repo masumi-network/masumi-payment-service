@@ -17,6 +17,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import createHttpError from 'http-errors';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 
@@ -245,14 +246,30 @@ describe('withdrawal list paging', () => {
 describe('withdrawHeadPost answers on acceptance', () => {
 	it('W-R1 answers with the executor refusal when it refuses before accepting', async () => {
 		mockExecute.mockRejectedValue(
-			Object.assign(
-				new Error('Only 115000000 lovelace is eligible to withdraw, which is less than the 1000000000 requested'),
-				{ statusCode: 400, status: 400 },
+			createHttpError(
+				400,
+				'Only 115000000 lovelace is eligible to withdraw, which is less than the 1000000000 requested',
 			),
 		);
 		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
 			statusCode: 400,
 			message: expect.stringContaining('is eligible to withdraw'),
+		});
+		expect(mockLoggerError).not.toHaveBeenCalled();
+	});
+
+	// In production an unexposed 5xx answers with only its default message.
+	it('W-R1b shows the reason of a 5xx refusal before accepting', async () => {
+		mockExecute.mockRejectedValue(createHttpError(504, 'The in-head split abc was not confirmed within 60s'));
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 504, expose: true });
+	});
+
+	it('W-R1c answers an unexpected error before accepting with its reason', async () => {
+		mockExecute.mockRejectedValue(new Error('TxInvalid: split input unknown'));
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 500,
+			expose: true,
+			message: 'TxInvalid: split input unknown',
 		});
 	});
 

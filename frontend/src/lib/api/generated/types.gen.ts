@@ -14896,7 +14896,7 @@ export type PostHydraHeadWithdrawErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
+     * Head not open, disabled, not yet identified on chain, no longer matching its on-chain participants or network, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
      */
     409: unknown;
     /**
@@ -14904,7 +14904,11 @@ export type PostHydraHeadWithdrawErrors = {
      */
     422: unknown;
     /**
-     * No live connection to the head, the head state could not be read, or the in-head split confirmed without the expected output
+     * Preparing the withdrawal failed for another reason, such as the node refusing the in-head split
+     */
+    500: unknown;
+    /**
+     * No live connection to the head, the head could not be verified on chain, the head state could not be read, or the in-head split confirmed without the expected output
      */
     502: unknown;
     /**
