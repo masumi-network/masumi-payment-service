@@ -398,7 +398,7 @@ export async function runHydraContestWatch(): Promise<void> {
 	const needsReadOnlyObserver = new Set<string>();
 	const nodeEvidence = new Map<string, NodeEvidence>();
 	// The gap check runs first and for every head at once: an unavailable node or
-	// a slow L1 read must not delay alerts for another head's deadline.
+	// a slow L1 read must not delay gap alerts for another head. The L1 pass waits for this one.
 	await Promise.allSettled(
 		heads.map(async (head) => {
 			try {
