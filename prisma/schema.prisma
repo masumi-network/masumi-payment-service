@@ -1679,6 +1679,7 @@ enum HydraErrorType {
   InvalidInput
   /// The head was closed on an older snapshot than this node holds and no contest landed.
   ContestMissing
+  /// The contest watch could not see the head for longer than its alert threshold.
   ContestWatchAlert
 }
 
