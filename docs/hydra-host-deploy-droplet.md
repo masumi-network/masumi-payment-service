@@ -655,6 +655,56 @@ The peer plane bypasses the load balancer entirely. It has no TLS upstream, and
 per-head dynamic TCP ports behind a managed load balancer are unworkable, so
 peer ports sit directly on the droplet IP under the allow-list above.
 
+### Control Plane traffic limits
+
+VERIFIED (`packages/hydra-host/src/api/server.ts`,
+`packages/hydra-host/src/api/server-limits.ts`): the Host caps JSON request
+bodies at 256 KiB and bounds header and request read time. It closes a socket
+that moves no bytes for 60 seconds. Authenticated node proxy requests and
+proxied WebSockets opt out of that idle timeout. Its control socket cap is the
+greater of 256 and eight times `HYDRA_HOST_PEER_PORT_COUNT`. The default 32
+Head slots get 256 sockets. A Host configured for more Heads gets a larger
+finite cap. This formula is a guard, not a measured capacity claim. When the
+cap refuses a connection, the Host logs `control plane is at its N-connection
+cap`, at once and then at most once a minute while drops continue. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
+the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
+authenticated caller reaches it. The Host does not bound request rate, proxy byte
+volume, or WebSocket message size.
+
+The Control Plane ingress must enforce these limits before forwarding to port
+`8443`:
+
+- **Connections:** Set a total cap below the Host's capacity-derived socket
+  cap and a per-source cap. Without a per-source cap, one client that keeps
+  opening connections can fill the Host cap, and the Host then drops new
+  service calls and WebSocket reconnects. Alert on the Host's
+  `connection cap` warning. Count WebSocket upgrades for the life of each
+  session. Leave room for one live session per Head and normal control
+  requests. Check OS file descriptor and memory limits at the chosen cap.
+- **HTTP rate:** Set per-source and total request budgets with a short burst
+  allowance. Reject excess requests with `429` before they reach the Host.
+  Apply this to public docs routes as well as token routes.
+- **HTTP bodies:** Reject Host JSON bodies over 256 KiB. Give proxied node
+  `POST` routes a separate finite byte cap, based on the largest valid request
+  measured in staging. Reject over-limit bodies before forwarding.
+- **WebSocket messages:** Cap each reassembled client-to-Host message, including
+  fragmented frames. Do not apply that cap to the Host-to-client history replay.
+  Close an over-limit client message before it reaches a node.
+
+Record the numeric limits in the ingress configuration. Size the proxy body,
+WebSocket message, rate, and burst limits from a staging run with the maximum
+configured Heads and a full `?history=yes` replay. Do not assume the load
+balancer from section 5 enforces any of these rules. Check each rule against
+its current documentation. If it cannot enforce a rule, put a capable ingress
+between it and the Host. Keep the backend firewall restricted to that ingress.
+
+Before production, verify the ingress rejects an over-rate request with `429`,
+an oversized proxied body before it reaches the node, and an oversized client
+WebSocket message before it reaches the node. Hold connections up to the chosen
+cap and confirm that the next one is refused. Then confirm normal provisioning,
+node transactions, and full history replay still complete. This checks both
+the limits and the capacity left for valid traffic.
+
 ## 6. Health
 
 The control plane deliberately has no unauthenticated health route. Probe an
