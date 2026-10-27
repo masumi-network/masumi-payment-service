@@ -447,6 +447,16 @@ export async function stopHostNode(
 	await request(baseUrl, `/v1/nodes/${nodeId}/stop`, adminToken, transport, { method: 'POST' });
 }
 
+/** Privileged override: the payment API calls this only after its ledger admission check. */
+export async function dispatchInitOnHost(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	await request(baseUrl, `/v1/nodes/${nodeId}/init`, adminToken, transport, { method: 'POST' });
+}
+
 export async function removeHostNode(
 	baseUrl: string,
 	adminToken: string,

@@ -533,7 +533,7 @@ export class HydraNode extends EventEmitter {
 		);
 	}
 
-	async init(timeoutMs: number = HydraNode.INIT_OBSERVE_TIMEOUT_MS) {
+	async init(timeoutMs: number = HydraNode.INIT_OBSERVE_TIMEOUT_MS, dispatch?: () => Promise<void>) {
 		// The head may already be initializing or open (e.g. on reconnect, or
 		// when hydra-node transitions past Initializing before we observe it).
 		// The node may compact old lifecycle messages even when transaction
@@ -556,7 +556,7 @@ export class HydraNode extends EventEmitter {
 			});
 		}
 
-		return await this.sendCommandAndWait(initCommand(timeoutMs));
+		return await this.sendCommandAndWait({ ...initCommand(timeoutMs), ...(dispatch ? { dispatch } : {}) });
 	}
 
 	async commit(utxos: UTxO[] = [], blueprintTx?: string | null) {
