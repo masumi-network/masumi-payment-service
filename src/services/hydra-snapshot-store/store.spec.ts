@@ -106,6 +106,17 @@ describe('persistVerifiedHydraSnapshot', () => {
 		});
 	});
 
+	it('rejects conflicting signed state that another writer stored first', async () => {
+		mockFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+			headIdentifier: HEAD_ID,
+			signedIdentityJson: signedSnapshotIdentityJson(frame()),
+		});
+		mockCreate.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
+		const changed = frame();
+		changed.snapshot.accumulator = 'different-accumulator';
+		await expect(persistVerifiedHydraSnapshot('head-row', changed)).rejects.toThrow(/contradicted/);
+	});
+
 	it('propagates database errors instead of accepting a snapshot without storage', async () => {
 		mockCreate.mockRejectedValueOnce(new Error('database unavailable'));
 		await expect(persistVerifiedHydraSnapshot('head-row', frame())).rejects.toThrow('database unavailable');

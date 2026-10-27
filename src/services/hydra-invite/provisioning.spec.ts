@@ -145,6 +145,13 @@ describe('reserveNodeForExchange', () => {
 		expect(mockProvision).not.toHaveBeenCalled();
 	});
 
+	// Two invites minted on one Host at once must not refuse each other.
+	it('waits for a lease held by another short action', async () => {
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 10_000);
+	});
+
 	it('acknowledges escrow on the node it just recorded', async () => {
 		const reserved = await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
 

@@ -48,7 +48,7 @@ beforeEach(() => {
 	});
 });
 
-function start(): Promise<void> {
+function start(leaseWaitMs?: number): Promise<void> {
 	const ports = buildRedemptionPorts({
 		record: {
 			id: 'invite-1',
@@ -63,11 +63,26 @@ function start(): Promise<void> {
 		} as Parameters<typeof buildRedemptionPorts>[0]['record'],
 		transport: { allowInsecureHttp: false, allowPrivateNetwork: false },
 		createHead: jest.fn() as Parameters<typeof buildRedemptionPorts>[0]['createHead'],
+		leaseWaitMs,
 	});
 	return ports.start();
 }
 
 describe('redemption node start', () => {
+	// A redeemer must not get a false busy because another redemption is starting.
+	it('waits for a lease held by another short action', async () => {
+		await start();
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 10_000);
+	});
+
+	// The resume job retries next pass; waiting per record overruns its budget.
+	it('does not wait when the resume pass asks it not to', async () => {
+		await start(0);
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 0);
+	});
+
 	it('does not start while token rotation or Resume holds the Host lease', async () => {
 		mockWithPauseLease.mockResolvedValue(false);
 
