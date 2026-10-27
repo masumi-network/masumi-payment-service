@@ -40,7 +40,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	mockFindHost.mockResolvedValue({ pausedAt: null });
+	mockFindHost.mockResolvedValue({
+		pausedAt: null,
+		baseUrl: 'https://host.example',
+		encryptedAdminToken: 'admin-token',
+		allowInsecureHttp: false,
+	});
 	mockStartHostNode.mockResolvedValue(undefined);
 	mockWithPauseLease.mockImplementation(async (_hostId: string, action: () => Promise<void>) => {
 		await action();
@@ -69,6 +74,25 @@ function start(leaseWaitMs?: number): Promise<void> {
 }
 
 describe('redemption node start', () => {
+	// A token rotation can run while the start waits for the lease; the old token would be refused.
+	it('starts with the admin token read under the lease', async () => {
+		mockFindHost.mockResolvedValue({
+			pausedAt: null,
+			baseUrl: 'https://host.example',
+			encryptedAdminToken: 'rotated-admin-token',
+			allowInsecureHttp: false,
+		});
+
+		await start();
+
+		expect(mockStartHostNode).toHaveBeenCalledWith(
+			'https://host.example',
+			expect.stringContaining('rotated-admin-token'),
+			'node-1',
+			expect.anything(),
+		);
+	});
+
 	// A redeemer must not get a false busy because another redemption is starting.
 	it('waits for a lease held by another short action', async () => {
 		await start();

@@ -113,7 +113,9 @@ export function toRedemptionState(record: RedeemerRecord): RedemptionState {
 	};
 }
 
-function hostAccess(record: RedeemerRecord) {
+function hostAccess(record: {
+	HydraHost: Pick<RedeemerRecord['HydraHost'], 'baseUrl' | 'allowInsecureHttp' | 'encryptedAdminToken'>;
+}) {
 	const host = record.HydraHost;
 	if (host.encryptedAdminToken === null) {
 		throw createHttpError(409, 'the hydra host holding this node has no admin token');
@@ -218,15 +220,15 @@ export function buildRedemptionPorts(input: {
 		},
 
 		start: async () => {
-			const host = hostAccess(record);
 			// Rotation, Resume and this start share the lease. A token cannot be
 			// saved between the pause check and the Host's start response.
 			const acted = await withHostPauseLease(
 				record.hydraHostId,
 				async () => {
+					// Read under the lease: a token rotation may have run while this waited.
 					const current = await prisma.hydraHost.findUnique({
 						where: { id: record.hydraHostId },
-						select: { pausedAt: true },
+						select: { pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
 					});
 					if (!current || current.pausedAt !== null) {
 						throw createHttpError(
@@ -234,6 +236,7 @@ export function buildRedemptionPorts(input: {
 							'your Hydra Host was paused for maintenance; the redemption continues once it is resumed',
 						);
 					}
+					const host = hostAccess({ HydraHost: current });
 					await startHostNode(host.baseUrl, host.adminToken, record.hostNodeId, host.transport);
 				},
 				leaseWaitMs,
