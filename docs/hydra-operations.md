@@ -490,8 +490,10 @@ dialog warns until you do it.
 **Signed snapshots are kept outside the node.** Each time the service
 verifies that every party signed a snapshot, it stores that snapshot in
 `HydraStoredSnapshot`, one row per snapshot number and version. When the replay
-rejects a transition, it still stores the snapshot that transition reached. It
-stores no later snapshot, because the replay stops there. No API or admin page
+rejects a signed snapshot for how the history reached it (a bad first snapshot
+or a bad transition), it still starts a write for that snapshot. That write is
+best effort: if it fails, the service logs an error and the next replay pass
+tries again. The replay stores no later snapshot, because it stops there. No API or admin page
 shows these rows, so read them with SQL. See
 [hydra-snapshot-evidence.md](hydra-snapshot-evidence.md) for what a row holds.
 If a node loses its own persistence, these rows are the evidence of what the

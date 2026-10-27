@@ -1,3 +1,3 @@
--- HydraStoredSnapshot keeps every verified signed snapshot, including one a
--- rejected transition reached, so this newest-only copy is redundant.
+-- HydraStoredSnapshot now also gets the signed snapshots that replay rejects,
+-- so this newest-only copy is redundant.
 DROP TABLE "HydraHeadSignedSnapshot";

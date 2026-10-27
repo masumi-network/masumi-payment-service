@@ -1968,7 +1968,7 @@ describe('HydraNode', () => {
 
 		it('stores each verified snapshot, and no forged one', async () => {
 			const persisted: unknown[] = [];
-			const { historyConnection } = await startSignedNode({
+			const { node, historyConnection } = await startSignedNode({
 				persistVerifiedSnapshot: async (frame) => {
 					persisted.push(JSON.parse(stringifyHydraJson({ snapshot: frame.snapshot, signatures: frame.signatures })));
 				},
@@ -1981,6 +1981,7 @@ describe('HydraNode', () => {
 			for (const frame of [first, second, forged]) historyConnection.emit('message', JSON.stringify(frame));
 			await new Promise((resolve) => setImmediate(resolve));
 
+			expect(node.confirmedTransactionHistoryError).toBeDefined();
 			expect(persisted).toEqual([
 				{ snapshot: first.snapshot, signatures: first.signatures },
 				{ snapshot: second.snapshot, signatures: second.signatures },
@@ -2001,6 +2002,36 @@ describe('HydraNode', () => {
 
 			expect(node.confirmedTransactionHistoryError).toBeDefined();
 			expect(persisted).toEqual([first.snapshot.number, third.snapshot.number]);
+		});
+
+		it('stores a signed first snapshot that the first-snapshot guard rejects', async () => {
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+				},
+			});
+			const [, second] = signedHistoryChain().frames;
+
+			historyConnection.emit('message', JSON.stringify(second));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/snapshot gap/);
+			expect(persisted).toEqual([second.snapshot.number]);
+		});
+
+		it('keeps the transition error when the rejected snapshot cannot be stored', async () => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					if (frame.snapshot.number > 1) throw new Error('database down');
+				},
+			});
+			const [first, , third] = signedHistoryChain().frames;
+
+			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/inconsistent signed-state transition/);
 		});
 
 		it('pages a large replay without trusting a partial prefix as complete', async () => {
