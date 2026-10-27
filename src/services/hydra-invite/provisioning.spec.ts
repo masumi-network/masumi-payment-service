@@ -115,7 +115,12 @@ beforeEach(() => {
 		secrets: { hydraSigningKey: 'hydra-sk', cardanoSigningKey: 'cardano-sk' },
 	});
 	mockFindFirst.mockResolvedValue(null);
-	mockHostFindUnique.mockResolvedValue({ pausedAt: null });
+	mockHostFindUnique.mockResolvedValue({
+		pausedAt: null,
+		baseUrl: 'https://host',
+		allowInsecureHttp: false,
+		encryptedAdminToken: 'enc:admin-token',
+	});
 	mockWithPauseLease.mockImplementation(async (_hostId: string, action: () => Promise<void>) => {
 		await action();
 		return true;
@@ -143,6 +148,26 @@ describe('reserveNodeForExchange', () => {
 		});
 		expect(mockFetchCapabilities).not.toHaveBeenCalled();
 		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// A token update can run while this call waits for the lease; the old token would be refused.
+	it('provisions with the admin token read under the lease', async () => {
+		mockHostFindUnique.mockResolvedValue({
+			pausedAt: null,
+			baseUrl: 'https://host',
+			allowInsecureHttp: false,
+			encryptedAdminToken: 'enc:rotated-admin-token',
+		});
+
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockProvision).toHaveBeenCalledWith(
+			'https://host',
+			'rotated-admin-token',
+			'nonce-1',
+			PERIODS,
+			expect.anything(),
+		);
 	});
 
 	// Two invites minted on one Host at once must not refuse each other.

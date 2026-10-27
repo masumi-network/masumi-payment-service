@@ -365,12 +365,25 @@ export async function reserveNodeForExchange(
 	const acted = await withHostPauseLease(
 		host.id,
 		async () => {
-			const current = await prisma.hydraHost.findUnique({ where: { id: host.id }, select: { pausedAt: true } });
+			// Read again under the lease: a token update may have run while this call waited for it.
+			const current = await prisma.hydraHost.findUnique({
+				where: { id: host.id },
+				select: { pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
+			});
 			if (!current) throw createHttpError(404, 'the selected hydra host no longer exists');
 			if (current.pausedAt !== null) {
 				throw createHttpError(409, 'the selected hydra host is paused; resume it before provisioning a node');
 			}
-			reserved = await reserveNodeOnSelectedHost(host, network, localHotWalletId, nonce, periods, autoFund);
+			if (current.encryptedAdminToken === null) {
+				throw createHttpError(409, 'the selected hydra host has no admin token, so nothing can be provisioned on it');
+			}
+			const currentHost = {
+				...host,
+				baseUrl: current.baseUrl,
+				allowInsecureHttp: current.allowInsecureHttp,
+				adminToken: decrypt(current.encryptedAdminToken),
+			};
+			reserved = await reserveNodeOnSelectedHost(currentHost, network, localHotWalletId, nonce, periods, autoFund);
 		},
 		HOST_LEASE_WAIT_MS,
 	);
