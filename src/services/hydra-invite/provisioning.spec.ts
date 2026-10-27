@@ -65,6 +65,7 @@ jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	HOST_LEASE_WAIT_MS: 10_000,
 	withHostPauseLease: mockWithPauseLease,
 }));
 
@@ -114,7 +115,13 @@ beforeEach(() => {
 		secrets: { hydraSigningKey: 'hydra-sk', cardanoSigningKey: 'cardano-sk' },
 	});
 	mockFindFirst.mockResolvedValue(null);
-	mockHostFindUnique.mockResolvedValue({ pausedAt: null });
+	mockHostFindUnique.mockResolvedValue({
+		status: 'Active',
+		pausedAt: null,
+		baseUrl: 'https://host',
+		allowInsecureHttp: false,
+		encryptedAdminToken: 'enc:admin-token',
+	});
 	mockWithPauseLease.mockImplementation(async (_hostId: string, action: () => Promise<void>) => {
 		await action();
 		return true;
@@ -142,6 +149,50 @@ describe('reserveNodeForExchange', () => {
 		});
 		expect(mockFetchCapabilities).not.toHaveBeenCalled();
 		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// A token update can run while this call waits for the lease; the old token would be refused.
+	it('provisions with the admin token read under the lease', async () => {
+		mockHostFindUnique.mockResolvedValue({
+			status: 'Active',
+			pausedAt: null,
+			baseUrl: 'https://host',
+			allowInsecureHttp: false,
+			encryptedAdminToken: 'enc:rotated-admin-token',
+		});
+
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockProvision).toHaveBeenCalledWith(
+			'https://host',
+			'rotated-admin-token',
+			'nonce-1',
+			PERIODS,
+			expect.anything(),
+		);
+	});
+
+	// Placement picked an Active Host, but the operator may change its status during the wait.
+	it('refuses a Host that stopped being Active while the call waited for the lease', async () => {
+		mockHostFindUnique.mockResolvedValue({
+			status: 'Draining',
+			pausedAt: null,
+			baseUrl: 'https://host',
+			allowInsecureHttp: false,
+			encryptedAdminToken: 'enc:admin-token',
+		});
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// Two invites minted on one Host at once must not refuse each other.
+	it('waits for a lease held by another short action', async () => {
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 10_000);
 	});
 
 	it('acknowledges escrow on the node it just recorded', async () => {

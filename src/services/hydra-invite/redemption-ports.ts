@@ -20,7 +20,7 @@ import {
 	startHostNode,
 	type HostPeer,
 } from '@/services/hydra-host/client';
-import { withHostPauseLease } from '@/services/hydra-host/pause';
+import { HOST_LEASE_WAIT_MS, withHostPauseLease } from '@/services/hydra-host/pause';
 import { attemptRedemption, type ExchangeTransportOptions } from './exchange-client';
 import type { createHeadFromExchange } from './orchestrator';
 import type { RedemptionPorts, RedemptionState } from './redemption';
@@ -113,7 +113,9 @@ export function toRedemptionState(record: RedeemerRecord): RedemptionState {
 	};
 }
 
-function hostAccess(record: RedeemerRecord) {
+function hostAccess(record: {
+	HydraHost: Pick<RedeemerRecord['HydraHost'], 'baseUrl' | 'allowInsecureHttp' | 'encryptedAdminToken'>;
+}) {
 	const host = record.HydraHost;
 	if (host.encryptedAdminToken === null) {
 		throw createHttpError(409, 'the hydra host holding this node has no admin token');
@@ -130,8 +132,13 @@ export function buildRedemptionPorts(input: {
 	/** The operator's opt-ins on a request. The resume job, which has none stored, sends with neither. */
 	transport: ExchangeTransportOptions;
 	createHead: typeof createHeadFromExchange;
+	/**
+	 * How long `start` waits for a held Host lease. The resume job passes 0: it
+	 * tries the record again on its next pass and must stay inside its budget.
+	 */
+	leaseWaitMs?: number;
 }): RedemptionPorts {
-	const { record, transport, createHead } = input;
+	const { record, transport, createHead, leaseWaitMs = HOST_LEASE_WAIT_MS } = input;
 	// The `updatedAt` this caller last saw. Every write that could end the record
 	// names it, so a claim by anyone else makes those writes find nothing.
 	let version = record.updatedAt;
@@ -213,22 +220,27 @@ export function buildRedemptionPorts(input: {
 		},
 
 		start: async () => {
-			const host = hostAccess(record);
 			// Rotation, Resume and this start share the lease. A token cannot be
 			// saved between the pause check and the Host's start response.
-			const acted = await withHostPauseLease(record.hydraHostId, async () => {
-				const current = await prisma.hydraHost.findUnique({
-					where: { id: record.hydraHostId },
-					select: { pausedAt: true },
-				});
-				if (!current || current.pausedAt !== null) {
-					throw createHttpError(
-						409,
-						'your Hydra Host was paused for maintenance; the redemption continues once it is resumed',
-					);
-				}
-				await startHostNode(host.baseUrl, host.adminToken, record.hostNodeId, host.transport);
-			});
+			const acted = await withHostPauseLease(
+				record.hydraHostId,
+				async () => {
+					// Read under the lease: a token rotation may have run while this waited.
+					const current = await prisma.hydraHost.findUnique({
+						where: { id: record.hydraHostId },
+						select: { pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
+					});
+					if (!current || current.pausedAt !== null) {
+						throw createHttpError(
+							409,
+							'your Hydra Host was paused for maintenance; the redemption continues once it is resumed',
+						);
+					}
+					const host = hostAccess({ HydraHost: current });
+					await startHostNode(host.baseUrl, host.adminToken, record.hostNodeId, host.transport);
+				},
+				leaseWaitMs,
+			);
 			if (!acted) throw createHttpError(409, 'another Host pause action is running; retry the redemption shortly');
 		},
 

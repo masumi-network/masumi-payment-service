@@ -44,6 +44,7 @@ function frame(
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockCreate.mockResolvedValue({});
+	mockFindUnique.mockResolvedValue(null);
 });
 
 describe('persistVerifiedHydraSnapshot', () => {
@@ -73,20 +74,44 @@ describe('persistVerifiedHydraSnapshot', () => {
 		const differentReferences = frame({ 'cc#0': output, 'dd#0': output });
 		expect(signedSnapshotJson(first)).not.toBe(signedSnapshotJson(differentReferences));
 		expect(signedSnapshotIdentityJson(first)).toBe(signedSnapshotIdentityJson(differentReferences));
-		mockCreate.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
 		mockFindUnique.mockResolvedValue({
 			headIdentifier: HEAD_ID,
 			signedIdentityJson: signedSnapshotIdentityJson(first),
 		});
 		await expect(persistVerifiedHydraSnapshot('head-row', differentReferences)).resolves.toBeUndefined();
+		// Every reconnect replays stored snapshots; each must not cost a failed insert.
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
+	it('accepts an identical commitment that another writer stored first', async () => {
+		mockFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+			headIdentifier: HEAD_ID,
+			signedIdentityJson: signedSnapshotIdentityJson(frame()),
+		});
+		mockCreate.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
+		await expect(persistVerifiedHydraSnapshot('head-row', frame())).resolves.toBeUndefined();
 	});
 
 	it('rejects conflicting signed state at an existing snapshot number', async () => {
-		mockCreate.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
 		mockFindUnique.mockResolvedValue({
 			headIdentifier: HEAD_ID,
 			signedIdentityJson: signedSnapshotIdentityJson(frame()),
 		});
+		const changed = frame();
+		changed.snapshot.accumulator = 'different-accumulator';
+		// A protocol error keeps its own message in the recorded replay failure.
+		await expect(persistVerifiedHydraSnapshot('head-row', changed)).rejects.toMatchObject({
+			name: 'HydraProtocolError',
+			message: expect.stringMatching(/contradicted/),
+		});
+	});
+
+	it('rejects conflicting signed state that another writer stored first', async () => {
+		mockFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+			headIdentifier: HEAD_ID,
+			signedIdentityJson: signedSnapshotIdentityJson(frame()),
+		});
+		mockCreate.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
 		const changed = frame();
 		changed.snapshot.accumulator = 'different-accumulator';
 		await expect(persistVerifiedHydraSnapshot('head-row', changed)).rejects.toThrow(/contradicted/);

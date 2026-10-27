@@ -17,7 +17,10 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	fetchHostNodePeers: jest.fn(),
 	setHostNodePeers: jest.fn(),
 }));
-jest.unstable_mockModule('@/services/hydra-host/pause', () => ({ withHostPauseLease: mockWithPauseLease }));
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	HOST_LEASE_WAIT_MS: 10_000,
+	withHostPauseLease: mockWithPauseLease,
+}));
 jest.unstable_mockModule('./exchange-client', () => ({ attemptRedemption: jest.fn() }));
 jest.unstable_mockModule('./redemption-store', () => ({
 	LIVE_REDEEMER_STATUSES: [],
@@ -37,7 +40,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	mockFindHost.mockResolvedValue({ pausedAt: null });
+	mockFindHost.mockResolvedValue({
+		pausedAt: null,
+		baseUrl: 'https://host.example',
+		encryptedAdminToken: 'admin-token',
+		allowInsecureHttp: false,
+	});
 	mockStartHostNode.mockResolvedValue(undefined);
 	mockWithPauseLease.mockImplementation(async (_hostId: string, action: () => Promise<void>) => {
 		await action();
@@ -45,7 +53,7 @@ beforeEach(() => {
 	});
 });
 
-function start(): Promise<void> {
+function start(leaseWaitMs?: number): Promise<void> {
 	const ports = buildRedemptionPorts({
 		record: {
 			id: 'invite-1',
@@ -60,11 +68,45 @@ function start(): Promise<void> {
 		} as Parameters<typeof buildRedemptionPorts>[0]['record'],
 		transport: { allowInsecureHttp: false, allowPrivateNetwork: false },
 		createHead: jest.fn() as Parameters<typeof buildRedemptionPorts>[0]['createHead'],
+		leaseWaitMs,
 	});
 	return ports.start();
 }
 
 describe('redemption node start', () => {
+	// A token rotation can run while the start waits for the lease; the old token would be refused.
+	it('starts with the admin token read under the lease', async () => {
+		mockFindHost.mockResolvedValue({
+			pausedAt: null,
+			baseUrl: 'https://host.example',
+			encryptedAdminToken: 'rotated-admin-token',
+			allowInsecureHttp: false,
+		});
+
+		await start();
+
+		expect(mockStartHostNode).toHaveBeenCalledWith(
+			'https://host.example',
+			expect.stringContaining('rotated-admin-token'),
+			'node-1',
+			expect.anything(),
+		);
+	});
+
+	// A redeemer must not get a false busy because another redemption is starting.
+	it('waits for a lease held by another short action', async () => {
+		await start();
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 10_000);
+	});
+
+	// The resume job retries next pass; waiting per record overruns its budget.
+	it('does not wait when the resume pass asks it not to', async () => {
+		await start(0);
+
+		expect(mockWithPauseLease).toHaveBeenCalledWith('host-1', expect.any(Function), 0);
+	});
+
 	it('does not start while token rotation or Resume holds the Host lease', async () => {
 		mockWithPauseLease.mockResolvedValue(false);
 

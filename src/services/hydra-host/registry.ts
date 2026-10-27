@@ -20,7 +20,7 @@ import { assertHostDestinationAllowed } from './destination';
 import { listHostIncompatibilities, oneLine } from './placement';
 import { describeRelease, type DescribedRelease } from '@/services/release/release-info';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
-import { getHydraHostPauseState, withHostPauseLease } from './pause';
+import { getHydraHostPauseState, HOST_LEASE_WAIT_MS, withHostPauseLease } from './pause';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
 export type PublicHydraHost = {
@@ -357,6 +357,16 @@ export async function updateHydraHost(
 							HydraHead: { select: { isEnabled: true, reconciliationCompletedAt: true } },
 						},
 					});
+		// The write is fenced on the pause this rotation checks. Read it under the
+		// lease, not before the wait: a Resume and a new pause in between would
+		// otherwise refuse a valid rotation.
+		const pauseFence =
+			participants.length === 0
+				? null
+				: await prisma.hydraHost.findUnique({
+						where: { id },
+						select: { pausedAt: true, pauseStopRequestedAt: true },
+					});
 		if (participants.length > 0) {
 			const pendingUserToken = normalizeHostToken(input.userToken ?? '', 'userToken');
 			const pause = await getHydraHostPauseState(id, pendingUserToken);
@@ -393,9 +403,9 @@ export async function updateHydraHost(
 				where: {
 					id,
 					...(leaseUntil === undefined ? {} : { pauseLeaseUntil: leaseUntil }),
-					...(participants.length === 0
+					...(pauseFence === null
 						? {}
-						: { pausedAt: existing.pausedAt, pauseStopRequestedAt: existing.pauseStopRequestedAt }),
+						: { pausedAt: pauseFence.pausedAt, pauseStopRequestedAt: pauseFence.pauseStopRequestedAt }),
 				},
 				data: {
 					...(input.name === undefined ? {} : { name: input.name }),
@@ -432,9 +442,13 @@ export async function updateHydraHost(
 	};
 	if (input.userToken === undefined) return updateAndDisconnect();
 	let result: PublicHydraHost | null = null;
-	const acted = await withHostPauseLease(id, async (leaseUntil) => {
-		result = await updateAndDisconnect(leaseUntil);
-	});
+	const acted = await withHostPauseLease(
+		id,
+		async (leaseUntil) => {
+			result = await updateAndDisconnect(leaseUntil);
+		},
+		HOST_LEASE_WAIT_MS,
+	);
 	if (!acted) throw createHttpError(409, 'another Host pause action is running; retry the token update shortly');
 	if (result === null) throw createHttpError(503, 'Host token update did not complete');
 	return result;

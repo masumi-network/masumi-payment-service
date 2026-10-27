@@ -1,6 +1,7 @@
 import { prisma } from '@masumi/payment-core/db';
 import canonicalStringify from 'canonical-json';
 import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
+import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import type { HydraSnapshotVerificationFrame } from '@/lib/hydra/hydra/snapshot-verification';
 
 /** Identify the verified signed commitment without unsigned UTxO references. */
@@ -39,6 +40,10 @@ export function signedSnapshotJson(frame: HydraSnapshotVerificationFrame): strin
  * Append after verification and before replay accepts the snapshot. A conflicting
  * signed commitment fails closed. UTxO references are not signed, so a valid
  * redelivery with different references retains the first stored map.
+ *
+ * Replay rescans the whole history on every reconnect, so a stored row is the
+ * common case. It is read first: a failed insert per replayed snapshot costs a
+ * second round trip and logs a unique violation on the database server.
  */
 export async function persistVerifiedHydraSnapshot(
 	hydraHeadId: string,
@@ -49,25 +54,30 @@ export async function persistVerifiedHydraSnapshot(
 		snapshotNumber: BigInt(frame.snapshot.number),
 		snapshotVersion: BigInt(frame.snapshot.version),
 	};
-	const serialized = signedSnapshotJson(frame);
 	const identity = signedSnapshotIdentityJson(frame);
-	try {
-		await prisma.hydraStoredSnapshot.create({
-			data: {
-				...key,
-				headIdentifier: frame.headId,
-				signedIdentityJson: identity,
-				signedSnapshotJson: serialized,
-			},
-		});
-	} catch (error) {
-		if (!isPlainObject(error) || getOwnString(error, 'code') !== 'P2002') throw error;
-		const existing = await prisma.hydraStoredSnapshot.findUnique({
+	const findStored = () =>
+		prisma.hydraStoredSnapshot.findUnique({
 			where: { hydraHeadId_snapshotNumber_snapshotVersion: key },
 			select: { headIdentifier: true, signedIdentityJson: true },
 		});
-		if (existing?.headIdentifier !== frame.headId || existing.signedIdentityJson !== identity) {
-			throw new Error(`Hydra snapshot ${frame.snapshot.number} contradicted previously stored signed state`);
+	let existing = await findStored();
+	if (!existing) {
+		try {
+			await prisma.hydraStoredSnapshot.create({
+				data: {
+					...key,
+					headIdentifier: frame.headId,
+					signedIdentityJson: identity,
+					signedSnapshotJson: signedSnapshotJson(frame),
+				},
+			});
+			return;
+		} catch (error) {
+			if (!isPlainObject(error) || getOwnString(error, 'code') !== 'P2002') throw error;
+			existing = await findStored();
 		}
+	}
+	if (existing?.headIdentifier !== frame.headId || existing.signedIdentityJson !== identity) {
+		throw new HydraProtocolError(`Hydra snapshot ${frame.snapshot.number} contradicted previously stored signed state`);
 	}
 }

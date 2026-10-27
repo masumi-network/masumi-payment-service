@@ -26,7 +26,7 @@ import {
 } from '@/services/hydra-host/client';
 import { HostIncompatibleError, assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
 import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
-import { withHostPauseLease } from '@/services/hydra-host/pause';
+import { HOST_LEASE_WAIT_MS, withHostPauseLease } from '@/services/hydra-host/pause';
 import { deriveNodeCardanoVkey } from './node-keys';
 
 /** The Host's answer when every node slot is in use (`PortExhaustedError`). */
@@ -362,14 +362,37 @@ export async function reserveNodeForExchange(
 ): Promise<ReservedNode> {
 	const host = await selectHostForNetwork(network);
 	let reserved: ReservedNode | null = null;
-	const acted = await withHostPauseLease(host.id, async () => {
-		const current = await prisma.hydraHost.findUnique({ where: { id: host.id }, select: { pausedAt: true } });
-		if (!current) throw createHttpError(404, 'the selected hydra host no longer exists');
-		if (current.pausedAt !== null) {
-			throw createHttpError(409, 'the selected hydra host is paused; resume it before provisioning a node');
-		}
-		reserved = await reserveNodeOnSelectedHost(host, network, localHotWalletId, nonce, periods, autoFund);
-	});
+	const acted = await withHostPauseLease(
+		host.id,
+		async () => {
+			// Read again under the lease: a token update may have run while this call waited for it.
+			const current = await prisma.hydraHost.findUnique({
+				where: { id: host.id },
+				select: { status: true, pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
+			});
+			if (!current) throw createHttpError(404, 'the selected hydra host no longer exists');
+			if (current.status !== 'Active') {
+				throw createHttpError(
+					409,
+					'the selected hydra host is no longer active; retry to place the node on another host',
+				);
+			}
+			if (current.pausedAt !== null) {
+				throw createHttpError(409, 'the selected hydra host is paused; resume it before provisioning a node');
+			}
+			if (current.encryptedAdminToken === null) {
+				throw createHttpError(409, 'the selected hydra host has no admin token, so nothing can be provisioned on it');
+			}
+			const currentHost = {
+				...host,
+				baseUrl: current.baseUrl,
+				allowInsecureHttp: current.allowInsecureHttp,
+				adminToken: decrypt(current.encryptedAdminToken),
+			};
+			reserved = await reserveNodeOnSelectedHost(currentHost, network, localHotWalletId, nonce, periods, autoFund);
+		},
+		HOST_LEASE_WAIT_MS,
+	);
 	if (!acted) throw createHttpError(409, 'another Host pause action is running; retry provisioning shortly');
 	if (reserved === null) throw createHttpError(503, 'Hydra node reservation did not complete');
 	return reserved;
