@@ -28,6 +28,7 @@ describe('loadHostConfig', () => {
 		expect(loadHostConfig(env({ HYDRA_HOST_CONTROL_SOCKET: '/data/control.sock' })).controlSocketPath).toBe(
 			'/data/control.sock',
 		);
+		expect(loadHostConfig(env({ HYDRA_HOST_CONTROL_SOCKET: ' ' })).controlSocketPath).toBeUndefined();
 		expect(() => loadHostConfig(env({ HYDRA_HOST_CONTROL_SOCKET: 'control.sock' }))).toThrow(
 			/HYDRA_HOST_CONTROL_SOCKET must be an absolute path/,
 		);
