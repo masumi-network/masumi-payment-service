@@ -14884,7 +14884,7 @@ export type PostHydraHeadWithdrawData = {
 
 export type PostHydraHeadWithdrawErrors = {
     /**
-     * Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant
+     * Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant; or the wallet holds nothing eligible, less than was asked for, or too little to leave the remainder an output needs
      */
     400: unknown;
     /**
@@ -14900,9 +14900,17 @@ export type PostHydraHeadWithdrawErrors = {
      */
     409: unknown;
     /**
-     * No live connection to the head
+     * The withdrawal transaction would be larger than the head accepts
+     */
+    422: unknown;
+    /**
+     * No live connection to the head, the head state could not be read, or the in-head split confirmed without the expected output
      */
     502: unknown;
+    /**
+     * The in-head split was not confirmed in time; nothing has left the head
+     */
+    504: unknown;
 };
 
 export type PostHydraHeadWithdrawResponses = {

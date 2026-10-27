@@ -191,13 +191,15 @@ export function assertWithdrawAmountShape(input: {
 }
 
 /**
- * Start a withdrawal. Does not wait for it.
+ * Start a withdrawal. Waits until it is recorded, then returns.
  *
  * Same reasoning as the top-up endpoint: the work outlives the request. An
  * exact amount is split inside the head, the decommit is proposed, and the head
  * then has to sign a snapshot removing it before its node posts the L1
- * transaction — none of which this request can usefully hold open. The resulting
- * rows are readable through listWithdrawalsGet.
+ * transaction. The request waits only until the withdrawal is built, signed and
+ * recorded Pending — the split takes about a second — so every refusal up to
+ * there is the answer. What the node and the head decide afterwards lands on the
+ * row, readable through listWithdrawalsGet.
  */
 export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -268,13 +270,26 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		});
 		if (claimableWallets === 0) throw createHttpError(409, WALLET_BUSY_MESSAGE);
 
-		void executeHydraDecommit({
-			headId: input.headId,
-			lovelace: input.lovelace ? BigInt(input.lovelace) : null,
-			asset: input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
-			drain: input.drain,
-		}).catch((error: unknown) => {
-			logger.error(`hydra: withdrawal from head ${input.headId} failed: ${(error as Error).message}`);
+		// Answered once the executor has recorded the withdrawal Pending, not before.
+		// Asking for more than is eligible, or an asset the wallet does not hold,
+		// used to answer `accepted` and fail the row a moment later; now it is the
+		// answer. The node's own verdict comes after and lands on the row.
+		await new Promise<void>((resolve, reject) => {
+			void executeHydraDecommit({
+				headId: input.headId,
+				lovelace: input.lovelace ? BigInt(input.lovelace) : null,
+				asset:
+					input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
+				drain: input.drain,
+				onAccepted: () => resolve(),
+			}).then(
+				() => resolve(),
+				(error: unknown) => {
+					logger.error(`hydra: withdrawal from head ${input.headId} failed: ${(error as Error).message}`);
+					// A no-op once accepted: the answer has already gone out.
+					reject(error instanceof Error ? error : new Error(String(error)));
+				},
+			);
 		});
 
 		return { headId: input.headId, accepted: true as const };
