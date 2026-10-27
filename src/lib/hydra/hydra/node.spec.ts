@@ -2020,11 +2020,23 @@ describe('HydraNode', () => {
 			expect(persisted).toEqual([second.snapshot.number]);
 		});
 
-		it('keeps the transition error when the rejected snapshot cannot be stored', async () => {
-			const { node, historyConnection } = await startSignedNode({
-				persistVerifiedSnapshot: async (frame) => {
-					if (frame.snapshot.number > 1) throw new Error('database down');
+		it.each([
+			{
+				label: 'rejects',
+				persist: async (number: number) => {
+					if (number > 1) throw new Error('database down');
 				},
+			},
+			{
+				label: 'throws',
+				persist: (number: number) => {
+					if (number > 1) throw new Error('database down');
+					return Promise.resolve();
+				},
+			},
+		])('keeps the transition error and logs when storing the rejected snapshot $label', async ({ persist }) => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: (frame) => persist(frame.snapshot.number),
 			});
 			const [first, , third] = signedHistoryChain().frames;
 
@@ -2032,6 +2044,10 @@ describe('HydraNode', () => {
 			await new Promise((resolve) => setImmediate(resolve));
 
 			expect(node.confirmedTransactionHistoryError?.message).toMatch(/inconsistent signed-state transition/);
+			expect(mockLoggerError).toHaveBeenCalledWith(
+				'[HydraNode] Could not store a signed snapshot that this replay rejected',
+				expect.objectContaining({ number: third.snapshot.number, error: 'database down' }),
+			);
 		});
 
 		it('pages a large replay without trusting a partial prefix as complete', async () => {
