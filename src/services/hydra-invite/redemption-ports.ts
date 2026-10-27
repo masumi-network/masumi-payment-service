@@ -220,8 +220,10 @@ export function buildRedemptionPorts(input: {
 		},
 
 		start: async () => {
-			// Rotation, Resume and this start share the lease. A token cannot be
-			// saved between the pause check and the Host's start response.
+			// User token rotation, Resume and this start share the lease. A user token
+			// cannot be saved between the pause check and the Host's start response.
+			// An admin token update does not take the lease, so a start that races
+			// one can still be refused by the Host.
 			const acted = await withHostPauseLease(
 				record.hydraHostId,
 				async () => {

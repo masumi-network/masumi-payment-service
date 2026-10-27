@@ -365,7 +365,9 @@ export async function reserveNodeForExchange(
 	const acted = await withHostPauseLease(
 		host.id,
 		async () => {
-			// Read again under the lease: a token update may have run while this call waited for it.
+			// Read again under the lease: a user token update may have run while this
+			// call waited for it. Status and admin token updates do not take the lease,
+			// so for them this is a point-in-time check, not a fence.
 			const current = await prisma.hydraHost.findUnique({
 				where: { id: host.id },
 				select: { status: true, pausedAt: true, baseUrl: true, allowInsecureHttp: true, encryptedAdminToken: true },
