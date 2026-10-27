@@ -331,6 +331,40 @@ describe('runHydraContestWatch', () => {
 		);
 	});
 
+	it.each([
+		{ issue: 'NODE_UNOBSERVABLE', node: { status: HydraHeadStatus.Disconnected }, chainError: null },
+		{
+			issue: 'L1_OBSERVER_UNAVAILABLE',
+			node: { status: HydraHeadStatus.Open, hasVerifiedPinnedSessions: true },
+			chainError: new Error('Blockfrost unavailable'),
+		},
+	])('lists a $issue alert in the head errors, not only as a webhook', async ({ issue, node, chainError }) => {
+		const unavailableSince = new Date(Date.now() - 6 * 60_000);
+		if (chainError) mockObserveHeadChain.mockRejectedValue(chainError);
+		mockGetNode.mockReturnValue(node);
+		mockFindMany.mockResolvedValue([
+			{ ...watchHead(), contestWatchIssueSignature: issue, contestWatchIssueSince: unavailableSince },
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockErrorCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				hydraHeadId: 'head-1',
+				errorType: HydraErrorType.ContestWatchAlert,
+				errorMessage: expect.stringContaining(unavailableSince.toISOString()),
+				clientInput: 'ContestWatch',
+			}),
+		});
+	});
+
+	it('sends an L1 Close only as a webhook, because a planned close is not an error', async () => {
+		mockFindMany.mockResolvedValue([watchHead()] as never);
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Closed, hasVerifiedPinnedSessions: true });
+		mockObserveHeadChain.mockResolvedValue({ state: 'closed', latestTxHash: 'c'.repeat(64) });
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).toHaveBeenCalledWith(database, expect.objectContaining({ reason: 'HEAD_CLOSED' }));
+		expect(mockErrorCreate).not.toHaveBeenCalled();
+	});
+
 	it.each([HydraHeadStatus.Open, HydraHeadStatus.FanningOut])(
 		'alerts when a disconnected socket retains status %s',
 		async (status) => {

@@ -15894,7 +15894,7 @@ export type GetHydraHeadErrorsResponses = {
             errors: Array<{
                 id: string;
                 createdAt: Date;
-                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput' | 'ContestMissing';
+                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput' | 'ContestMissing' | 'ContestWatchAlert';
                 errorMessage: string;
                 headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
                 clientInput: string | null;
