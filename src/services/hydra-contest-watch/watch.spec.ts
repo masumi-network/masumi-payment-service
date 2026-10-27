@@ -11,6 +11,7 @@ const mockErrorCreate = jest.fn() as AnyMock;
 const mockGetNode = jest.fn() as AnyMock;
 const mockReadOnlyNode = jest.fn() as AnyMock;
 const mockReleaseObservers = jest.fn() as AnyMock;
+const mockStoredSnapshotFindFirst = jest.fn() as AnyMock;
 
 type StoredGap = { contestGapSignature: string | null; contestGapAlertedAt: Date | null };
 /** Head columns a test persists across ticks; a failed transaction restores them. */
@@ -22,6 +23,7 @@ const database = {
 };
 const prisma = {
 	...database,
+	hydraStoredSnapshot: { findFirst: mockStoredSnapshotFindFirst },
 	$transaction: async (callback: (tx: typeof database) => Promise<unknown>) => {
 		const before = structuredClone(stored);
 		try {
@@ -263,6 +265,29 @@ describe('runHydraContestWatch', () => {
 			where: { id: 'head-1', contestGapSignature: null },
 			data: expect.objectContaining({ contestGapSignature: '3<5', contestGapAlertedAt: null }),
 		});
+	});
+
+	it('uses stored signed evidence when a restarted node has only the older chain snapshot', async () => {
+		mockFindMany.mockResolvedValue([
+			{ id: 'head-1', headIdentifier: 'a'.repeat(56), status: HydraHeadStatus.Closed, isEnabled: true, ...empty },
+		] as never);
+		mockStoredSnapshotFindFirst.mockResolvedValue({ snapshotNumber: 5n });
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.Closed,
+			closedSnapshotNumber: 3n,
+			verifiedSnapshotNumber: 3n,
+		});
+		await watch.runHydraContestWatch();
+		expect(mockStoredSnapshotFindFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { hydraHeadId: 'head-1', headIdentifier: 'a'.repeat(56) },
+			}),
+		);
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ contestGapSignature: '3<5' }),
+			}),
+		);
 	});
 
 	it('keeps watching a disabled Closed head through a separate read-only socket', async () => {

@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import { deriveHostNodeToken } from './node-token';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -472,6 +473,19 @@ describe('advanceHydraHostPause', () => {
 });
 
 describe('getHydraHostPauseState', () => {
+	it('probes stopped nodes with a pending replacement user token', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
+		const pendingUserToken = 'n'.repeat(40);
+
+		expect((await pause.getHydraHostPauseState('host-1', pendingUserToken)).phase).toBe('Paused');
+		expect(mockFetchHostNodeHealth).toHaveBeenCalledWith(
+			'https://hydra1.example.com',
+			deriveHostNodeToken(pendingUserToken, 'node-a'),
+			'node-a',
+			{ allowInsecureHttp: false },
+		);
+	});
+
 	it('reports Paused only when the Host says every node is Stopped', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: PAUSED_AT }));
 		mockFetchHostNodeHealth.mockResolvedValueOnce({ state: 'Stopped' }).mockResolvedValueOnce({ state: 'Running' });

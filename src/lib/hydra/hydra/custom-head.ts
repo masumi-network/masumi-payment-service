@@ -48,6 +48,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 				guardHostDestination: nodeConfig.guardHostDestination,
 				computeSnapshotAccumulator: nodeConfig.computeSnapshotAccumulator,
 				onSignedSnapshotVerified: nodeConfig.onSignedSnapshotVerified,
+				persistVerifiedSnapshot: nodeConfig.persistVerifiedSnapshot,
 			});
 			this._nodes[nodeConfig.walletId] = node;
 			this._connected[nodeConfig.walletId] = false;
