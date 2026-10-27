@@ -23,7 +23,8 @@ problem clears the clock.
    original keys and volume. Do not create a new Head identity. Repeat the L1
    check after the node reconnects. A restarted node may need time to replay
    its history before it can compare snapshots.
-   A paused Host stops its nodes, so every Open Head on it raises this alert.
+   A paused Host stops its nodes, so every Open Head on it raises this alert
+   once the pause outlasts the bound above.
    Resume the Host before the contestation deadline.
 3. If node persistence is lost, use the stored `initChainSlot` and
    `initChainHash` as the pre-Init replay point for `--start-chain-from`.
