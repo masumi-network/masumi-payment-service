@@ -28,7 +28,9 @@ const CONTESTATION_PERIOD_GRACE_DIVISOR = 4n;
 
 /**
  * The watch checks every minute. A gap not checked for three minutes belongs to
- * an earlier outage or an earlier run of this service, and starts over.
+ * an earlier outage or an earlier run of this service, and starts over. The
+ * watch adds the duration of its previous run and the time spent so far in this
+ * one, so a slow run does not look stale.
  */
 export const OBSERVATION_STALE_MS = 3 * 60_000;
 
@@ -128,11 +130,11 @@ export function decideObservationGap(
 	unobservedCause: UnobservedCause | null,
 	now: Date,
 	graceMs: number,
+	staleMs: number = OBSERVATION_STALE_MS,
 ): ObservationGapDecision {
 	if (unobservedCause === null) return stored.observationGapSince === null ? 'unchanged' : 'clear';
 	const isStale =
-		stored.observationCheckedAt === null ||
-		now.getTime() - stored.observationCheckedAt.getTime() >= OBSERVATION_STALE_MS;
+		stored.observationCheckedAt === null || now.getTime() - stored.observationCheckedAt.getTime() >= staleMs;
 	if (stored.observationGapSince === null || isStale) return 'record';
 	if (stored.observationGapAlertedAt !== null) {
 		// At most one alert per grace period, so a cause that flips every tick
@@ -168,9 +170,16 @@ export async function applyObservationGap(
 	head: ObservedHead,
 	unobservedCause: UnobservedCause | null,
 	now: Date,
+	staleMs: number = OBSERVATION_STALE_MS,
 	database: ObservationGapDatabase = prisma,
 ): Promise<ObservationGapDecision> {
-	const decision = decideObservationGap(head, unobservedCause, now, observationGraceMs(head.contestationPeriod));
+	const decision = decideObservationGap(
+		head,
+		unobservedCause,
+		now,
+		observationGraceMs(head.contestationPeriod),
+		staleMs,
+	);
 	const gapSince = head.observationGapSince;
 	const readState = { id: head.id, observationGapSince: gapSince };
 	switch (decision) {

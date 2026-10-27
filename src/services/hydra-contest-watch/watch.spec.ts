@@ -508,6 +508,62 @@ describe('runHydraContestWatch', () => {
 		);
 	});
 
+	// A mass outage makes each run slow, so two checks of one head can be more
+	// than three minutes apart. That must not start the gap over every run.
+	it('alerts a node outage while each watch run is slow', async () => {
+		jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'queueMicrotask'] });
+		try {
+			jest.setSystemTime(NOW);
+			const slowRunMs = 150_000;
+			mockFindMany.mockImplementationOnce(async () => {
+				jest.setSystemTime(NOW.getTime() + slowRunMs);
+				return [];
+			});
+			await watch.runHydraContestWatch();
+			mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+			const checkedAt = new Date(NOW.getTime() + slowRunMs);
+			jest.setSystemTime(checkedAt.getTime() + 60_000 + slowRunMs);
+			mockFindMany.mockResolvedValueOnce([
+				{
+					...watchHead(),
+					observationGapSince: new Date(checkedAt.getTime() - 10 * 60_000),
+					observationCheckedAt: checkedAt,
+				},
+			] as never);
+			await watch.runHydraContestWatch();
+			expect(mockUnobservedQueue).toHaveBeenCalledWith(database, expect.objectContaining({ hydraHeadId: 'head-1' }));
+		} finally {
+			// A run on frozen time takes 0 ms, so later tests do not inherit a slow run.
+			mockFindMany.mockResolvedValueOnce([]);
+			await watch.runHydraContestWatch();
+			jest.useRealTimers();
+		}
+	});
+
+	// Heads checked late in a slow run move further apart than the previous run took.
+	it('alerts a node outage checked late in a slow run', async () => {
+		jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'queueMicrotask'] });
+		try {
+			jest.setSystemTime(NOW);
+			mockFindMany.mockResolvedValueOnce([]);
+			await watch.runHydraContestWatch();
+			mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+			const runStartedAt = NOW.getTime() + 60_000;
+			jest.setSystemTime(runStartedAt);
+			mockFindMany.mockImplementationOnce(async () => {
+				jest.setSystemTime(runStartedAt + 200_000);
+				return [{ ...watchHead(), observationGapSince: minutesAgo(10), observationCheckedAt: NOW }];
+			});
+			await watch.runHydraContestWatch();
+			expect(mockUnobservedQueue).toHaveBeenCalledWith(database, expect.objectContaining({ hydraHeadId: 'head-1' }));
+		} finally {
+			// A run on frozen time takes 0 ms, so later tests do not inherit this slow run.
+			mockFindMany.mockResolvedValueOnce([]);
+			await watch.runHydraContestWatch();
+			jest.useRealTimers();
+		}
+	});
+
 	it('bounds the outage alert by the contest period and five minutes', () => {
 		expect(watch.watchUnavailableAfterMs(600n)).toBe(60_000);
 		expect(watch.watchUnavailableAfterMs(12n * 60n * 60n)).toBe(300_000);

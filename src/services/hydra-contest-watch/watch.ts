@@ -318,8 +318,15 @@ function connectFailureCause(error: unknown, message: string): UnobservedCause {
 	return { reason: `this service could not observe the node (${message})`, isNodeSide: false };
 }
 
+/**
+ * How long this process's previous watch run took. The next run starts a minute
+ * after it ends, so a slow run stretches the time between two checks of a head.
+ */
+let previousRunDurationMs = 0;
+
 /** Compare authenticated node history even while the payment session is quarantined. */
 export async function runHydraContestWatch(): Promise<void> {
+	const runStartedAt = Date.now();
 	const heads = await prisma.hydraHead.findMany({
 		where: {
 			status: { in: [HydraHeadStatus.Open, HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
@@ -391,9 +398,12 @@ export async function runHydraContestWatch(): Promise<void> {
 				unobservedCause = connectFailureCause(error, message);
 				logger.warn('[HydraContestWatch] could not reach the head node', { hydraHeadId: head.id, error: message });
 			}
+			// A mass outage makes each run slow. Without the run time, every check of
+			// a gap would look stale, start the gap over, and never alert.
+			const observationStaleMs = OBSERVATION_STALE_MS + previousRunDurationMs + (now.getTime() - runStartedAt);
 			let observationDecision: ObservationGapDecision | null = null;
 			try {
-				observationDecision = await applyObservationGap(head, unobservedCause, now);
+				observationDecision = await applyObservationGap(head, unobservedCause, now, observationStaleMs);
 			} catch (error) {
 				logger.warn('[HydraContestWatch] could not record whether the head node is observed', {
 					hydraHeadId: head.id,
@@ -461,7 +471,7 @@ export async function runHydraContestWatch(): Promise<void> {
 					unobservedCause !== null &&
 					head.observationGapSince !== null &&
 					head.observationCheckedAt !== null &&
-					now.getTime() - head.observationCheckedAt.getTime() < OBSERVATION_STALE_MS &&
+					now.getTime() - head.observationCheckedAt.getTime() < observationStaleMs &&
 					(nodeIssueSince === null || head.observationGapSince.getTime() <= nodeIssueSince.getTime());
 				const isNodeOutageAlerted =
 					isNodeOutageUnobserved &&
@@ -493,4 +503,5 @@ export async function runHydraContestWatch(): Promise<void> {
 		},
 	);
 	await releaseUnusedContestObservers(needsReadOnlyObserver);
+	previousRunDurationMs = Date.now() - runStartedAt;
 }
