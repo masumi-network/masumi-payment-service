@@ -111,12 +111,14 @@ describe('assertHostCompatible', () => {
 		);
 	});
 
-	// A mismatch is only actionable if it reports what was seen: the fingerprint
-	// cannot be derived from the hydra-node CLI, so this is the operator's only
-	// route to the value they have to pin.
+	// Report what the Host returned, but direct the operator to the reviewed
+	// release record rather than making the Host the source of the pin.
 	it('reports the observed fingerprint on a catalogue mismatch', () => {
 		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: 'observed-value' }), expected)).toThrow(
 			/observed-value/,
+		);
+		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: 'observed-value' }), expected)).toThrow(
+			/Check the Host image and its binary/,
 		);
 	});
 

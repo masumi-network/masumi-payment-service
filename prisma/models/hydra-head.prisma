@@ -136,6 +136,9 @@ model HydraHead {
   /// Errors that have occurred during the head's lifecycle
   Errors HydraHeadError[]
 
+  /// Verified signed snapshots retained independently of hydra-node storage.
+  StoredSnapshots HydraStoredSnapshot[]
+
   /// Incremental-commit top-ups into this head
   Topups HydraTopup[]
 

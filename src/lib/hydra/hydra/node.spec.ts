@@ -978,6 +978,72 @@ describe('HydraNode', () => {
 	});
 
 	describe('signed bounded history replay', () => {
+		it('waits for durable snapshot storage before accepting each signed frame', async () => {
+			let releaseFirst!: () => void;
+			const firstStored = new Promise<void>((resolve) => {
+				releaseFirst = resolve;
+			});
+			const persisted: number[] = [];
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async (frame) => {
+					persisted.push(frame.snapshot.number);
+					if (frame.snapshot.number === 1) await firstStored;
+				},
+			});
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+
+			expect(persisted).toEqual([1]);
+			expect(node.verifiedSnapshotNumber).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(false);
+
+			releaseFirst();
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(persisted).toEqual([1, 2, 3]);
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+			expect(node.verifiedSnapshotNumber).toBe(3n);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+		});
+
+		it('fails replay when the verified snapshot cannot be stored', async () => {
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: async () => {
+					throw new Error('snapshot database unavailable');
+				},
+			});
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+			expect((node.confirmedTransactionHistoryError as HydraProtocolError & { cause: Error })?.cause).toEqual(
+				expect.objectContaining({
+					message: 'snapshot database unavailable',
+				}),
+			);
+			expect(node.verifiedSnapshotNumber).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(false);
+		});
+
+		it('ignores a late storage failure from a closed history pass', async () => {
+			let rejectStorage!: (error: Error) => void;
+			const pendingStorage = new Promise<void>((_resolve, reject) => {
+				rejectStorage = reject;
+			});
+			const { node, historyConnection } = await startSignedNode({
+				persistVerifiedSnapshot: () => pendingStorage,
+			});
+			historyConnection.emit('message', JSON.stringify(signedHistoryChain().frames[0]));
+			historyConnection.emit('close');
+			rejectStorage(new Error('old database write failed'));
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+		});
+
 		it('retains finalized fanout evidence across non-status frames and clears it on a live regression', async () => {
 			const { node, historyConnection, liveConnection } = await startSignedNode();
 			const chain = signedHistoryChain();

@@ -125,7 +125,11 @@ function connectableConfiguredHead(id = 'head-1') {
 			nodeHttpUrl: 'http://127.0.0.1:4001',
 			nodeUrl: 'ws://127.0.0.1:4001',
 			HydraSecretKey: { hydraSK: encrypt(localSigningKey) },
-			HydraHost: { encryptedUserToken: encrypt('host-user-token'), allowInsecureHttp: true },
+			HydraHost: {
+				encryptedUserToken: encrypt('host-user-token'),
+				allowInsecureHttp: true,
+				pauseStopRequestedAt: null as Date | null,
+			},
 		},
 		RemoteParticipants: [
 			{
@@ -335,6 +339,17 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		});
 
 		await expect(manager.connect({ id: 'disabled-head' })).rejects.toThrow(/head disabled-head is disabled/);
+	});
+
+	it('refuses a reconnect after the Host requested its nodes stop', async () => {
+		const manager = new HydraConnectionManager();
+		const head = connectableConfiguredHead();
+		head.LocalParticipant.HydraHost.pauseStopRequestedAt = new Date();
+		mockHydraHeadFindUnique.mockResolvedValue(head);
+		const probe = jest.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode');
+
+		await expect(manager.connect({ id: head.id })).rejects.toThrow(/stopped nodes for maintenance/);
+		expect(probe).not.toHaveBeenCalled();
 	});
 
 	it('shares one in-flight transport startup across concurrent connect callers', async () => {

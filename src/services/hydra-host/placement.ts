@@ -137,25 +137,22 @@ export function listHostIncompatibilities(
 			capabilities.hydraVersion.startsWith(`${expected.hydraVersion}+`);
 		if (!versionMatches) {
 			// Official hydra-node builds report `X.Y.Z-<git sha>`, which is a distinct
-			// version from a bare `X.Y.Z` and does not match it. Say so here: it is the
-			// difference between a one-line fix and a hunt through the release notes.
+			// version from a bare `X.Y.Z`. A different binary needs a code review.
 			problems.push(
 				`the hydra host runs ${oneLine(capabilities.hydraVersion) || 'an unknown version'} but this service expects ` +
-					`${expected.hydraVersion}. Official hydra-node builds report a -<git sha> suffix; set ` +
-					'HYDRA_EXPECTED_VERSION to the exact reported version',
+					`${expected.hydraVersion}. Official hydra-node builds report a -<git sha> suffix; review ` +
+					'the binary and update reviewed-catalogue.ts before changing the pin',
 			);
 		}
 
 		if (capabilities.scriptCatalogueHash === null) {
 			problems.push('the hydra host reports no script catalogue; its on-chain scripts cannot be verified');
 		} else if (capabilities.scriptCatalogueHash !== expected.scriptCatalogueHash) {
-			// The fingerprint is over a re-serialised document, so it cannot be
-			// reproduced by hashing the hydra-node CLI output. Reporting the observed
-			// value is the only way an operator can pin a Host they have reviewed.
+			// The expected hash ships with the reviewed binary release. Operators
+			// must not copy the observed hash into configuration to silence this.
 			problems.push(
 				`the hydra host script catalogue (${oneLine(capabilities.scriptCatalogueHash)}) does not match the catalogue ` +
-					`reviewed by this service (${expected.scriptCatalogueHash}). If this host runs the reviewed Hydra ` +
-					'release, set HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH to the observed fingerprint',
+					`reviewed by this service (${expected.scriptCatalogueHash}). Check the Host image and its binary before placement`,
 			);
 		}
 	}

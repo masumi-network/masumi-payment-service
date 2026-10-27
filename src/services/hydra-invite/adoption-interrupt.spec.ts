@@ -334,12 +334,14 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value: string) => value }));
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
-	fetchHostRedemptions: async () => ({ now: Date.now(), invites: [record] }),
+	fetchHostNodeHealth: jest.fn(),
+	fetchHostRedemptions: async () => ({ now: Date.now(), invites: [record], unreadableNonces: [] }),
 	forgetHostInvite: forget,
 	removeHostNode: remove,
 	registerInviteOnHost: jest.fn(),
 	setHostNodePeers: jest.fn(),
 	startHostNode: jest.fn(),
+	stopHostNode: jest.fn(),
 	fetchHostNodePeers: jest.fn(),
 	checkHostPeerTarget: jest.fn(),
 	HydraHostRequestError: class extends Error {},

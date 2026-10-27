@@ -294,13 +294,13 @@ export async function runHydraContestWatch(): Promise<void> {
 		},
 		select: {
 			id: true,
+			headIdentifier: true,
 			status: true,
 			isEnabled: true,
 			contestGapSignature: true,
 			contestGapSince: true,
 			contestGapAlertedAt: true,
 			contestationPeriod: true,
-			headIdentifier: true,
 			contestWatchClosedAlertedAt: true,
 			contestWatchIssueSignature: true,
 			contestWatchIssueSince: true,
@@ -346,26 +346,42 @@ export async function runHydraContestWatch(): Promise<void> {
 				}
 				// Durable status may still say Open after a lifecycle write failed.
 				// Use the pinned node's observed close status, never that stale row.
-				if (node.status === HydraHeadStatus.Open && chain?.state !== 'closed') {
+				// A closed socket keeps its last status but loses its authenticated sessions.
+				if (node.hasVerifiedPinnedSessions && node.status === HydraHeadStatus.Open && chain?.state !== 'closed') {
 					isNodeObservable = true;
-				} else if (node.status === HydraHeadStatus.FanningOut) {
+				} else if (node.hasVerifiedPinnedSessions && node.status === HydraHeadStatus.FanningOut) {
 					isNodeObservable = true;
 				} else if (
 					(node.status === HydraHeadStatus.Closed || node.status === HydraHeadStatus.FanoutPossible) &&
-					chain?.state !== 'open' &&
-					node.closedSnapshotNumber !== undefined &&
-					node.verifiedSnapshotNumber !== undefined
+					chain?.state !== 'open'
 				) {
-					isNodeObservable = true;
-					await applyContestGapObservation(
-						head,
-						{
-							status: node.status,
-							closedSnapshotNumber: node.closedSnapshotNumber,
-							verifiedSnapshotNumber: node.verifiedSnapshotNumber,
-						},
-						now,
-					);
+					const closedSnapshotNumber = node.closedSnapshotNumber;
+					let verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+					if (head.headIdentifier) {
+						try {
+							const stored = await prisma.hydraStoredSnapshot.findFirst({
+								where: { hydraHeadId: head.id, headIdentifier: head.headIdentifier },
+								orderBy: [{ snapshotNumber: 'desc' }, { snapshotVersion: 'desc' }],
+								select: { snapshotNumber: true },
+							});
+							if (stored && (verifiedSnapshotNumber === undefined || stored.snapshotNumber > verifiedSnapshotNumber)) {
+								verifiedSnapshotNumber = stored.snapshotNumber;
+							}
+						} catch (error) {
+							logger.warn('[HydraContestWatch] could not read stored signed snapshot', {
+								hydraHeadId: head.id,
+								error: error instanceof Error ? error.message : 'Unknown error',
+							});
+						}
+					}
+					if (closedSnapshotNumber !== undefined && verifiedSnapshotNumber !== undefined) {
+						isNodeObservable = true;
+						await applyContestGapObservation(
+							head,
+							{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
+							now,
+						);
+					}
 				}
 			} catch (error) {
 				logger.warn('[HydraContestWatch] could not compare the head with the chain', {

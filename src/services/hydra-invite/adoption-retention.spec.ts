@@ -12,7 +12,13 @@ const invite = {
 	hydraHeadId: null as string | null,
 };
 const fetchRedemptions =
-	jest.fn<(baseUrl: string, token: string, since: number) => Promise<{ now: number; invites: object[] }>>();
+	jest.fn<
+		(
+			baseUrl: string,
+			token: string,
+			since: number,
+		) => Promise<{ now: number; invites: object[]; unreadableNonces: string[] }>
+	>();
 const forget =
 	jest.fn<
 		(
@@ -58,6 +64,7 @@ beforeEach(() => {
 		now: Date.now(),
 		// Older than any fixed lookback window: the Host keeps it until acknowledged.
 		invites: [{ nonce: 'nonce', hostNodeId: 'node', redeemedAt: 1, redeemer: {}, redeemerSignature: {} }],
+		unreadableNonces: [],
 	});
 	forget.mockResolvedValue(undefined);
 });

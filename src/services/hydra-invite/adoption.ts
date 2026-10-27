@@ -72,7 +72,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 			continue;
 		}
 		const since = watermarks.get(host.id) ?? COLD_START_WATERMARK_MS;
-		let redemptions: { invites: HostInviteRecord[]; now: number };
+		let redemptions: { invites: HostInviteRecord[]; unreadableNonces: string[]; now: number };
 		try {
 			redemptions = await fetchHostRedemptions(host.baseUrl, decrypt(host.encryptedAdminToken), since, {
 				allowInsecureHttp: host.allowInsecureHttp,
@@ -148,6 +148,10 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		// failure when there was one, so the next pass is offered it again.
 		// A redemption that was *rejected* rather than failed is not retried: its
 		// signature did not hold, and asking again cannot change that.
+		// An unreadable record whose nonce is readable has no trusted time to hold
+		// back to, so the watermark stays put: a fixed Host then offers it to
+		// adoption without a restart. One without a readable nonce matches no invite.
+		if (redemptions.unreadableNonces.length > 0) continue;
 		watermarks.set(host.id, retryFromMs !== null ? retryFromMs - 1 : redemptions.now);
 	}
 	return outcome;
@@ -534,9 +538,13 @@ export async function reapExpiredInvites(): Promise<number> {
 				// counterparty's signed redemption there is, leaving them with a live
 				// head whose peer will never join and us with nothing to reconstruct
 				// it from. Adoption gets the next tick instead; the sweep gets it
-				// afterwards, when the invite is Completed or still unredeemed.
+				// afterwards, when the invite is Completed or still unredeemed. A
+				// redemption the Host lists unreadably waits for a discarding revoke.
 				const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
-				if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+				if (
+					held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null) ||
+					held.unreadableNonces.includes(invite.nonce)
+				) {
 					logger.info(
 						`hydra: not reaping expired invite ${nonceLogRef(invite.nonce)}; the Host is holding its redemption`,
 					);
