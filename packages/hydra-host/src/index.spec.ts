@@ -601,3 +601,16 @@ describe('Host listener failure shutdown', () => {
 		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
 	});
 });
+
+describe('Host peer firewall control socket', () => {
+	it('drains the Host when the private listener cannot start', async () => {
+		process.env.HYDRA_HOST_CONTROL_SOCKET = path.join(dataDir, 'control.sock');
+		await startListening();
+		expect(servers).toHaveLength(3);
+		listenerError(2);
+		await drainStarted;
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+	});
+});

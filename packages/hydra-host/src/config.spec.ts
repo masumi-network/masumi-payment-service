@@ -24,6 +24,13 @@ describe('loadHostConfig', () => {
 		expect(config.network).toBe('preprod');
 		expect(config.ports.capacity).toBe(32);
 		expect(config.listenPort).toBe(8443);
+		expect(config.controlSocketPath).toBeUndefined();
+		expect(loadHostConfig(env({ HYDRA_HOST_CONTROL_SOCKET: '/data/control.sock' })).controlSocketPath).toBe(
+			'/data/control.sock',
+		);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_CONTROL_SOCKET: 'control.sock' }))).toThrow(
+			/HYDRA_HOST_CONTROL_SOCKET must be an absolute path/,
+		);
 		expect(config.hydraScriptsTxIds).toEqual([]);
 		expect(config.allowPrivatePeers).toBe(false);
 		expect(config.requirePeerEgressFirewall).toBe(false);
