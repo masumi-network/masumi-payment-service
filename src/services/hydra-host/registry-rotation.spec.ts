@@ -77,6 +77,27 @@ beforeEach(() => {
 });
 
 describe('Host runtime token rotation', () => {
+	// A Resume and a new pause while rotation waits for the lease must not refuse it.
+	it('fences the write on the pause read under the lease, not the one before the wait', async () => {
+		const repaused = {
+			...host,
+			pausedAt: new Date('2026-10-22T01:00:00Z'),
+			pauseStopRequestedAt: new Date('2026-10-22T01:01:00Z'),
+		};
+		mockFindUnique.mockResolvedValueOnce(host).mockResolvedValue(repaused);
+
+		await updateHydraHost(host.id, { userToken: 'n'.repeat(40) });
+
+		expect(mockUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					pausedAt: repaused.pausedAt,
+					pauseStopRequestedAt: repaused.pauseStopRequestedAt,
+				}),
+			}),
+		);
+	});
+
 	it('closes every old session before saving the new token', async () => {
 		await updateHydraHost(host.id, { userToken: 'n'.repeat(40) });
 		expect(mockUpdate).toHaveBeenCalledWith(
