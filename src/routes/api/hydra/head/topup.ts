@@ -272,12 +272,11 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: topupInput,
 	output: topupOutput,
 	handler: async ({ input }) => {
-		// Answered before the work is detached, the same as the withdraw endpoint.
-		// The refusals below are decided in milliseconds and are the operator's to
-		// see: without them a top-up of a head that does not exist, is disabled, or
-		// is not Open returned "Top-up started" and put the reason in a log the
-		// operator was never going to read. The executor re-checks all three —
-		// minutes pass before it acts, and the head can change in between.
+		// Checked before the executor starts. The refusals below are decided in
+		// milliseconds and are the operator's to see: without them a top-up of a
+		// head that does not exist, is disabled, or is not Open returned "Top-up
+		// started" and put the reason in a log the operator was never going to
+		// read. The executor re-checks all three, and the head can change in between.
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
 			select: { isEnabled: true, status: true, headIdentifier: true, LocalParticipant: { select: { id: true } } },
