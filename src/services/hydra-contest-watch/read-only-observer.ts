@@ -4,6 +4,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { createWorkerAccumulatorComputer } from '@/lib/hydra/hydra/snapshot-accumulator-worker-client';
 import { loadValidatedHeadConfiguration } from '@/services/hydra-connection-manager/head-configuration';
+import { persistVerifiedHydraSnapshot } from '@/services/hydra-snapshot-store/store';
 
 const snapshotAccumulator = createWorkerAccumulatorComputer();
 const observers = new Map<string, Promise<HydraNode>>();
@@ -52,6 +53,7 @@ async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
 		authToken: nodeAuthToken,
 		guardHostDestination: true,
 		computeSnapshotAccumulator: snapshotAccumulator,
+		persistVerifiedSnapshot: (frame) => persistVerifiedHydraSnapshot(headId, frame),
 	});
 	try {
 		await node.connect();

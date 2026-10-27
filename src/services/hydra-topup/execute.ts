@@ -165,14 +165,15 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			throw createHttpError(500, 'Payment source has no RPC provider configured for the L1 top-up');
 		}
 
-		// Reconcile any prior pending top-up first; only one Pending deposit per
-		// participant is permitted, so refuse a new one while an earlier could land.
+		// Refuse a new top-up while an earlier deposit can still reach the Head.
 		// Claimed in one serializable transaction rather than checked and then
 		// written. Two requests arriving together would otherwise both find no
 		// active top-up and both start a pre-split against the same wallet, which
 		// is the same shape of race the node funding had.
 		//
-		// Preparing counts as active: it holds a carve that is already on chain.
+		// Confirmed counts as active until the deposit is absorbed or recovered.
+		// Its L1 confirmation alone has not raised the in-head balance yet.
+		// Preparing also counts as active: it can hold a carve on L1.
 		// A row whose process died mid-carve is aged out here too, since nothing
 		// else can resolve one — it has no deposit hash for reconciliation to look
 		// for, and it would otherwise block this head's top-ups for good.
@@ -183,10 +184,18 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					// writer locks the head before its top-up row: a close that commits
 					// first is seen here, and one that commits after counts this row.
 					await lockOpenHydraHeadForDeposit(tx, head.id);
+					const deposit = await tx.hydraTopup.findFirst({
+						where: {
+							hydraLocalParticipantId: localParticipant.id,
+							status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Confirmed] },
+						},
+						orderBy: { createdAt: 'desc' },
+					});
+					if (deposit !== null) return { claimed: false as const, active: deposit };
 					const active = await tx.hydraTopup.findFirst({
 						where: {
 							hydraLocalParticipantId: localParticipant.id,
-							status: { in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending] },
+							status: HydraTopupStatus.Preparing,
 						},
 						orderBy: { createdAt: 'desc' },
 					});
@@ -238,7 +247,9 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 				409,
 				claim.active.status === HydraTopupStatus.Preparing
 					? 'A prior Hydra top-up is still being prepared on L1'
-					: 'A prior Hydra top-up remains pending independent L1 confirmation',
+					: claim.active.status === HydraTopupStatus.Pending
+						? 'A prior Hydra top-up remains pending independent L1 confirmation'
+						: 'A prior Hydra top-up is confirmed on L1 but has not been absorbed or recovered',
 			);
 		}
 		preparingTopupId = claim.id;

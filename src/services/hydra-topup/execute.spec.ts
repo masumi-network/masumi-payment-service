@@ -239,6 +239,33 @@ describe('executeHydraTopup pre-split', () => {
 	});
 });
 
+describe('executeHydraTopup deposit claim', () => {
+	it('refuses a second deposit while the earlier L1 deposit is confirmed but not absorbed', async () => {
+		mockTxFindFirst.mockImplementation(async (query: { where: { status: { in?: string[] } | string } }) => {
+			const status = query.where.status;
+			return typeof status === 'object' && status.in?.includes('Confirmed')
+				? { id: 'earlier-topup', status: 'Confirmed' }
+				: null;
+		});
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringContaining('not been absorbed or recovered'),
+		});
+
+		expect(mockTxFindFirst).toHaveBeenCalledWith({
+			where: {
+				hydraLocalParticipantId: PARTICIPANT_ID,
+				status: { in: ['Pending', 'Confirmed'] },
+			},
+			orderBy: { createdAt: 'desc' },
+		});
+		expect(mockTxCreate).not.toHaveBeenCalled();
+		expect(mockGenerateWalletExtended).not.toHaveBeenCalled();
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID, 'claim-token-1');
+	});
+});
+
 describe('executeHydraTopup — DepositTooLarge draft refusal', () => {
 	it('fails the top-up cleanly, records the node reason, and releases the wallet — no reservation retained', async () => {
 		const depositTooLarge = new FakeHydraHttpResponseError(

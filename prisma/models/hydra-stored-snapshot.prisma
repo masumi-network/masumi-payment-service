@@ -1,0 +1,18 @@
+/// One signed snapshot after party signatures, accumulator, and transition
+/// verification. The JSON is immutable recovery evidence; Hydra signatures
+/// bind the output multiset, not the node's UTxO reference mapping.
+model HydraStoredSnapshot {
+  id String @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  hydraHeadId String
+  HydraHead HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+  headIdentifier String
+  snapshotNumber BigInt
+  snapshotVersion BigInt
+  signedIdentityJson String @db.Text
+  signedSnapshotJson String @db.Text
+
+  @@unique([hydraHeadId, snapshotNumber, snapshotVersion])
+  @@index([hydraHeadId, snapshotNumber(sort: Desc)])
+}

@@ -14,8 +14,8 @@ import { getApiErrorToastMessage } from '@/lib/api-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CopyButton } from '@/components/ui/copy-button';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { shortenRecordId } from '@/lib/readable-reference';
 import { revokeHydraInvite, useHydraInvites, type HydraInvite } from '@/lib/hooks/useHydraHeads';
 import { HydraInviteDetailsDialog } from '@/components/hydra/HydraInviteDetailsDialog';
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
@@ -143,7 +143,7 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs underline-offset-4 hover:underline">
-                        {invite.nonce.slice(0, 12)}…
+                        Invite {shortenRecordId(invite.id)}
                       </span>
                       <Badge variant={statusTone(invite.status)}>{invite.status}</Badge>
                       <Badge variant="outline">{invite.role}</Badge>
@@ -152,7 +152,6 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
                   </button>
 
                   <div className="flex items-center gap-1">
-                    <CopyButton value={invite.nonce} />
                     <Button
                       type="button"
                       variant="outline"

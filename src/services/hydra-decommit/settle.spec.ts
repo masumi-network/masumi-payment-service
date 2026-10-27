@@ -26,7 +26,7 @@ const TX = 'a'.repeat(64);
 
 const OBSERVED_AT = new Date('2026-08-05T22:37:49.553Z');
 
-const OPEN_ROW = { id: 'decommit-1', approvedAt: null, l1TxId: null };
+const OPEN_ROW = { id: 'decommit-1', approvedAt: null, l1ObservedAt: null, l1TxId: null };
 
 beforeEach(() => {
 	jest.clearAllMocks();
@@ -102,6 +102,45 @@ describe('applyDecommitOutcome', () => {
 		expect(finalizationWhere()).toMatchObject({ hydraHeadId: HEAD, decommitTxId: TX });
 		expect(finalizationWhere().OR[0].status.in).toContain('Approved');
 		expect(finalizationWhere()).not.toHaveProperty('l1ObservedAt');
+	});
+
+	// Every history pass replays the finalization. A repeat must leave the payout
+	// scan to its scheduled pass, and a corrected amount must still repair the row.
+	describe('a replayed finalization of an already observed row', () => {
+		const distributed = { lovelace: 5_000_000n, assets: { [`${'b'.repeat(56)}74`]: '3' } };
+		const observedRow = {
+			...OPEN_ROW,
+			status: 'Approved',
+			approvedAt: OBSERVED_AT,
+			l1ObservedAt: OBSERVED_AT,
+			settledLovelace: distributed.lovelace,
+			settledAssets: { ...distributed.assets },
+		};
+		const replay = (value?: typeof distributed) =>
+			applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'finalized', distributed: value });
+
+		it.each([
+			['the same value', distributed],
+			['no value', undefined],
+		])('does not rewrite the row or scan L1 again for %s', async (_scenario, value) => {
+			mockFindMany.mockResolvedValue([observedRow]);
+
+			expect(await replay(value)).toBe(false);
+			expect(mockUpdateMany).not.toHaveBeenCalled();
+			expect(mockResolvePayout).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			['lovelace', { ...distributed, lovelace: 4_000_000n }],
+			['assets', { ...distributed, assets: {} }],
+			['asset quantity', { ...distributed, assets: { [`${'b'.repeat(56)}74`]: '4' } }],
+		])('repairs a different settled %s', async (_field, value) => {
+			mockFindMany.mockResolvedValue([observedRow]);
+
+			expect(await replay(value)).toBe(true);
+			expect(mockUpdateMany.mock.calls[0]![0].data).toMatchObject({ settledLovelace: value.lovelace });
+			expect(mockResolvePayout).toHaveBeenCalledWith({ decommitId: OPEN_ROW.id, distributed: value });
+		});
 	});
 
 	// A timestamp after the local approval can also belong to a peer withdrawal.
