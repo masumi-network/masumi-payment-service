@@ -68,7 +68,7 @@ const storedParticipant = {
 	hydraHostId: 'host',
 	hydraHeadId: null,
 	HydraHead: null,
-	HydraSecretKey: { cardanoSK: 'signer' },
+	HydraSecretKey: { cardanoSK: '1f'.repeat(32) },
 	cardanoVkey: 'vkey',
 	Wallet: {
 		walletAddress: 'funding-address',
