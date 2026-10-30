@@ -21,6 +21,23 @@ const isNoisyPath = (url: string): boolean => {
 	);
 };
 
+// Static mounts have no route; label them by mount so assets do not each become a series.
+const STATIC_METRIC_PREFIXES = ['/admin', '/docs', '/assets', '/_next'];
+
+// Label by the matched route template, never the raw path: any caller can request arbitrary paths,
+// and each distinct label is a new metric series. originalUrl survives app.use mount rewrites.
+export const resolveMetricsEndpoint = (req: Pick<Request, 'route' | 'baseUrl' | 'originalUrl'>): string => {
+	const route: unknown = req.route;
+	if (typeof route === 'object' && route !== null && 'path' in route && typeof route.path === 'string') {
+		return normalizeEndpointForMetrics(`${req.baseUrl}${route.path}`);
+	}
+	const pathname = req.originalUrl.includes('?')
+		? req.originalUrl.slice(0, req.originalUrl.indexOf('?'))
+		: req.originalUrl;
+	const prefix = STATIC_METRIC_PREFIXES.find((p) => pathname === p || pathname.startsWith(`${p}/`));
+	return prefix ?? 'unmatched';
+};
+
 // Helper function to categorize errors by status code
 const getErrorType = (statusCode: number): string => {
 	if (statusCode >= 400 && statusCode < 500) {
@@ -95,18 +112,18 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
 			});
 		}
 
+		const metricsEndpoint = resolveMetricsEndpoint(req);
+
 		if (!skip) {
-			const normalizedEndpoint = normalizeEndpointForMetrics(req.url);
-			recordApiRequestDuration(duration, normalizedEndpoint, req.method, statusCode, {});
+			recordApiRequestDuration(duration, metricsEndpoint, req.method, statusCode, {});
 		}
 
 		if (isError) {
-			const normalizedEndpoint = normalizeEndpointForMetrics(req.url);
 			const errorType = getErrorType(statusCode);
-			recordApiError(normalizedEndpoint, req.method, statusCode, errorType, {});
-			if (isBusinessEndpoint(req.url)) {
+			recordApiError(metricsEndpoint, req.method, statusCode, errorType, {});
+			if (isBusinessEndpoint(metricsEndpoint)) {
 				const errorMessage = `HTTP ${statusCode} - ${getErrorType(statusCode)}`;
-				recordBusinessEndpointError(normalizedEndpoint, req.method, statusCode, errorMessage, {});
+				recordBusinessEndpointError(metricsEndpoint, req.method, statusCode, errorMessage, {});
 			}
 		}
 	});
