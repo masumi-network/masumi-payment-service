@@ -15,6 +15,8 @@ import { PaymentSourceType } from '@/generated/prisma/client';
 import { assertNever } from '@/utils/assert-never';
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
+import { assertBuyerUtxoCountWithinLimit } from './buyer-utxo-limit';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
 export { buildX402TxSchemaInput, buildX402TxSchemaOutput };
@@ -119,6 +121,11 @@ export const buildX402TxPost = x402BuildEndpointFactory.build({
 				'Stored sellerReturnAddress is not a Cardano base or enterprise address with a payment key credential; this payment cannot be locked on the V2 contract. Recreate the payment with a valid address.',
 			);
 		}
+
+		await assertBuyerUtxoCountWithinLimit(
+			getBlockfrostInstance(input.network, payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey),
+			input.buyerAddress,
+		);
 
 		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
