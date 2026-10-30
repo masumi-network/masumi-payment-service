@@ -250,6 +250,19 @@ describe('validateA2AAgentCardOrThrow', () => {
 		);
 	});
 
+	it.each([
+		'Webhook destination resolved to a blocked address',
+		'Webhook destination could not be resolved',
+		'Hostname resolved to no addresses',
+	])('returns one message regardless of the SSRF policy reason (%s)', async (reason) => {
+		mockResolveWebhookDestinationAllowed.mockRejectedValue(new TestWebhookDestinationPolicyError(reason));
+		await expect(validateA2AAgentCardOrThrow('https://probe.example/agent-card.json', ['1.0'])).rejects.toMatchObject({
+			status: 400,
+			message: 'A2A agent card URL rejected',
+		});
+		expect(mockRequest).not.toHaveBeenCalled();
+	});
+
 	it('rejects a non-JSON content-type', async () => {
 		mockResponse(VALID_CARD, { contentType: 'text/html' });
 		await expect(
