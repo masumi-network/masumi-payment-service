@@ -322,6 +322,14 @@ export async function updateTransaction(
 		buyerWithdrawn = calculateValueChange(tx.utxos.inputs, tx.utxos.outputs, entry.decodedOldContract.buyerVkey);
 	}
 
+	// The continuation datum is authoritative, including an empty hash:
+	// AuthorizeRefund clears result_hash on chain, and the refund passes only
+	// select requests whose resultHash is null. The spent datum is the fallback
+	// only for terminal spends without a continuation; extractOnChainTransactionData
+	// rejects a non-terminal spend whose continuation datum does not decode.
+	const resultHash =
+		entry.decodedNewContract != null ? entry.decodedNewContract.resultHash : entry.decodedOldContract.resultHash;
+
 	// Per-handler try/catch lets both halves run independently (an entry can
 	// map to both a paymentRequest and a purchasingRequest), but a failure
 	// in EITHER must propagate up so the outer tx-sync loop does NOT advance
@@ -372,7 +380,7 @@ export async function updateTransaction(
 				newState,
 				paymentContract.id,
 				entry.decodedOldContract.blockchainIdentifier,
-				entry.decodedNewContract?.resultHash ?? entry.decodedOldContract.resultHash,
+				resultHash,
 				entry.decodedNewContract?.buyerCooldownTime ?? 0n,
 				entry.decodedNewContract?.sellerCooldownTime ?? 0n,
 				sellerWithdrawn,
@@ -397,7 +405,7 @@ export async function updateTransaction(
 				newState,
 				paymentContract.id,
 				entry.decodedOldContract.blockchainIdentifier,
-				entry.decodedNewContract?.resultHash ?? entry.decodedOldContract.resultHash,
+				resultHash,
 				entry.decodedNewContract?.buyerCooldownTime ?? 0n,
 				entry.decodedNewContract?.sellerCooldownTime ?? 0n,
 				sellerWithdrawn,
