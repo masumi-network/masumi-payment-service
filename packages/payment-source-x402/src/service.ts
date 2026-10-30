@@ -338,7 +338,14 @@ export async function settleX402Payment({
 	// Validate the current facilitator before queuing, then resolve it AGAIN after the lock is
 	// acquired. A settle may wait up to two minutes; using the signer captured here would allow a
 	// retired/rotated wallet or disabled network to settle after an administrator changed it.
-	const { network: initialNetwork } = await getFacilitatorForNetwork(requirements.network);
+	const { facilitator: initialFacilitator, network: initialNetwork } = await getFacilitatorForNetwork(
+		requirements.network,
+	);
+	// Settle runs the same checks as verify before broadcasting, so a payload that cannot be verified
+	// fails here without taking the nonce lease or writing a marker. An invalid verdict still settles
+	// below, which records the Failed attempt as before. A verify that throws (a malformed payload, or
+	// a remote facilitator answering with an HTTP error) rejects here and records no attempt.
+	await initialFacilitator.verify(paymentPayload, requirements);
 	const facilitatorWalletIdAtQueueTime = initialNetwork.facilitatorWalletId;
 
 	// Self-hosted settles run under the per-facilitator wallet lock; remote facilitators have no

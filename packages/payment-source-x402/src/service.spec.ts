@@ -1097,6 +1097,55 @@ describe('x402 service helpers', () => {
 		expect(mockX402SettlementCreate).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		['a malformed payload', new TypeError("Cannot read properties of undefined (reading 'from')")],
+		['an unsupported x402 version', new Error('No facilitator registered for x402 version: 99')],
+		['an RPC failure', new Error('rpc eth_call failed')],
+	])('rejects %s from pre-verify before taking the settle lease or writing a marker', async (_case, error) => {
+		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
+		mockFacilitatorVerify.mockRejectedValueOnce(error);
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toBe(error);
+
+		const leaseUpdates = (mockQueryRaw.mock.calls as Array<[readonly string[], ...unknown[]]>).filter(([parts]) =>
+			parts.join('').includes('UPDATE "X402EvmWallet"'),
+		);
+		expect(leaseUpdates).toHaveLength(0);
+		expect(mockX402PaymentAttemptCreate).not.toHaveBeenCalled();
+		expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalled();
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('still settles under the lease when pre-verify reports the payload invalid', async () => {
+		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
+		mockFacilitatorVerify.mockResolvedValueOnce({ isValid: false, invalidReason: 'invalid_payment' });
+		mockFacilitatorSettle.mockResolvedValueOnce({
+			success: false,
+			network: source.network,
+			errorReason: 'invalid_payment',
+			errorMessage: 'authorization rejected',
+		});
+
+		await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		expect(mockX402PaymentAttemptCreate).toHaveBeenCalledTimes(1);
+		// A clean settle return releases the wallet lease immediately.
+		expect(mockX402EvmWalletUpdateMany).toHaveBeenCalled();
+	});
+
 	it('rejects a settlement payload already owned by another attempt without marking this attempt Settled', async () => {
 		mockX402SettlementCreate.mockRejectedValueOnce(
 			new MockPrismaClientKnownRequestError('Unique constraint failed on paymentPayloadHash', 'P2002'),
