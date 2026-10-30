@@ -7,7 +7,7 @@
 // logic.
 
 import { prisma } from '@masumi/payment-core/db';
-import { OnChainState, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, Prisma, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
 import { convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { convertSyncedPaymentAction } from '@/utils/logic/result-on-chain';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
@@ -15,6 +15,22 @@ import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphor
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
 import { canL1ObservationOwnPaymentRequest, canL1ObservationOwnPurchaseRequest } from '@/utils/logic/force-layer';
 import { TxSyncBeforeWrite } from '@/services/transactions/tx-sync/quarantine/fenced-write';
+
+// A request still at the *Initiated action of its own submission has not been
+// confirmed yet. No transition keeps an *Initiated action, so once a request
+// has been applied it is no longer in these sets.
+const PAYMENT_ACTIONS_AWAITING_CONFIRMATION: ReadonlySet<PaymentAction> = new Set([
+	PaymentAction.SubmitResultInitiated,
+	PaymentAction.WithdrawInitiated,
+	PaymentAction.AuthorizeRefundInitiated,
+]);
+const PURCHASING_ACTIONS_AWAITING_CONFIRMATION: ReadonlySet<PurchasingAction> = new Set([
+	PurchasingAction.FundsLockingInitiated,
+	PurchasingAction.SetRefundRequestedInitiated,
+	PurchasingAction.UnSetRefundRequestedInitiated,
+	PurchasingAction.WithdrawRefundInitiated,
+	PurchasingAction.AuthorizeWithdrawalInitiated,
+]);
 
 export async function handleV2PaymentTransaction(
 	tx_hash: string,
@@ -66,10 +82,16 @@ export async function handleV2PaymentTransaction(
 						// txs can re-enter this handler when a sibling entry in the same tx
 						// triggers a retry of the whole tx — without this guard the rerun
 						// would double-write ActionHistory + NextAction.
+						// The Confirmed status belongs to the batch's shared Transaction row,
+						// which the first sibling's confirmation already set. For an escrow
+						// that keeps its state (Disputed → Disputed after a new result), all
+						// three checks hold before this request was applied, so the request's
+						// own action decides.
 						if (
 							paymentRequest.CurrentTransaction?.txHash === tx_hash &&
 							paymentRequest.CurrentTransaction?.status === TransactionStatus.Confirmed &&
-							paymentRequest.onChainState === newState
+							paymentRequest.onChainState === newState &&
+							!PAYMENT_ACTIONS_AWAITING_CONFIRMATION.has(paymentRequest.NextAction.requestedAction)
 						) {
 							return;
 						}
@@ -266,11 +288,12 @@ export async function handleV2PurchasingTransaction(
 
 						// Idempotency: skip if this tx was already fully applied. See
 						// the matching guard in handleV2PaymentTransaction for the
-						// multi-redeemer rationale.
+						// multi-redeemer and shared-row rationale.
 						if (
 							purchasingRequest.CurrentTransaction?.txHash === tx_hash &&
 							purchasingRequest.CurrentTransaction?.status === TransactionStatus.Confirmed &&
-							purchasingRequest.onChainState === newStatus
+							purchasingRequest.onChainState === newStatus &&
+							!PURCHASING_ACTIONS_AWAITING_CONFIRMATION.has(purchasingRequest.NextAction.requestedAction)
 						) {
 							return;
 						}
