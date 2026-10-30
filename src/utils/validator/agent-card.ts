@@ -134,7 +134,9 @@ async function resolveHttpsAgentCardUrl(rawUrl: string): Promise<{ url: URL; add
 		return await resolveWebhookDestinationAllowed(rawUrl);
 	} catch (error) {
 		if (isWebhookDestinationPolicyError(error)) {
-			throw createHttpError(400, `A2A agent card URL rejected: ${error.reason}`);
+			// One message for every policy reason, as the webhook routes do: distinct reasons reveal
+			// which internal names resolve and to what.
+			throw createHttpError(400, 'A2A agent card URL rejected');
 		}
 		throw error;
 	}
