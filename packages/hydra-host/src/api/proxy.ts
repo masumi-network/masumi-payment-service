@@ -18,7 +18,7 @@
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { Transform, type Duplex } from 'node:stream';
-import WebSocket, { WebSocketServer, createWebSocketStream } from 'ws';
+import WebSocket, { WebSocketServer, createWebSocketStream, type RawData } from 'ws';
 
 /**
  * The upgrade socket is a `net.Socket` at runtime, but `server.on('upgrade')`
@@ -32,6 +32,9 @@ const PRE_DISPATCH_ERROR_HEADER = 'x-hydra-host-proxy-error';
 const NODE_NOT_CONNECTED = 'node-not-connected';
 const MAX_WS_MESSAGE_BYTES = 4 * 1024 * 1024;
 const INIT_DISPATCH_TIMEOUT_MS = 10_000;
+/** How long a dispatch listens for the node refusing the InitTx; that answer comes at once. */
+const INIT_REFUSAL_WINDOW_MS = 3_000;
+const PRE_SUBMISSION_INIT_REFUSALS = new Set(['NoSeedInput', 'NotEnoughFuel', 'NoFuelUTXOFound']);
 const WS_DRAIN_GRACE_MS = 30_000;
 
 /** Headers that must never be forwarded upstream. */
@@ -166,8 +169,41 @@ export function proxyHttp(
 	request.pipe(upstream);
 }
 
+/**
+ * The `postTxError` tag of a node frame refusing this Init before submission,
+ * or null.
+ *
+ * hydra-node raises these while building the InitTx from its own wallet, so
+ * nothing was submitted and that attempt can never confirm (the payment
+ * service's `isNodeUnfundedError`). Anything else, `FailedToPostTx` above all,
+ * may have reached the chain and proves nothing. The frame is broadcast, not
+ * kept in history, so only a socket open at dispatch sees it.
+ */
+function initRefusedBeforeSubmission(data: RawData): string | null {
+	if (!Buffer.isBuffer(data)) return null;
+	let frame: unknown;
+	try {
+		frame = JSON.parse(data.toString('utf8'));
+	} catch {
+		return null;
+	}
+	if (typeof frame !== 'object' || frame === null || Array.isArray(frame)) return null;
+	const { tag, postChainTx, postTxError } = frame as { tag?: unknown; postChainTx?: unknown; postTxError?: unknown };
+	if (tag !== 'PostTxOnChainFailed') return null;
+	if (typeof postChainTx !== 'object' || postChainTx === null) return null;
+	if ((postChainTx as { tag?: unknown }).tag !== 'InitTx') return null;
+	if (typeof postTxError !== 'object' || postTxError === null) return null;
+	const errorTag = (postTxError as { tag?: unknown }).tag;
+	return typeof errorTag === 'string' && PRE_SUBMISSION_INIT_REFUSALS.has(errorTag) ? errorTag : null;
+}
+
+export type InitDispatchOutcome = {
+	/** The node's pre-submission refusal of this Init, or null when it named none in time. */
+	refusedBeforeSubmission: string | null;
+};
+
 /** One request opens one loopback session and sends one privileged Init. */
-export function dispatchInit(apiPort: number): Promise<void> {
+export function dispatchInit(apiPort: number): Promise<InitDispatchOutcome> {
 	return new Promise((resolve, reject) => {
 		const socket = new WebSocket(`ws://${LOOPBACK}:${apiPort}/?history=no`, {
 			perMessageDeflate: false,
@@ -175,7 +211,8 @@ export function dispatchInit(apiPort: number): Promise<void> {
 			handshakeTimeout: INIT_DISPATCH_TIMEOUT_MS,
 		});
 		let settled = false;
-		const finish = (error?: Error): void => {
+		let sent = false;
+		const finish = (error?: Error, refusedBeforeSubmission: string | null = null): void => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
@@ -184,18 +221,36 @@ export function dispatchInit(apiPort: number): Promise<void> {
 				reject(error);
 			} else {
 				socket.close();
-				resolve();
+				resolve({ refusedBeforeSubmission });
 			}
 		};
-		const timer = setTimeout(
+		let timer = setTimeout(
 			() => finish(new Error('node Init websocket did not accept the command in time')),
 			INIT_DISPATCH_TIMEOUT_MS,
 		);
-		socket.once('open', () => socket.send(JSON.stringify({ tag: 'Init' }), (error) => finish(error)));
-		socket.once('error', (error: unknown) =>
-			finish(error instanceof Error ? error : new Error('node Init websocket failed')),
+		socket.once('open', () =>
+			socket.send(JSON.stringify({ tag: 'Init' }), (error) => {
+				if (error) {
+					finish(error);
+					return;
+				}
+				// Dispatched, whatever this socket does next. Only a named
+				// pre-submission refusal changes what that means.
+				sent = true;
+				clearTimeout(timer);
+				timer = setTimeout(() => finish(), INIT_REFUSAL_WINDOW_MS);
+			}),
 		);
-		socket.once('close', () => finish(new Error('node Init websocket closed before command dispatch')));
+		socket.on('message', (data: RawData) => {
+			const refusal = sent ? initRefusedBeforeSubmission(data) : null;
+			if (refusal !== null) finish(undefined, refusal);
+		});
+		socket.once('error', (error: unknown) =>
+			sent ? finish() : finish(error instanceof Error ? error : new Error('node Init websocket failed')),
+		);
+		socket.once('close', () =>
+			sent ? finish() : finish(new Error('node Init websocket closed before command dispatch')),
+		);
 	});
 }
 

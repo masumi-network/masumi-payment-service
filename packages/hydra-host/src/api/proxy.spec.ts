@@ -506,6 +506,8 @@ describe('node api websocket proxy', () => {
 	async function upgradeableNode(
 		autoPong = true,
 		ledgerParams: unknown = SAFE_L2_PARAMETERS,
+		/** What the node answers an Init with, instead of echoing it. */
+		answerInit?: string,
 	): Promise<{
 		server: Server;
 		port: number;
@@ -564,7 +566,7 @@ describe('node api websocket proxy', () => {
 				socket.on('message', (data: Buffer, isBinary: boolean) => {
 					commands.push(data.toString());
 					binaryCommands.push(isBinary);
-					socket.send(data.toString());
+					socket.send(answerInit !== undefined && data.toString() === '{"tag":"Init"}' ? answerInit : data.toString());
 				});
 			},
 		);
@@ -821,6 +823,48 @@ describe('node api websocket proxy', () => {
 			expect((await new NodeRegistryStore(dataDir).read('node-1'))?.initDispatchAttemptedAt).toBeDefined();
 		} finally {
 			await new Promise<void>((resolve) => protocolOnly.close(() => resolve()));
+		}
+	});
+
+	// Live on preprod (2026-11-03): a redeemer's node not yet funded answered the
+	// first Init with NoSeedInput, and every retry after funding it was refused
+	// with "already dispatched" until the marker was removed by hand.
+	it('clears the Init marker when the node refuses to build the InitTx from its wallet', async () => {
+		const noSeedInput = JSON.stringify({
+			tag: 'PostTxOnChainFailed',
+			postChainTx: { tag: 'InitTx', participants: [], headParameters: {} },
+			postTxError: { tag: 'NoSeedInput' },
+		});
+		const upstream = await upgradeableNode(true, SAFE_L2_PARAMETERS, noSeedInput);
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			const refused = await call('POST', '/v1/nodes/node-1/init', ADMIN);
+			expect(refused.status).toBe(409);
+			expect(await refused.text()).toContain('NoSeedInput');
+			expect((await new NodeRegistryStore(dataDir).read('node-1'))?.initDispatchAttemptedAt).toBeUndefined();
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(409);
+			expect(upstream.commands).toEqual(['{"tag":"Init"}', '{"tag":"Init"}']);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+		}
+	});
+
+	// A failed submission may still have reached the chain, so it proves nothing.
+	it('keeps the Init marker when the node reports a failure that may have reached L1', async () => {
+		const failedToPost = JSON.stringify({
+			tag: 'PostTxOnChainFailed',
+			postChainTx: { tag: 'InitTx', participants: [], headParameters: {} },
+			postTxError: { tag: 'FailedToPostTx', failureReason: 'submit timed out' },
+		});
+		const upstream = await upgradeableNode(true, SAFE_L2_PARAMETERS, failedToPost);
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		try {
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(202);
+			expect((await call('POST', '/v1/nodes/node-1/init', ADMIN)).status).toBe(409);
+			expect((await new NodeRegistryStore(dataDir).read('node-1'))?.initDispatchAttemptedAt).toBeDefined();
+			expect(upstream.commands).toEqual(['{"tag":"Init"}']);
+		} finally {
+			await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 		}
 	});
 
