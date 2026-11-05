@@ -25,17 +25,40 @@ export interface FundsFitMiss {
 	availableAmount: string;
 }
 
-/** The miss that came closest for this request: the one with the most of the missing unit. */
+/**
+ * The miss worth reporting for this request.
+ *
+ * Per unit, the wallet that came closest (the most of that unit). Each wallet
+ * records only the first unit it fell short on, so the misses of one request
+ * can name different units, and raw amounts across units do not compare.
+ * Across units the pick is the deepest shortage: the smallest
+ * available-to-required ratio.
+ */
 export function pickClosestFundsFitMiss(
 	misses: readonly FundsFitMiss[],
 	purchaseRequestId: string,
 ): FundsFitMiss | null {
-	let closest: FundsFitMiss | null = null;
+	const closestPerUnit = new Map<string, FundsFitMiss>();
 	for (const miss of misses) {
 		if (miss.purchaseRequestId !== purchaseRequestId) continue;
-		if (closest === null || BigInt(miss.availableAmount) > BigInt(closest.availableAmount)) closest = miss;
+		const current = closestPerUnit.get(miss.unit);
+		if (current === undefined || BigInt(miss.availableAmount) > BigInt(current.availableAmount)) {
+			closestPerUnit.set(miss.unit, miss);
+		}
 	}
-	return closest;
+	let deepest: FundsFitMiss | null = null;
+	for (const miss of closestPerUnit.values()) {
+		if (deepest === null || isDeeperShortage(miss, deepest)) deepest = miss;
+	}
+	return deepest;
+}
+
+/** candidate.available / candidate.required < current.available / current.required, cross-multiplied. */
+function isDeeperShortage(candidate: FundsFitMiss, current: FundsFitMiss): boolean {
+	return (
+		BigInt(candidate.availableAmount) * BigInt(current.requiredAmount) <
+		BigInt(current.availableAmount) * BigInt(candidate.requiredAmount)
+	);
 }
 
 /**

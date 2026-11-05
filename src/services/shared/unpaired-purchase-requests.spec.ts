@@ -75,7 +75,7 @@ describe('settleUnpairedPurchaseRequests', () => {
 			where: { id: 'action-1', requestedAction: 'FundsLockingRequested', errorType: null },
 			data: {
 				errorNote: expect.stringContaining(
-					`Not enough funds in the free purchasing wallets: ${usdm} needs 900000, the best free wallet has 400000 (1 of 2 eligible wallets free).`,
+					`Not enough funds in the free purchasing wallets: ${usdm} needs 900000, the closest free wallet has 400000 (1 of 2 eligible wallets free).`,
 				),
 			},
 		});

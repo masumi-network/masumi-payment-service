@@ -6,9 +6,10 @@ export const FUNDS_FIT_MISS_NOTE_PREFIX = 'Not enough funds in the free purchasi
 /**
  * The note for a request that no free purchasing wallet could pay this tick.
  *
- * Written onto the pending lock action while the request keeps retrying, so
- * the operator sees the shortage before the timeout, and the timeout can tell
- * a funds shortage from an unexplained silence.
+ * Written onto the pending lock action while the request keeps retrying. The
+ * purchase API and webhook bodies carry it at once; the admin UI shows it
+ * once the timeout sets an errorType. The timeout reads it to tell a funds
+ * shortage from an unexplained silence.
  */
 export function buildFundsFitMissNote(params: {
 	unit: string;
@@ -18,7 +19,7 @@ export function buildFundsFitMissNote(params: {
 	eligibleWalletCount: number;
 }): string {
 	const unit = params.unit === '' || params.unit.toLowerCase() === 'lovelace' ? 'lovelace' : params.unit;
-	return `${FUNDS_FIT_MISS_NOTE_PREFIX}: ${unit} needs ${params.requiredAmount}, the best free wallet has ${params.availableAmount} (${params.freeWalletCount} of ${params.eligibleWalletCount} eligible wallets free).`;
+	return `${FUNDS_FIT_MISS_NOTE_PREFIX}: ${unit} needs ${params.requiredAmount}, the closest free wallet has ${params.availableAmount} (${params.freeWalletCount} of ${params.eligibleWalletCount} eligible wallets free).`;
 }
 
 /** Whether the request's last lock attempt failed on funds, per the note it left. */

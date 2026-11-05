@@ -35,6 +35,19 @@ describe('pickClosestFundsFitMiss', () => {
 		expect(pickClosestFundsFitMiss(misses, 'pr-1')).toMatchObject({ walletId: 'w3' });
 		expect(pickClosestFundsFitMiss(misses, 'pr-9')).toBeNull();
 	});
+
+	it('reports the deepest shortage when wallets fell short on different units', () => {
+		// w1 holds 2.5 of 3 ADA (83%); w2 holds 0.4 of 2 USDM (20%). The raw
+		// lovelace figure is larger, the USDM shortage is the one to report.
+		const ada = {
+			walletId: 'w1',
+			purchaseRequestId: 'pr-1',
+			unit: '',
+			requiredAmount: '3000000',
+			availableAmount: '2500000',
+		};
+		expect(pickClosestFundsFitMiss([ada, miss('w2', 'pr-1', '400000')], 'pr-1')).toMatchObject({ walletId: 'w2' });
+	});
 });
 
 describe('recordFundsFitMiss', () => {

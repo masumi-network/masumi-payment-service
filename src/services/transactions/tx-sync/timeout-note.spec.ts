@@ -40,7 +40,7 @@ describe('funds fit-miss note', () => {
 
 	it('is recognised as a funds shortage, a plain timeout note is not', () => {
 		expect(note).toBe(
-			'Not enough funds in the free purchasing wallets: c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d needs 900000, the best free wallet has 400000 (1 of 1 eligible wallets free).',
+			'Not enough funds in the free purchasing wallets: c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d needs 900000, the closest free wallet has 400000 (1 of 1 eligible wallets free).',
 		);
 		expect(isFundsFitMissNote(note)).toBe(true);
 		expect(isFundsFitMissNote(null)).toBe(false);

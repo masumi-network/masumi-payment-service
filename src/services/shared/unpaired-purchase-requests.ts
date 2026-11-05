@@ -5,8 +5,8 @@
  * way. A request is parked as InsufficientFunds only when every eligible
  * purchasing wallet was free this tick and none could pay: a busy wallet frees
  * up with its funds intact, so it must suppress the permanent error instead of
- * counting as absent. While a busy wallet keeps the request alive, the closest
- * fit miss is written onto the pending action, so the operator sees the
+ * counting as absent. While a busy wallet keeps the request alive, the deepest
+ * fit miss is written onto the pending action, so the purchase API carries the
  * shortage and the timeout can name it.
  */
 import { prisma } from '@masumi/payment-core/db';
