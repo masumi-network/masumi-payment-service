@@ -393,9 +393,11 @@ function readObservationFresh(body: object): boolean {
 	const reported = getOwnValue(body, 'observationFresh');
 	if (typeof reported === 'boolean') return reported;
 	const lastCheckedAt = getOwnString(body, 'lastCheckedAt');
-	if (lastCheckedAt === undefined || lastCheckedAt === null) return false;
+	if (lastCheckedAt === undefined) return false;
+	// Cross-clock comparison: the Host stamped the time on its own clock. A
+	// time still in the future on this clock is a skew too large to trust.
 	const ageMs = Date.now() - Date.parse(lastCheckedAt);
-	return Number.isFinite(ageMs) && ageMs <= HOST_OBSERVATION_MAX_AGE_MS;
+	return Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= HOST_OBSERVATION_MAX_AGE_MS;
 }
 
 export type HostNodeHealth = {

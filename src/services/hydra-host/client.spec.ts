@@ -54,9 +54,16 @@ describe('Hydra Host node health freshness', () => {
 		await expect(health({ lastCheckedAt: secondsAgo(61) })).resolves.toMatchObject({ observationFresh: false });
 	});
 
-	it('trusts a reported freshness over lastCheckedAt', async () => {
+	it('keeps an older Host unverified when lastCheckedAt lies in the future', async () => {
+		await expect(health({ lastCheckedAt: secondsAgo(-30) })).resolves.toMatchObject({ observationFresh: false });
+	});
+
+	it('trusts a reported freshness over lastCheckedAt in both directions', async () => {
 		await expect(health({ observationFresh: false, lastCheckedAt: secondsAgo(1) })).resolves.toMatchObject({
 			observationFresh: false,
+		});
+		await expect(health({ observationFresh: true, lastCheckedAt: secondsAgo(600) })).resolves.toMatchObject({
+			observationFresh: true,
 		});
 	});
 });
