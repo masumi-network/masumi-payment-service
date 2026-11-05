@@ -34,14 +34,37 @@ describe('admitted Host Init dispatch', () => {
 });
 
 describe('Hydra Host node health freshness', () => {
-	it('treats a Host without the freshness field as unverified', async () => {
+	const health = (body: Record<string, unknown>) => {
 		transportMock.mockResolvedValueOnce(
-			new Response(JSON.stringify({ state: 'Running', usable: true, chainSynced: true }), { status: 200 }),
+			new Response(JSON.stringify({ state: 'Running', usable: true, chainSynced: true, ...body }), { status: 200 }),
 		);
+		return fetchHostNodeHealth('https://hydra.example.com', 'user-token', 'node-1', { allowInsecureHttp: false });
+	};
+	const secondsAgo = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
 
-		await expect(
-			fetchHostNodeHealth('https://hydra.example.com', 'user-token', 'node-1', { allowInsecureHttp: false }),
-		).resolves.toMatchObject({ usable: true, chainSynced: true, observationFresh: false });
+	it('treats a Host without the freshness field or a check time as unverified', async () => {
+		await expect(health({})).resolves.toMatchObject({ usable: true, chainSynced: true, observationFresh: false });
+	});
+
+	it('judges an older Host by a recent lastCheckedAt', async () => {
+		await expect(health({ lastCheckedAt: secondsAgo(15) })).resolves.toMatchObject({ observationFresh: true });
+	});
+
+	it('keeps an older Host unverified once lastCheckedAt is past the cap', async () => {
+		await expect(health({ lastCheckedAt: secondsAgo(61) })).resolves.toMatchObject({ observationFresh: false });
+	});
+
+	it('keeps an older Host unverified when lastCheckedAt lies in the future', async () => {
+		await expect(health({ lastCheckedAt: secondsAgo(-30) })).resolves.toMatchObject({ observationFresh: false });
+	});
+
+	it('trusts a reported freshness over lastCheckedAt in both directions', async () => {
+		await expect(health({ observationFresh: false, lastCheckedAt: secondsAgo(1) })).resolves.toMatchObject({
+			observationFresh: false,
+		});
+		await expect(health({ observationFresh: true, lastCheckedAt: secondsAgo(600) })).resolves.toMatchObject({
+			observationFresh: true,
+		});
 	});
 });
 

@@ -1,5 +1,32 @@
 const MAX_LISTED_HELD_WALLETS = 5;
 
+/** Opens the note a lock pass leaves when no free wallet could pay a request. */
+export const FUNDS_FIT_MISS_NOTE_PREFIX = 'Not enough funds in the free purchasing wallets';
+
+/**
+ * The note for a request that no free purchasing wallet could pay this tick.
+ *
+ * Written onto the pending lock action while the request keeps retrying. The
+ * purchase API and webhook bodies carry it at once; the admin UI shows it
+ * once the timeout sets an errorType. The timeout reads it to tell a funds
+ * shortage from an unexplained silence.
+ */
+export function buildFundsFitMissNote(params: {
+	unit: string;
+	requiredAmount: string;
+	availableAmount: string;
+	freeWalletCount: number;
+	eligibleWalletCount: number;
+}): string {
+	const unit = params.unit === '' || params.unit.toLowerCase() === 'lovelace' ? 'lovelace' : params.unit;
+	return `${FUNDS_FIT_MISS_NOTE_PREFIX}: ${unit} needs ${params.requiredAmount}, the closest free wallet has ${params.availableAmount} (${params.freeWalletCount} of ${params.eligibleWalletCount} eligible wallets free).`;
+}
+
+/** Whether the request's last lock attempt failed on funds, per the note it left. */
+export function isFundsFitMissNote(note: string | null | undefined): boolean {
+	return typeof note === 'string' && note.startsWith(FUNDS_FIT_MISS_NOTE_PREFIX);
+}
+
 /**
  * The operator-facing note for a purchase that timed out before any lock.
  *
