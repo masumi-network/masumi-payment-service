@@ -2,6 +2,84 @@
 
 ## Glossary
 
+### Agent Capability
+
+A self-declared name and version describing a function or model an agent offers. An Agent Capability is not a third-party certification or evidence of conformance.
+
+Avoid: certification, verification.
+
+### Assurance Claim
+
+An optional assertion by an issuer about a person, organization, agent, Agent Capability, or relationship. A registry entry can carry zero or more Assurance Claims; having none does not make the entry invalid.
+
+Avoid: mandatory verification.
+
+### Assurance Claim Type
+
+A stable, versioned identifier and schema defining an Assurance Claim's meaning. Masumi publishes standard types, while issuers may publish namespaced custom types that remain discoverable but gain trust only through an operator's matching rule or claim-type wildcard.
+
+Avoid: unversioned claim name, capability.
+
+### Assurance Subject
+
+The single primary person, organization, agent, Agent Capability, or relationship described by an Assurance Credential. Assurance Credentials about different primary subjects remain separate and may link through stable identifiers and explicit relationship claims.
+
+Avoid: credential holder, bundled subjects.
+
+### Assurance Credential
+
+A signed issuer artifact containing one or more related Assurance Claims that share a subject, assessment event, validity period, and revocation lifecycle. Claims with independent lifecycles belong in separate Assurance Credentials.
+
+Avoid: one credential for every claim, agent profile.
+
+### Assurance Reference
+
+A protocol-specific discovery record attached to an agent registry entry that locates or identifies an integrity-bound Assurance Credential or credential set. It is not itself a Trust Evaluation and can use KERI/ACDC, W3C VC, or another supported proof profile.
+
+Avoid: verified claim, manifest.
+
+### Evidence Package
+
+One or more off-chain documents or records supporting Assurance Claims but stored separately from the public Assurance Credential. A sensitive Evidence Package is encrypted before upload and identified by a digest of its exact ciphertext; public evidence may remain unencrypted, but no evidence bytes or evidence digest appears on-chain.
+
+Avoid: credential, on-chain document.
+
+### Evidence Availability
+
+The current ability to retrieve an Evidence Package whose bytes match the digest in its Assurance Credential. Unavailable or lawfully deleted evidence does not by itself revoke the credential; credential status and evidence availability remain separate results.
+
+Avoid: credential status, evidence validity.
+
+### Issuer Trust Policy
+
+A Registry Node operator's editable rules for deciding which issuers are trusted for which Assurance Claim types; Masumi may supply defaults, but anyone can issue and the on-chain protocol does not confer trust. Rules may constrain jurisdiction, assurance level, schema version, or credential age; omission means unrestricted, while a claim-type wildcard explicitly trusts all claim types.
+
+Avoid: global issuer allowlist.
+
+### Registry Node
+
+A service that indexes `Web3CardanoV2` agent registry entries, resolves Assurance References, validates credentials and status, and applies its operator's Issuer Trust Policy. It keeps credential discovery separate from local Trust Evaluations; neither determines whether a registry transaction is valid on Cardano.
+
+Avoid: trusted registry, payment verifier.
+
+### Credential Verification
+
+The result of resolving an Assurance Reference and checking credential integrity, signature, subject binding, validity, and status. It is independent from Trust Evaluation: a credential can be cryptographically valid while its issuer remains untrusted.
+
+Avoid: issuer trust, on-chain validity.
+
+### Credential Lifecycle Status
+
+The current off-chain state of an Assurance Credential, derived from its signed validity period and issuer-published status mechanism. Expiry follows time; suspension and revocation follow the referenced status service. Cardano stores only the Assurance Reference and does not carry or enforce this changing state.
+
+Avoid: on-chain revocation, registry-token status.
+
+### Trust Evaluation
+
+The result of applying the current Issuer Trust Policy and credential state at a point in time. Removing an issuer or rule changes future evaluations immediately but does not rewrite recorded historical evaluations.
+
+Avoid: permanent trust, credential validity.
+
 ### Payment Source Type
 
 The kind of configured payment source. A stable identifier of the chain plus contract family used by one [[Payment Source Module]]. Current values are `Web3CardanoV1` and `Web3CardanoV2`; future Types may target other chains or contract families.
