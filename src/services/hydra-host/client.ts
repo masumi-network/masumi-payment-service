@@ -376,6 +376,28 @@ export async function checkHostPeerTarget(
 	return { supported: true, allowed, reason: allowed ? null : (getOwnString(body, 'reason') ?? null) };
 }
 
+/** The Host's own cap on a supervisor observation (MAX_HEALTH_OBSERVATION_AGE_MS in hydra-host). */
+const HOST_OBSERVATION_MAX_AGE_MS = 60_000;
+
+/**
+ * Whether the Host's last supervisor probe is recent enough to act on.
+ *
+ * A Host that reports `observationFresh` has already applied the cap. A Host
+ * built before that field still reports `lastCheckedAt`, which is the same
+ * observation time, so the cap is applied here instead. Without this every
+ * deposit, top-up, withdrawal and consolidation against an older Host failed
+ * as "not checked recently" while the node was healthy. No `lastCheckedAt`
+ * at all stays unverified.
+ */
+function readObservationFresh(body: object): boolean {
+	const reported = getOwnValue(body, 'observationFresh');
+	if (typeof reported === 'boolean') return reported;
+	const lastCheckedAt = getOwnString(body, 'lastCheckedAt');
+	if (lastCheckedAt === undefined || lastCheckedAt === null) return false;
+	const ageMs = Date.now() - Date.parse(lastCheckedAt);
+	return Number.isFinite(ageMs) && ageMs <= HOST_OBSERVATION_MAX_AGE_MS;
+}
+
 export type HostNodeHealth = {
 	state: string;
 	/** The state an operator asked for. A stop request leaves `state` Running until the node drains. */
@@ -385,7 +407,10 @@ export type HostNodeHealth = {
 	usable: boolean;
 	responsive: boolean;
 	chainSynced: boolean | null;
-	/** False when the Host has no recent supervisor observation, including older Hosts that omit the field. */
+	/**
+	 * False when the Host has no recent supervisor observation. A Host built
+	 * before the field is judged by its `lastCheckedAt` against the same cap.
+	 */
 	observationFresh: boolean;
 	/** How far behind the chain the node is, in seconds. Null when unknown. */
 	driftSeconds: number | null;
@@ -417,7 +442,7 @@ export async function fetchHostNodeHealth(
 		responsive: getOwnValue(body, 'responsive') === true,
 		chainSynced:
 			typeof getOwnValue(body, 'chainSynced') === 'boolean' ? (getOwnValue(body, 'chainSynced') as boolean) : null,
-		observationFresh: getOwnValue(body, 'observationFresh') === true,
+		observationFresh: readObservationFresh(body),
 		driftSeconds:
 			typeof getOwnValue(body, 'driftSeconds') === 'number' ? (getOwnValue(body, 'driftSeconds') as number) : null,
 	};
