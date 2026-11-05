@@ -55,11 +55,11 @@ jest.unstable_mockModule('./tx', () => ({
 
 const { checkLatestTransactions } = await import('./service');
 
-const timedOutRow = (id: string, errorNote: string | null) => ({
+const timedOutRow = (id: string, errorNote: string | null, errorType: string | null = null) => ({
 	id,
 	nextActionId: `${id}-action`,
 	payByTime: BigInt(Date.now() - 3_600_000),
-	NextAction: { errorNote },
+	NextAction: { errorType, errorNote },
 	PaymentSource: { HotWallets: [] },
 });
 
@@ -70,7 +70,7 @@ describe('purchase lock timeout error type', () => {
 		mockUpdatePurchase.mockResolvedValue({});
 	});
 
-	it('labels a request whose lock pass ran out of funds InsufficientFunds, the rest Unknown', async () => {
+	it('keeps a parked cause, labels a fit-miss note InsufficientFunds, the rest Unknown', async () => {
 		const fitMissNote = buildFundsFitMissNote({
 			unit: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d',
 			requiredAmount: '900000',
@@ -78,7 +78,11 @@ describe('purchase lock timeout error type', () => {
 			freeWalletCount: 1,
 			eligibleWalletCount: 2,
 		});
-		mockFindTimedOutPurchases.mockResolvedValue([timedOutRow('pr-short', fitMissNote), timedOutRow('pr-silent', null)]);
+		mockFindTimedOutPurchases.mockResolvedValue([
+			timedOutRow('pr-short', fitMissNote),
+			timedOutRow('pr-silent', null),
+			timedOutRow('pr-parked', 'Not enough funds in wallets', 'InsufficientFunds'),
+		]);
 
 		await checkLatestTransactions();
 
@@ -90,5 +94,6 @@ describe('purchase lock timeout error type', () => {
 			errorNote: expect.stringContaining(fitMissNote),
 		});
 		expect(createdBy('pr-silent')).toMatchObject({ errorType: 'Unknown' });
+		expect(createdBy('pr-parked')).toMatchObject({ errorType: 'InsufficientFunds' });
 	});
 });
