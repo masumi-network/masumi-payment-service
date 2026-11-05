@@ -16,7 +16,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Mutex } from 'async-mutex';
 import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { extractOnChainTransactionData } from './util';
-import { buildPurchaseTimeoutNote } from './timeout-note';
+import { buildPurchaseTimeoutNote, isFundsFitMissNote } from './timeout-note';
 import { getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } from './blockchain';
 import {
 	markCanonicalRolledBackQuarantines,
@@ -314,7 +314,7 @@ async function invalidateTimedOutPurchaseRequests() {
 			id: true,
 			nextActionId: true,
 			payByTime: true,
-			NextAction: { select: { errorNote: true } },
+			NextAction: { select: { errorType: true, errorNote: true } },
 			PaymentSource: {
 				select: {
 					HotWallets: {
@@ -338,7 +338,14 @@ async function invalidateTimedOutPurchaseRequests() {
 							NextAction: {
 								create: {
 									requestedAction: PurchasingAction.WaitingForManualAction,
-									errorType: PurchaseErrorType.Unknown,
+									// A request already failed with a cause keeps it. A lock pass
+									// that found no wallet with the funds says so on the pending
+									// action; that is the cause, not a mystery.
+									errorType:
+										row.NextAction.errorType ??
+										(isFundsFitMissNote(row.NextAction.errorNote)
+											? PurchaseErrorType.InsufficientFunds
+											: PurchaseErrorType.Unknown),
 									errorNote: buildPurchaseTimeoutNote({
 										payByTime: row.payByTime,
 										graceSeconds: TIMEOUT_GRACE_MS / 1000,
