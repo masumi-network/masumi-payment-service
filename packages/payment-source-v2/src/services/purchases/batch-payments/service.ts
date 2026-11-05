@@ -38,6 +38,7 @@ import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sy
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
 import { claimSelectedL1Request, revertOwnedL1BatchRequests } from './l1-claim';
+import { settleUnpairedPurchaseRequests } from '@/services/shared/unpaired-purchase-requests';
 
 /**
  * --- V2 batch-payments: defensive submit invariant ---
@@ -1268,61 +1269,12 @@ export async function batchLatestPaymentEntriesV2() {
 					}
 					//only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
 					if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
-						//count all existing wallets, including ones busy with a pending transaction or locked by
-						//a concurrent run: a busy wallet frees up with its funds intact, so it must suppress the
-						//permanent error state instead of being treated as nonexistent
-						const allWalletCount = await prisma.hotWallet.count({
-							where: {
-								deletedAt: null,
-								type: HotWalletType.Purchasing,
-								PaymentSource: {
-									id: paymentContract.id,
-								},
-							},
+						await settleUnpairedPurchaseRequests({
+							paymentSourceId: paymentContract.id,
+							requests: paymentRequestsRemaining,
+							freeWallets: potentialWallets,
+							walletFitMisses,
 						});
-						//only go into error state if all eligible wallets were evaluated this run, otherwise we might have enough funds in busy wallets
-						for (const paymentRequest of paymentRequestsRemaining) {
-							const eligibleWalletCount = paymentRequest.isLimitedToHotWallets
-								? await prisma.hotWallet.count({
-										where: {
-											deletedAt: null,
-											type: HotWalletType.Purchasing,
-											PaymentSource: { id: paymentContract.id },
-											id: { in: paymentRequest.HotWalletLimit.map((hw) => hw.id) },
-										},
-									})
-								: allWalletCount;
-							const eligiblePotentialCount = paymentRequest.isLimitedToHotWallets
-								? potentialWallets.filter((w) => paymentRequest.HotWalletLimit.some((hw) => hw.id === w.id)).length
-								: potentialWallets.length;
-							if (eligibleWalletCount == eligiblePotentialCount) {
-								logger.warn('No wallets with funds found, going into error state for', {
-									purchaseRequestId: paymentRequest.id,
-									eligibleWalletCount,
-									eligiblePotentialCount,
-								});
-								await prisma.purchaseRequest.update({
-									where: { id: paymentRequest.id },
-									data: {
-										ActionHistory: {
-											connect: {
-												id: paymentRequest.nextActionId,
-											},
-										},
-										NextAction: {
-											create: {
-												requestedAction: PurchasingAction.WaitingForManualAction,
-												errorType: PurchaseErrorType.InsufficientFunds,
-												errorNote:
-													paymentRequest.inputHash == null
-														? 'Purchase request has no input hash and not enough funds in wallets'
-														: 'Not enough funds in wallets',
-											},
-										},
-									},
-								});
-							}
-						}
 					}
 
 					await unlockUnusedPurchasingWallets(
