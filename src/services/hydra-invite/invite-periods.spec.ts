@@ -11,7 +11,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { MeshWallet } from '@meshsdk/core';
-import { Network, PaymentSourceType, HotWalletType } from '@/generated/prisma/client';
+import { HydraHeadStatus, Network, PaymentSourceType, HotWalletType } from '@/generated/prisma/client';
 import type { Mock } from 'jest-mock';
 import type { HydraHeadInvitePayloadInput } from './invite-payload';
 
@@ -211,6 +211,30 @@ describe('redeeming a correctly signed invite', () => {
 			status: 400,
 			message: expect.stringMatching(message),
 		});
+		expect(mockHostFindMany).not.toHaveBeenCalled();
+		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// createBoundHydraHead refuses a pair whose previous head has not handed its
+	// funds back to L1. Found only after the issuer's Host had spent the nonce, that
+	// refusal stranded a funded node on each side (live on preprod, 2026-11-03).
+	it('with a counterparty whose previous head has not handed off is refused before provisioning', async () => {
+		mockHeadFindFirst.mockImplementation(async (args: { where: { status: unknown } }) =>
+			args.where.status === HydraHeadStatus.Final ? { id: 'head-final-not-handed-off' } : null,
+		);
+
+		await expect(redeem(Network.Preprod, {})).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringMatching(/previous head with this counterparty .* has not handed its funds back to L1/),
+		});
+		expect(mockHeadFindFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					status: HydraHeadStatus.Final,
+					OR: [{ reconciliationCompletedAt: null }, { fanoutTxHash: null }],
+				}),
+			}),
+		);
 		expect(mockHostFindMany).not.toHaveBeenCalled();
 		expect(mockProvision).not.toHaveBeenCalled();
 	});

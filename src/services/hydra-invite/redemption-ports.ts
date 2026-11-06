@@ -41,9 +41,10 @@ export type RedeemerRecord = Prisma.HydraHeadInviteGetPayload<{
 /**
  * Refuse a redemption that cannot become a head, before anything is spent.
  *
- * A pair has at most one head that is not final, so an invite redeemed while one
- * exists, or while another acknowledged redemption with the same counterparty is
- * still owed its head, burns its nonce and then cannot be finished. `excludeInviteId` is the
+ * A pair has at most one head that is not final, and gets a new one only once
+ * the last has handed off, so an invite redeemed while either is not true, or
+ * while another acknowledged redemption with the same counterparty is still owed
+ * its head, burns its nonce and then cannot be finished. `excludeInviteId` is the
  * redemption that is asking, so it does not count against itself.
  */
 export async function assertRelationHasNoLiveHead(input: {
@@ -69,6 +70,28 @@ export async function assertRelationHasNoLiveHead(input: {
 			409,
 			`you already have a ${liveHead.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
 				'close and settle it before opening another, then ask them for a new invite',
+		);
+	}
+	// The same columns verifyPriorHydraFanouts refuses on when the head is
+	// created. Asked there alone, the refusal came after the issuer's Host had
+	// spent the nonce, leaving a funded node on each side and the issuer retrying.
+	const unsettledHead = await prisma.hydraHead.findFirst({
+		where: {
+			status: HydraHeadStatus.Final,
+			OR: [{ reconciliationCompletedAt: null }, { fanoutTxHash: null }],
+			HydraRelation: {
+				network: input.network,
+				localHotWalletId: input.localHotWalletId,
+				RemoteWallet: { walletAddress: input.counterpartyWalletAddress },
+			},
+		},
+		select: { id: true },
+	});
+	if (unsettledHead !== null) {
+		throw createHttpError(
+			409,
+			`your previous head with this counterparty on ${input.network} has not handed its funds back to L1 yet; ` +
+				'wait until its fanout is confirmed and reconciled, then ask them for a new invite',
 		);
 	}
 	const pending = await prisma.hydraHeadInvite.findFirst({
