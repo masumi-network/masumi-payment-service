@@ -183,6 +183,46 @@ function expectedFanoutMultisets(snapshot: VerifiedHydraSnapshot): Array<Readonl
 }
 
 /**
+ * The reported fanout outputs the signed snapshot accounts for, or null.
+ *
+ * hydra-node balances a fanout step with its own wallet: a fee input, and one
+ * change output appended after the distributed run. When the head fits in one
+ * transaction, 2.4.1 reports that change in `finalizedUTxO` next to the
+ * distributed outputs (on preprod: fanout 5229d451…#2, 29.55 tADA back to the
+ * node after two signed 10 tADA payouts). No signature covers it, so requiring
+ * an exact match left `prepareFinalHandoff` returning null on every poll: the
+ * head stayed Final with its payments pinned in-head, and the relation's next
+ * head was refused.
+ *
+ * So one surplus entry may be dropped, and only the last output of its
+ * transaction, which is where the wallet puts change. What is left must still
+ * be exactly a signed multiset, and `verifyHydraFanoutOnChain` proves on chain
+ * that the dropped trailing output is change back to a spending wallet.
+ */
+function withoutWalletChange(
+	snapshot: VerifiedHydraSnapshot,
+	reported: readonly VerifiedHydraFanoutReference[],
+): VerifiedHydraFanoutReference[] | null {
+	const expectedMultisets = expectedFanoutMultisets(snapshot);
+	const accountsFor = (references: readonly VerifiedHydraFanoutReference[]) => {
+		const observed = outputMultiset(references.map(({ serializedOutput }) => serializedOutput));
+		return expectedMultisets.some((expected) => numberMapsEqual(expected, observed));
+	};
+	if (accountsFor(reported)) return [...reported];
+	const lastIndexByTx = new Map<string, number>();
+	for (const { txHash, outputIndex } of reported) {
+		lastIndexByTx.set(txHash, Math.max(lastIndexByTx.get(txHash) ?? -1, outputIndex));
+	}
+	const changeCandidates = reported.filter(
+		(change) =>
+			lastIndexByTx.get(change.txHash) === change.outputIndex &&
+			accountsFor(reported.filter((reference) => reference !== change)),
+	);
+	if (changeCandidates.length !== 1) return null;
+	return reported.filter((reference) => reference !== changeCandidates[0]);
+}
+
+/**
  * Bind the complete signature-verified final state to hydra-node's complete
  * chain-observed fanout map. Unlike the single-output resolver below, this can
  * retain duplicate values because every actual L1 reference is independently
@@ -192,14 +232,14 @@ export function resolveVerifiedHydraFanoutReferences(
 	snapshot: VerifiedHydraSnapshot,
 	fanoutOutputs: ReadonlyMap<string, string>,
 ): VerifiedHydraFanoutReference[] | null {
-	const observed = outputMultiset(fanoutOutputs.values());
-	if (!expectedFanoutMultisets(snapshot).some((expected) => numberMapsEqual(expected, observed))) return null;
-	const references: VerifiedHydraFanoutReference[] = [];
+	const reported: VerifiedHydraFanoutReference[] = [];
 	for (const [reference, serializedOutput] of fanoutOutputs) {
 		const parsed = parseFanoutReference(reference, snapshot.number, serializedOutput);
 		if (!parsed) return null;
-		references.push(parsed);
+		reported.push(parsed);
 	}
+	const references = withoutWalletChange(snapshot, reported);
+	if (!references) return null;
 	// A head too large to empty in one transaction is fanned out over several, so
 	// references legitimately span transactions and an output index only has to
 	// be unique within its own. Requiring one transaction here rejected every

@@ -634,6 +634,92 @@ describe('Hydra 2.3 snapshot verification', () => {
 			),
 		).toBeNull();
 	});
+
+	// The shape of a real single-step fanout on preprod (head 7456e0d0… on
+	// 2026-10-27, fanout 5229d451…): the final snapshot signed one 10 tADA output
+	// in `utxo` and one 10 tADA deposit in `utxoToCommit`, and hydra-node 2.4.1
+	// reported both payouts plus its wallet's 29.55 tADA change as the last output
+	// of the same transaction. Rejecting that map left the head Final forever.
+	describe('the node wallet change in a single-step fanout map', () => {
+		const fanoutTxHash = '5229d451f65507895cae0661e26dcc6b8c42f7e35caaa6f4f0db3dc2b6fc1822';
+		const payout = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const change = serializeHydraSnapshotOutput({
+			...output({ lovelace: 29_550_911 }),
+			address: 'addr_test1vp32ftc0q5y9c3yhj9epuwpfaf5ct9c839dxqpqx7xpqvzqhghh65',
+		});
+		const snapshot = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[`${'e9'.repeat(32)}#0`, payout],
+				[`${'af'.repeat(32)}#0`, payout],
+			]),
+			outputMultiset: new Map([[payout, 2]]),
+			committedOutputs: new Map([[`${'af'.repeat(32)}#0`, payout]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const reference = (outputIndex: number, serializedOutput: string) => ({
+			txHash: fanoutTxHash,
+			outputIndex,
+			snapshotNumber: 2,
+			serializedOutput,
+		});
+
+		it('resolves the signed payouts and leaves the trailing change out', () => {
+			const resolved = resolveVerifiedHydraFanoutReferences(
+				snapshot,
+				new Map([
+					[`${fanoutTxHash}#0`, payout],
+					[`${fanoutTxHash}#1`, payout],
+					[`${fanoutTxHash}#2`, change],
+				]),
+			);
+
+			expect(resolved).toEqual([reference(0, payout), reference(1, payout)]);
+		});
+
+		it('refuses a surplus output that is not the last output of its transaction', () => {
+			expect(
+				resolveVerifiedHydraFanoutReferences(
+					snapshot,
+					new Map([
+						[`${fanoutTxHash}#0`, change],
+						[`${fanoutTxHash}#1`, payout],
+						[`${fanoutTxHash}#2`, payout],
+					]),
+				),
+			).toBeNull();
+		});
+
+		it('refuses more than one surplus output', () => {
+			expect(
+				resolveVerifiedHydraFanoutReferences(
+					snapshot,
+					new Map([
+						[`${fanoutTxHash}#0`, payout],
+						[`${fanoutTxHash}#1`, payout],
+						[`${fanoutTxHash}#2`, change],
+						[`${fanoutTxHash}#3`, change],
+					]),
+				),
+			).toBeNull();
+		});
+
+		it('still refuses a map that is missing a signed payout', () => {
+			const plain = { ...snapshot, committedOutputs: new Map<string, string>() };
+
+			expect(
+				resolveVerifiedHydraFanoutReferences(
+					plain,
+					new Map([
+						[`${fanoutTxHash}#0`, payout],
+						[`${fanoutTxHash}#1`, change],
+					]),
+				),
+			).toBeNull();
+		});
+	});
 });
 
 // Recorded from two real hydra-node 2.4.1 nodes on preprod (see the fixture's
