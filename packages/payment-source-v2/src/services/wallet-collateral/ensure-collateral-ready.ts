@@ -181,6 +181,26 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
 	};
 }
 
+const LOVELACE_PER_ADA = 1_000_000n;
+
+function formatAda(lovelace: bigint): string {
+	const fraction = (lovelace % LOVELACE_PER_ADA).toString().padStart(6, '0').replace(/0+$/, '');
+	const whole = (lovelace / LOVELACE_PER_ADA).toString();
+	return fraction === '' ? whole : `${whole}.${fraction}`;
+}
+
+/**
+ * Human-readable funding shortfall for a wallet that cannot (yet) run a V2
+ * script transaction: names the amounts in ADA and what they are for, so an
+ * operator knows how much to top up without reading the source.
+ */
+export function describeCollateralFunding(
+	walletAddress: string,
+	wallet: Pick<WalletStateClassification, 'totalLovelace' | 'utxoCount'>,
+): string {
+	return `${walletAddress} holds ${formatAda(wallet.totalLovelace)} ADA in ${wallet.utxoCount} UTxO(s) but needs at least ${formatAda(PREP_TX_MIN_LOVELACE)} ADA in total: one UTxO of at least ${formatAda(COLLATERAL_RESERVE_LOVELACE)} ADA kept as collateral for script transactions, plus ADA for the transaction fee and the minimum change output`;
+}
+
 /**
  * Before each V2 script-spending action: confirm the wallet has both a
  * collateral-eligible UTxO (≥ COLLATERAL_RESERVE_LOVELACE, tokens permitted)
@@ -266,7 +286,7 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		return {
 			status: 'failed',
 			reason: 'insufficient_funds',
-			details: `wallet has ${classification.totalLovelace.toString()} lovelace across ${classification.utxoCount} UTxO(s); need at least ${PREP_TX_MIN_LOVELACE.toString()} total lovelace to build collateral prep tx (mixed-asset UTxOs accepted)`,
+			details: describeCollateralFunding(walletAddress, classification),
 		};
 	}
 
