@@ -23,3 +23,15 @@ test('malformed schema returns a short validation error with Zod 4', () => {
   assert.match(result.errors[0].message, /^Schema 1:/);
   assert.ok(result.errors[0].message.length < 500);
 });
+
+test('empty option list gets the array message with Zod 4', () => {
+  const result = validateSchemaWithZod(
+    JSON.stringify({ id: 'a', type: 'option', name: 'A', data: { values: [] } }),
+  );
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(
+    result.errors.map((error) => error.message),
+    ['Schema 1: Field "data.values" array must have at least 1 element(s).'],
+  );
+});
