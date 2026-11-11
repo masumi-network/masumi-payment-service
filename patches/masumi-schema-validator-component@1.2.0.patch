@@ -1,7 +1,8 @@
 diff --git a/dist/index.js b/dist/index.js
+index 309d188706f32d67e273b674a0967ccec0bb6a92..0da9f9c70e93ebbdaa0c2da3507eb163ec0f95dc 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -927,13 +927,14 @@
+@@ -927,13 +927,14 @@ function formatCorrectValidationsArray(key, value) {
    return `[{"validation": "${key}", "value": "${value}"}]`;
  }
  function extractZodErrors(zodError, schema, index, input) {
@@ -18,10 +19,20 @@ diff --git a/dist/index.js b/dist/index.js
      const fieldPath = error.path?.join(".") || "";
      const fieldName = fieldPath || error.path?.[0] || "unknown";
      const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
+@@ -972,7 +973,7 @@ function handleInvalidTypeError(error, fieldName, schema) {
+   return `Field "${fieldName}" has invalid type. Expected ${error.expected}, but received ${error.received}.`;
+ }
+ function handleTooSmallError(error, fieldName) {
+-  if (error.type === "array") {
++  if ((error.type ?? error.origin) === "array") {
+     return `Field "${fieldName}" array must have at least ${error.minimum} element(s).`;
+   }
+   return `Field "${fieldName}" must be at least ${error.minimum} character(s) long.`;
 diff --git a/dist/index.mjs b/dist/index.mjs
+index c8eda0cafb61b53e9e2f9e2f5688d2fe0aa21960..a730cc620f4571f05898f881b61083746b804f44 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -919,13 +919,14 @@
+@@ -919,13 +919,14 @@ function formatCorrectValidationsArray(key, value) {
    return `[{"validation": "${key}", "value": "${value}"}]`;
  }
  function extractZodErrors(zodError, schema, index, input) {
@@ -38,10 +49,20 @@ diff --git a/dist/index.mjs b/dist/index.mjs
      const fieldPath = error.path?.join(".") || "";
      const fieldName = fieldPath || error.path?.[0] || "unknown";
      const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
+@@ -964,7 +965,7 @@ function handleInvalidTypeError(error, fieldName, schema) {
+   return `Field "${fieldName}" has invalid type. Expected ${error.expected}, but received ${error.received}.`;
+ }
+ function handleTooSmallError(error, fieldName) {
+-  if (error.type === "array") {
++  if ((error.type ?? error.origin) === "array") {
+     return `Field "${fieldName}" array must have at least ${error.minimum} element(s).`;
+   }
+   return `Field "${fieldName}" must be at least ${error.minimum} character(s) long.`;
 diff --git a/src/lib/validation.ts b/src/lib/validation.ts
+index b81c4a9ae15f5a120f785352fbd08138f04c3652..1d164df7cf97660177107b72582b1db415703139 100644
 --- a/src/lib/validation.ts
 +++ b/src/lib/validation.ts
-@@ -180,9 +180,10 @@
+@@ -180,14 +180,15 @@ function extractZodErrors(
    index: number,
    input: string
  ): { message: string; line?: number }[] {
@@ -53,9 +74,18 @@ diff --git a/src/lib/validation.ts b/src/lib/validation.ts
        line: getLine('type', input),
      }];
    }
-@@ -190,4 +191,4 @@
+ 
 -  return zodError.errors.map((error: any) => {
 +  return zodIssues.map((error: any) => {
      const fieldPath = error.path?.join('.') || '';
      const fieldName = fieldPath || error.path?.[0] || 'unknown';
      const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
+@@ -248,7 +249,7 @@ function handleInvalidTypeError(error: any, fieldName: string, schema: any): str
+  * Handles too_small Zod errors
+  */
+ function handleTooSmallError(error: any, fieldName: string): string {
+-  if (error.type === 'array') {
++  if ((error.type ?? error.origin) === 'array') {
+     return `Field "${fieldName}" array must have at least ${error.minimum} element(s).`;
+   }
+   return `Field "${fieldName}" must be at least ${error.minimum} character(s) long.`;

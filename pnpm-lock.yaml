@@ -78,7 +78,7 @@ patchedDependencies:
     hash: 31ee930f09fb2810d6093b14bf15373eb06d0a4ea391a2fed254a3dd8b7b9549
     path: patches/http-cache-semantics@4.3.0.patch
   masumi-schema-validator-component@1.2.0:
-    hash: fa2ed4b8ba0ddd915dc69304e2eebec7141766f8882f7c940d575bbd2cb96dd4
+    hash: 260b99ed9a65dd3a872e91d5494020c36617fa1fee6733c4874835b08a01da18
     path: patches/masumi-schema-validator-component@1.2.0.patch
   postman-collection@5.2.0:
     hash: b95ff398c80011fb6e23b2c680f0b8e4dae43fe98a2a71517721375d4eb613f4
@@ -430,7 +430,7 @@ importers:
         version: 1.5.0
       masumi-schema-validator-component:
         specifier: 1.2.0
-        version: 1.2.0(patch_hash=fa2ed4b8ba0ddd915dc69304e2eebec7141766f8882f7c940d575bbd2cb96dd4)(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0)
+        version: 1.2.0(patch_hash=260b99ed9a65dd3a872e91d5494020c36617fa1fee6733c4874835b08a01da18)(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0)
       monaco-editor:
         specifier: 0.55.1
         version: 0.55.1
@@ -16197,7 +16197,7 @@ snapshots:
 
   marked@14.0.0: {}
 
-  masumi-schema-validator-component@1.2.0(patch_hash=fa2ed4b8ba0ddd915dc69304e2eebec7141766f8882f7c940d575bbd2cb96dd4)(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0):
+  masumi-schema-validator-component@1.2.0(patch_hash=260b99ed9a65dd3a872e91d5494020c36617fa1fee6733c4874835b08a01da18)(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.0):
     dependencies:
       '@monaco-editor/react': 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
