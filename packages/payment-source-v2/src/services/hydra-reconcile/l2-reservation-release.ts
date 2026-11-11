@@ -11,8 +11,11 @@
  * nudge, which spends the body's wallet inputs, appeared in a verified snapshot
  * or in the fanned-out final snapshot of a Final head (see
  * `./l2-reservation-recovery`, `./final-l2-reservation-release` and
- * `./l2-release-nudge-proof`). An admin can release a reservation with no proof
- * as `proof: 'operator'` (`./operator-l2-reservation-release`).
+ * `./l2-release-nudge-proof`). An expired non-locking action, which has no nudge,
+ * is released as `proof: 'unspent-inputs'` once its body is shown unapplied and
+ * unable to apply (`releaseActionIfBodyUnapplied`). An admin can release a
+ * reservation with no proof as `proof: 'operator'`
+ * (`./operator-l2-reservation-release`).
  */
 
 import {
@@ -76,9 +79,9 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
 	database: typeof prisma,
-	proof: 'spent-by-release-nudge' | 'operator',
+	proof: 'spent-by-release-nudge' | 'operator' | 'unspent-inputs',
 ): Promise<boolean> {
-	if (proof !== 'spent-by-release-nudge' && proof !== 'operator') return false;
+	if (proof !== 'spent-by-release-nudge' && proof !== 'operator' && proof !== 'unspent-inputs') return false;
 
 	try {
 		return await database.$transaction(
@@ -124,6 +127,8 @@ export async function releaseRejectedL2Reservation(
 				// request's action now, says which restore applies.
 				const previousTransactionId = reservation.l2ReservationPreviousTransactionId;
 				const isAction = previousTransactionId != null;
+				// The weaker proof of an action must never free an initial lock.
+				if (proof === 'unspent-inputs' && !isAction) return false;
 				const actionPurchases = isAction ? current.PurchaseRequestCurrent : [];
 				const lockPurchases = isAction ? [] : current.PurchaseRequestCurrent;
 				const hasUnmappedAction =
@@ -150,7 +155,9 @@ export async function releaseRejectedL2Reservation(
 						status: TransactionStatus.RolledBack,
 						lastCheckedAt: new Date(),
 						...(proof === 'spent-by-release-nudge' ? { l2ReleasedByInputProofAt: new Date() } : {}),
-						...(proof === 'operator' ? { l2ReleasedByOperatorAt: new Date() } : {}),
+						// An 'unspent-inputs' release is no proof the body is dead, so it keeps the
+						// operator stamp: that is what lets the admin re-apply undo it.
+						...(proof === 'operator' || proof === 'unspent-inputs' ? { l2ReleasedByOperatorAt: new Date() } : {}),
 					},
 				});
 

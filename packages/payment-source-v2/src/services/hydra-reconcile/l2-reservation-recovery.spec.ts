@@ -25,6 +25,7 @@ import {
 import {
 	canReportExpiredL2Reservation,
 	EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS,
+	L2_ACTION_RELEASE_GRACE_MS,
 	L2_RESERVATION_EXPIRY_GRACE_MS,
 	L2_RESERVATION_RELEASE_GRACE_MS,
 	reportExpiredL2Reservations,
@@ -500,6 +501,172 @@ describe('expired L2 reservation reporting', () => {
 			h.outputs.set(proof.reference, proof.serializedOutput);
 			await expect(scan(h, 'head-grace', recoveryNowMs)).resolves.toBe(1);
 			expect(h.nudge).not.toHaveBeenCalled();
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+	});
+
+	// A non-locking action (here a collect-refund) has no nudge: its escrow input
+	// is a script UTxO. It is released only when the head's own state shows the
+	// body unapplied and unable to apply, and as an operator-stamped release so
+	// the admin re-apply can undo a wrong one.
+	describe('unapplied action release', () => {
+		const escrowRef = `${'d'.repeat(64)}#0`;
+		const walletRef = `${'e'.repeat(64)}#2`;
+		const refs = [escrowRef, walletRef];
+		const actionNowMs = recoveryNowMs + L2_ACTION_RELEASE_GRACE_MS;
+		const idleRound = {
+			inFlight: false,
+			tag: 'NoSeenSnapshot',
+			number: null,
+			signatoryCount: 0,
+			txIds: [],
+			signature: 'x',
+		};
+
+		function withActionMutations(h: ReturnType<typeof harness>) {
+			const mutationClient = {
+				transaction: {
+					findUnique: jest.fn(async () => ({
+						status: TransactionStatus.Pending,
+						txHash: null,
+						l2ReleaseNudgeTx: null,
+						PurchaseRequestCurrent: [
+							{
+								id: 'purchase-1',
+								nextActionId: 'action-1',
+								NextAction: { requestedAction: PurchasingAction.WithdrawRefundInitiated },
+							},
+						],
+						PaymentRequestCurrent: [],
+					})),
+					update: jest.fn(),
+				},
+				hotWallet: { updateMany: jest.fn() },
+				purchaseRequest: { update: jest.fn() },
+				paymentRequest: { update: jest.fn() },
+			};
+			h.database.$transaction.mockImplementation(
+				async (callback: unknown) =>
+					await (callback as (client: typeof mutationClient) => Promise<unknown>)(mutationClient),
+			);
+			return mutationClient;
+		}
+
+		function scan(
+			h: ReturnType<typeof harness>,
+			hydraHeadId: string,
+			readSnapshotRound: () => Promise<unknown> = async () => idleRound,
+			atMs = actionNowMs,
+		) {
+			h.node.headClock = { chainTimeMs: atMs, receivedAtMs: atMs };
+			return reportExpiredL2Reservations({
+				hydraHeadId,
+				network: Network.Preprod,
+				node: h.node as never,
+				nowMs: atMs,
+				database: h.database as never,
+				nudge: h.nudge,
+				readSnapshotRound: readSnapshotRound as never,
+			});
+		}
+
+		it('releases an expired action whose every input is unspent and no round is in flight', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action-release' });
+			const mutationClient = withActionMutations(h);
+			await expect(scan(h, 'head-action-release')).resolves.toBe(0);
+			expect(mutationClient.transaction.update).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						status: TransactionStatus.RolledBack,
+						l2ReleasedByOperatorAt: expect.any(Date),
+					}),
+				}),
+			);
+			expect(mutationClient.hotWallet.updateMany).toHaveBeenCalledWith({
+				where: { pendingTransactionId: 'action-release-1' },
+				data: { lockedAt: null, pendingTransactionId: null },
+			});
+			// Back to its retry action, on the escrow transaction it replaced.
+			expect(mutationClient.purchaseRequest.update).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						CurrentTransaction: { connect: { id: 'previous-transaction' } },
+					}),
+				}),
+			);
+			expect(h.nudge).not.toHaveBeenCalled();
+		});
+
+		it('holds inside the action release grace', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action-grace' });
+			withActionMutations(h);
+			await expect(
+				scan(h, 'head-action-grace', async () => idleRound, recoveryNowMs + L2_RESERVATION_RELEASE_GRACE_MS),
+			).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		it('holds while a snapshot round is in flight', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action-round' });
+			withActionMutations(h);
+			const seen = { ...idleRound, inFlight: true, tag: 'SeenSnapshot', number: 8 };
+			await expect(scan(h, 'head-action-round', async () => seen)).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		it('holds when the snapshot round cannot be read', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action-unread' });
+			withActionMutations(h);
+			await expect(
+				scan(h, 'head-action-unread', async () => {
+					throw new Error('node unreachable');
+				}),
+			).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			['the escrow input is spent', [walletRef]],
+			['a wallet input is spent', [escrowRef]],
+			['no input is in the snapshot', []],
+		])('holds when %s', async (_label, unspentRefs) => {
+			const h = harness({ inputRefs: refs, unspentRefs, idPrefix: 'action-spent' });
+			withActionMutations(h);
+			await expect(scan(h, 'head-action-spent')).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		it('holds when the body shows up in confirmed history after the round was read', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action-late' });
+			withActionMutations(h);
+			// Null at the scan's own check, confirmed by the time the round came back.
+			h.node.getConfirmedTransaction.mockReturnValueOnce(null).mockReturnValue({ txId: 'a'.repeat(64) } as never);
+			await expect(scan(h, 'head-action-late')).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		it('holds an action recorded before inputs were stored', async () => {
+			const h = harness({ inputRefs: [], idPrefix: 'action-legacy' });
+			withActionMutations(h);
+			await expect(scan(h, 'head-action-legacy')).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		it('holds on a missing verified snapshot', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action-unverified' });
+			withActionMutations(h);
+			Object.defineProperty(h.node, 'verifiedSnapshotNumber', { get: () => undefined });
+			await expect(scan(h, 'head-action-unverified')).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		// The same evidence never frees an initial lock: only its nudge does.
+		it('never frees an initial lock on unspent inputs and an idle round', async () => {
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'lock-unspent' });
+			withActionMutations(h);
+			const readRound = jest.fn(async () => idleRound);
+			await expect(scan(h, 'head-lock-unspent', readRound)).resolves.toBe(1);
+			expect(readRound).not.toHaveBeenCalled();
 			expect(h.database.$transaction).not.toHaveBeenCalled();
 		});
 	});
