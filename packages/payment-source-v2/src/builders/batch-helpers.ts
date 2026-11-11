@@ -9,7 +9,7 @@ import type { UTxO } from '@meshsdk/core';
 // be identical on both rails, and `@/utils/utxo` carries no mesh runtime
 // (it imports `UTxO` as a type only), so importing it cannot collapse this
 // package onto the V1 mesh line. See the note at the top of that file.
-import { pickCollateralUtxo } from '@/utils/utxo';
+import { pickCollateralUtxo, preferAdaOnlyUtxos } from '@/utils/utxo';
 
 /**
  * Lovelace amount routed into a CONDITIONAL "splitter" output that V2 batch
@@ -153,6 +153,11 @@ export function getWalletUtxosForSelection(
  * The collateral is handed back to coin selection only when excluding it
  * would leave nothing to balance with.
  *
+ * Pure-ADA UTxOs are offered first (`preferAdaOnlyUtxos`) so a fee input does
+ * not carry the agent NFT or other tokens into the change output; the
+ * builders' collateral fallback re-offers the whole wallet when ADA-only
+ * cannot balance the tx.
+ *
  * Mirrors `getSpendableWalletUtxos` in `src/utils/utxo` — deliberately
  * duplicated rather than shared, to keep the V1 and V2 mesh lines isolated
  * per ADR 0005.
@@ -160,7 +165,7 @@ export function getWalletUtxosForSelection(
 export function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
 	const collateralKey = refKey(collateralUtxo.input);
 	const spendableUtxos = walletUtxos.filter((utxo) => refKey(utxo.input) !== collateralKey);
-	return spendableUtxos.length > 0 ? spendableUtxos : walletUtxos;
+	return spendableUtxos.length > 0 ? preferAdaOnlyUtxos(spendableUtxos) : walletUtxos;
 }
 
 /**

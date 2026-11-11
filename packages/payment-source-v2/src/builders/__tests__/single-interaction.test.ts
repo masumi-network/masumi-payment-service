@@ -153,6 +153,47 @@ describe('V2 single-item smart-contract input selection', () => {
 		}
 	});
 
+	it('keeps a token-carrying wallet UTxO out of fee-input selection when ADA-only UTxOs exist', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const adaUtxo = createUtxo('ada', '30000000');
+		const tokenUtxo = {
+			...createUtxo('agent-nft', '90000000'),
+			output: {
+				...createUtxo('agent-nft', '90000000').output,
+				amount: [
+					{ unit: 'lovelace', quantity: '90000000' },
+					{ unit: 'aaaa.deadbeef', quantity: '1' },
+				],
+			},
+		};
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn(async () => [{ budget: { mem: 100, steps: 200 } }]),
+		};
+
+		await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+			'SubmitResult',
+			blockchainProvider as never,
+			'preprod',
+			{ version: 'V3', code: 'script-cbor' },
+			'addr_test1_wallet',
+			smartContractUtxo as never,
+			collateralUtxo as never,
+			[collateralUtxo, tokenUtxo, adaUtxo] as never,
+			{ alternative: 1, fields: [] },
+			100,
+			200,
+		);
+
+		for (const builder of builders) {
+			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([adaUtxo]);
+		}
+	});
+
 	// Holding the collateral back must never turn a buildable tx into a hard
 	// failure — the builders retry with it offered on a genuine coin-selection
 	// error. Covered here for both the interaction and withdraw entry points.
