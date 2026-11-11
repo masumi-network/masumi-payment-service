@@ -421,6 +421,7 @@ describe('observeHydraHeadIsOpenOnChain', () => {
 		await expect(observeHydraHeadIsOpenOnChain({ observer: chain, headId: HEAD_ID })).resolves.toEqual({
 			state: 'open',
 			latestTxHash: INIT_TX_HASH,
+			headOutputSpentBy: null,
 		});
 		expect(chain.assetsTransactions).toHaveBeenCalledWith(STATE_TOKEN, { page: 1, order: 'desc', count: 1 });
 	});
@@ -432,6 +433,7 @@ describe('observeHydraHeadIsOpenOnChain', () => {
 		await expect(observeHydraHeadIsOpenOnChain({ observer: observer(closed), headId: HEAD_ID })).resolves.toEqual({
 			state: 'closed',
 			latestTxHash: INIT_TX_HASH,
+			headOutputSpentBy: null,
 		});
 	});
 
