@@ -29,10 +29,26 @@ export async function dispatchPrivilegedInit(
 		return { ...current, initDispatchAttemptedAt: new Date().toISOString() };
 	});
 	if (admitted === null) throw new HostApiError('no such node', 404);
+	let refusedBeforeSubmission: string | null;
 	try {
-		await dispatchInit(admitted.apiPort);
+		({ refusedBeforeSubmission } = await dispatchInit(admitted.apiPort));
 	} catch (error) {
 		logger.error(`[api] privileged Init dispatch to ${admitted.nodeId} failed: ${(error as Error).message}`);
 		throw new HostApiError('node Init dispatch may have failed; reconcile before retrying', 502);
 	}
+	if (refusedBeforeSubmission === null) return;
+	// The node built no InitTx, so this attempt cannot confirm: the positive
+	// evidence the reconciliation guide asks for. Kept, the marker refused every
+	// retry its own advice asks for ("fund the node and try again"). Only this
+	// attempt's marker is cleared.
+	await store.update(nodeId, (current) => {
+		if (current.initDispatchAttemptedAt !== admitted.initDispatchAttemptedAt) return current;
+		const { initDispatchAttemptedAt: _cleared, ...rest } = current;
+		return rest;
+	});
+	logger.warn(`[api] ${admitted.nodeId} refused Init before submitting it (${refusedBeforeSubmission})`);
+	throw new HostApiError(
+		`hydra-node refused to post the Init transaction (${refusedBeforeSubmission}); nothing was posted, so Init can be sent again once that is fixed`,
+		409,
+	);
 }
