@@ -1,3 +1,4 @@
+import { RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 
 /**
@@ -65,5 +66,29 @@ export async function resetInboxPrepFailureCount(requestId: string): Promise<voi
 	await prisma.inboxAgentRegistrationRequest.updateMany({
 		where: { id: requestId, collateralPrepFailureCount: { gt: 0 } },
 		data: { collateralPrepFailureCount: 0 },
+	});
+}
+
+/**
+ * Make "waiting for the wallet to be funded" visible on queued registrations.
+ * The requests stay RegistrationRequested (retried every tick); the note shows
+ * up as `error` in the API. Writes nothing when the note is already stored.
+ */
+export async function noteRegistryRequestsWaitingForFunds(requestIds: string[], note: string): Promise<void> {
+	await prisma.registryRequest.updateMany({
+		where: {
+			id: { in: requestIds },
+			state: RegistrationState.RegistrationRequested,
+			OR: [{ error: null }, { error: { not: note } }],
+		},
+		data: { error: note },
+	});
+}
+
+/** Drop a stale funding note once the wallet holds UTxOs again. No write on the healthy path. */
+export async function clearRegistryFundingNote(requestIds: string[]): Promise<void> {
+	await prisma.registryRequest.updateMany({
+		where: { id: { in: requestIds }, state: RegistrationState.RegistrationRequested, error: { not: null } },
+		data: { error: null },
 	});
 }
