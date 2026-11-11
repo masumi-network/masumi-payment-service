@@ -27,6 +27,9 @@ overrides:
   '@opentelemetry/core': 2.8.0
   '@opentelemetry/propagator-jaeger': 2.9.0
   '@prisma/config>deepmerge-ts': 8.0.2
+  # minimatch GHSA-g3hv-75wg-m249 is fixed only in 11.0.1. typescript-estree
+  # still asks for 9 or 10 and calls only minimatch(path, pattern), which 11 keeps.
+  '@typescript-eslint/typescript-estree>minimatch': 11.0.7
   ajv@>=8 <9: 8.18.0
   baseline-browser-mapping: 2.11.0
   bn.js: 5.2.3
