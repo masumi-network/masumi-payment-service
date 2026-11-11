@@ -268,6 +268,41 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		});
 	});
 
+	// The unspent-inputs release is no proof the body is dead, so it keeps the
+	// operator stamp: that is what lets the admin re-apply undo a wrong release.
+	it('stamps an unspent-inputs release of an action as an operator release', async () => {
+		mockFindUnique.mockResolvedValue(
+			pendingRejected({
+				l2RejectedByHeadAt: null,
+				PurchaseRequestCurrent: [
+					{
+						id: 'purchase-2',
+						nextActionId: 'action-3',
+						NextAction: { requestedAction: PurchasingAction.WithdrawRefundInitiated },
+					},
+				],
+			}),
+		);
+
+		await expect(releaseRejectedL2Reservation(actionReservation, prisma as never, 'unspent-inputs')).resolves.toBe(
+			true,
+		);
+		const data = mockTransactionUpdate.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+		expect(data.status).toBe(TransactionStatus.RolledBack);
+		expect(data.l2ReleasedByOperatorAt).toEqual(expect.any(Date));
+		expect(data).not.toHaveProperty('l2ReleasedByInputProofAt');
+		expect(mockHotWalletUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockPurchaseUpdate).toHaveBeenCalledTimes(1);
+	});
+
+	// An initial lock released on the weaker proof could be locked a second time.
+	it('never frees an initial lock on an unspent-inputs release', async () => {
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'unspent-inputs')).resolves.toBe(false);
+		expect(mockTransactionUpdate).not.toHaveBeenCalled();
+		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
+		expect(mockPurchaseUpdate).not.toHaveBeenCalled();
+	});
+
 	// An action this helper does not know how to undo is left for an operator.
 	it('holds a seller request in an action it cannot map back', async () => {
 		mockFindUnique.mockResolvedValue(
