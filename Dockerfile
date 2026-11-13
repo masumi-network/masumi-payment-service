@@ -69,6 +69,7 @@ COPY --from=backend-builder /usr/src/app/src ./src
 COPY --from=backend-builder /usr/src/app/public ./public
 COPY --from=backend-builder /usr/src/app/tsconfig.json ./tsconfig.json
 COPY --from=backend-builder /usr/src/app/eslint.config.mjs ./eslint.config.mjs
+COPY scripts/migrate.sh ./scripts/migrate.sh
 
 # Copy frontend files
 COPY --from=frontend-builder /usr/src/app/frontend/dist ./frontend/dist
