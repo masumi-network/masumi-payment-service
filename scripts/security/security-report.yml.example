@@ -1,0 +1,27 @@
+# Example workflow. It is NOT active in this repo: copy it to .github/workflows/ of a private
+# repo that holds the files of scripts/security/ at its root.
+name: security-report
+
+on:
+  schedule:
+    - cron: '17 2 * * *' # about 07:47 IST; GitHub may start it later
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Email the security report
+        env:
+          GH_TOKEN: ${{ secrets.SECURITY_REPORT_TOKEN }}
+          OWNER: masumi-network
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: ./security.sh report
