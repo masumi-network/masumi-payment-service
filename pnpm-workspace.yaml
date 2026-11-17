@@ -36,7 +36,8 @@ overrides:
   postman-collection>uuid: 11.1.1
   # Parents below pin a vulnerable version even at their latest release.
   # Mesh SDK (V1 and V2 lines are frozen) pulls @cardano-sdk/core, which
-  # asks for ip-address 9, and @utxorpc/sdk, which asks for undici 5.
+  # asks for ip-address 9, and @utxorpc/sdk, whose @connectrpc/connect-node
+  # asks for undici 5.
   ip-address: 10.7.4
   undici: 6.29.1
   # openapi-to-postmanv2 6.4.3 pins yaml 1.10.2 and js-yaml 4.3.0.
@@ -45,8 +46,9 @@ overrides:
   js-yaml: 4.3.2
   # monaco-editor 0.57.0 pins dompurify 3.4.15.
   dompurify: 3.4.17
-  # glob GHSA-3g3m-2fjr-6pw4 is fixed only in 14.0.2. jest 30 and test-exclude 7
-  # still ask for glob 10 and call only glob.sync / glob(), which glob 14 keeps.
+  # glob GHSA-3g3m-2fjr-6pw4 is fixed only in 14.0.2. jest 30.5 asks for glob 13
+  # and test-exclude 7 for glob 10. Both call only glob.sync / glob(), which
+  # glob 14 keeps.
   '@jest/reporters>glob': 14.0.4
   jest-config>glob: 14.0.4
   jest-runtime>glob: 14.0.4
@@ -54,8 +56,8 @@ overrides:
   '@blockfrost/openapi>rimraf': 6.1.4
   # gaxios 7.3.1 drops rimraf. The OTel 2.x GCP detector still asks for an older 7.x.
   gcp-metadata>gaxios: 7.3.1
-  # minimatch GHSA-g3hv-75wg-m249 is fixed only in 11.0.1. typescript-estree and
-  # test-exclude still ask for 9 or 10 and call only minimatch(path, pattern).
+  # minimatch GHSA-g3hv-75wg-m249 is fixed only in 11.0.1. test-exclude 7 still
+  # asks for 9 and calls only minimatch(path, pattern), which 11 keeps.
   test-exclude>minimatch: 11.0.7
 
 patchedDependencies:
