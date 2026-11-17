@@ -98,7 +98,7 @@ class WebhookQueueService {
 							eventType,
 							payload: toPrismaInputJsonValue(endpointPayload),
 							entityId,
-							status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
+							status: WebhookDeliveryStatus.Pending,
 							nextRetryAt: new Date(),
 						},
 					});

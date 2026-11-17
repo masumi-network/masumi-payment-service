@@ -73,7 +73,7 @@ function shapeOf(value: unknown, keep: Set<string>, depth = 0): unknown {
 	if (Array.isArray(value)) return ELIDED;
 	if (value !== null && typeof value === 'object') {
 		const out: Record<string, unknown> = {};
-		for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+		for (const key of Object.keys(value).sort()) {
 			const child = (value as Record<string, unknown>)[key];
 			out[key] = depth === 0 && keep.has(key) ? child : shapeOf(child, keep, depth + 1);
 		}

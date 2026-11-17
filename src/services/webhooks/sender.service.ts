@@ -248,7 +248,7 @@ class WebhookSenderService {
 			await prisma.webhookDelivery.update({
 				where: { id: deliveryId },
 				data: {
-					status: WebhookDeliveryStatus.Cancelled as WebhookDeliveryStatus,
+					status: WebhookDeliveryStatus.Cancelled,
 				},
 			});
 			return;
@@ -263,7 +263,7 @@ class WebhookSenderService {
 
 			await prisma.webhookDelivery.update({
 				where: { id: deliveryId },
-				data: { status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus },
+				data: { status: WebhookDeliveryStatus.Failed },
 			});
 
 			// Update webhook endpoint failure tracking
@@ -290,7 +290,7 @@ class WebhookSenderService {
 			await prisma.webhookDelivery.update({
 				where: { id: deliveryId },
 				data: {
-					status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+					status: WebhookDeliveryStatus.Failed,
 					errorMessage: 'Invalid webhook payload stored in queue',
 				},
 			});
@@ -370,7 +370,7 @@ class WebhookSenderService {
 			await prisma.webhookDelivery.update({
 				where: { id: deliveryId },
 				data: {
-					status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+					status: WebhookDeliveryStatus.Failed,
 					errorMessage: 'Webhook URL decryption failed',
 				},
 			});
@@ -383,7 +383,7 @@ class WebhookSenderService {
 			await prisma.webhookDelivery.update({
 				where: { id: deliveryId },
 				data: {
-					status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+					status: WebhookDeliveryStatus.Failed,
 					errorMessage:
 						delivery.WebhookEndpoint.authToken == null
 							? 'Extended webhook endpoints require an auth token'
@@ -405,7 +405,7 @@ class WebhookSenderService {
 			await prisma.webhookDelivery.update({
 				where: { id: deliveryId },
 				data: {
-					status: WebhookDeliveryStatus.Success as WebhookDeliveryStatus,
+					status: WebhookDeliveryStatus.Success,
 					responseCode: result.responseCode,
 					deliveredAt: new Date(),
 					durationMs: result.durationMs,

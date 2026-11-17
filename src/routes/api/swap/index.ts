@@ -4,7 +4,6 @@ import createHttpError from 'http-errors';
 import {
 	swapTokens,
 	getPoolEstimate,
-	Token,
 	cancelSwapOrder,
 	findOrderOutputIndex,
 	SWAP_CHAIN_SUBMIT_TIMEOUT_MS,
@@ -130,8 +129,8 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 					walletId: wallet.id,
 					mnemonic: mnemonic,
 					fromAmount: input.amount,
-					fromToken: input.FromToken as Token,
-					toToken: input.ToToken as Token,
+					fromToken: input.FromToken,
+					toToken: input.ToToken,
 					poolId: input.poolId,
 					slippage: input.slippage,
 				},

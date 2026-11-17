@@ -7,7 +7,7 @@ import { SundaeUtils } from '@sundaeswap/core/utilities';
 import type { IPoolData } from '@sundaeswap/core';
 import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { type ProjectableLucidLikeUtxo, walletLowBalanceMonitorService } from '@/services/wallets';
+import { walletLowBalanceMonitorService } from '@/services/wallets';
 
 export interface Token {
 	policyId: string;
@@ -220,7 +220,7 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 			hotWalletId: params.walletId,
 			walletAddress: wallet.address,
-			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
+			walletUtxos: walletUtxos,
 			unsignedTx,
 			checkSource: 'submission',
 			currentBalanceMap: currentBalanceMap ?? undefined,
@@ -366,7 +366,7 @@ export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey
 		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 			hotWalletId: params.walletId,
 			walletAddress: wallet.address,
-			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
+			walletUtxos: walletUtxos,
 			unsignedTx: txHex,
 			checkSource: 'submission',
 			currentBalanceMap: currentBalanceMap ?? undefined,

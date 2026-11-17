@@ -30,7 +30,7 @@ export async function readNode(node: NodeHandle): Promise<NodeView> {
 	const result = await http(`${node.host.spec.baseUrl}/v1/nodes/${node.nodeId}`, {
 		token: node.host.spec.adminToken,
 	});
-	return (result.body ?? {}) as NodeView;
+	return result.body ?? {};
 }
 
 /** The user-tier route the payment service polls to decide whether a node is usable. */
@@ -38,7 +38,7 @@ export async function readHealth(node: NodeHandle): Promise<NodeView> {
 	const result = await http(`${node.host.spec.baseUrl}/v1/nodes/${node.nodeId}/health`, {
 		token: node.host.spec.userToken,
 	});
-	return (result.body ?? {}) as NodeView;
+	return result.body ?? {};
 }
 
 export async function startNode(node: NodeHandle): Promise<number> {
