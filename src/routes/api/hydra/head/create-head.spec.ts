@@ -26,8 +26,17 @@ const transactionClient = {
 	$queryRaw: mockQueryRaw,
 	hydraRelation: { findUnique: mockFindRelation },
 	hydraHead: {
-		findFirst: mockFindActiveHead,
-		findMany: mockFindFinalHeads,
+		// The prior-head check asks for live and Final heads in one query (its where
+		// has an OR); the evidence recheck asks for Final heads alone.
+		findMany: async (args: { where: { OR?: unknown } }) => {
+			const finalHeads = (await mockFindFinalHeads(args)) as Array<Record<string, unknown>>;
+			if (args.where.OR === undefined) return finalHeads;
+			const active = (await mockFindActiveHead()) as Record<string, unknown> | null;
+			return [
+				...(active === null ? [] : [{ ...active, status: 'Open' }]),
+				...finalHeads.map((head) => ({ ...head, status: 'Final' })),
+			];
+		},
 		create: mockCreateHead,
 		findUniqueOrThrow: mockFindCreatedHead,
 	},

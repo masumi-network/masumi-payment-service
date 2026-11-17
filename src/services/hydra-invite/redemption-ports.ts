@@ -4,14 +4,9 @@
  * knows none of them.
  */
 import createHttpError from 'http-errors';
-import {
-	HydraHeadStatus,
-	HydraInviteRole,
-	HydraInviteStatus,
-	type Network,
-	type Prisma,
-} from '@/generated/prisma/client';
+import { HydraInviteRole, HydraInviteStatus, WalletType, type Network, type Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { findHeadReplacementBlocker } from '@/routes/api/hydra/head/create-head';
 import { decrypt } from '@/utils/security/encryption';
 import {
 	checkHostPeerTarget,
@@ -38,37 +33,64 @@ export type RedeemerRecord = Prisma.HydraHeadInviteGetPayload<{
 	include: { LocalHotWallet: true; HydraHost: true };
 }>;
 
+export type RedemptionPair = {
+	network: Network;
+	localHotWalletId: string;
+	/** The local wallet's payment source: the counterparty's wallet row is filed under it. */
+	paymentSourceId: string;
+	counterpartyWalletAddress: string;
+};
+
+/**
+ * The relation createHeadFromExchange upserts for this pair, and only that one.
+ * A looser match also finds relations to the same address under another wallet
+ * row, which head creation never touches, and would block on their heads.
+ */
+export function pairRelationWhere(pair: RedemptionPair): Prisma.HydraRelationWhereInput {
+	return {
+		network: pair.network,
+		localHotWalletId: pair.localHotWalletId,
+		RemoteWallet: {
+			paymentSourceId: pair.paymentSourceId,
+			walletAddress: pair.counterpartyWalletAddress,
+			type: WalletType.Seller,
+		},
+	};
+}
+
 /**
  * Refuse a redemption that cannot become a head, before anything is spent.
  *
- * A pair has at most one head that is not final, so an invite redeemed while one
- * exists, or while another acknowledged redemption with the same counterparty is
- * still owed its head, burns its nonce and then cannot be finished. `excludeInviteId` is the
+ * A pair has at most one head that is not final, and gets a new one only once
+ * the last has handed off, so an invite redeemed while either is not true, or
+ * while another acknowledged redemption with the same counterparty is still owed
+ * its head, burns its nonce and then cannot be finished. `excludeInviteId` is the
  * redemption that is asking, so it does not count against itself.
  */
-export async function assertRelationHasNoLiveHead(input: {
-	network: Network;
-	localHotWalletId: string;
-	counterpartyWalletAddress: string;
-	excludeInviteId?: string;
-}): Promise<void> {
-	const liveHead = await prisma.hydraHead.findFirst({
-		where: {
-			status: { not: HydraHeadStatus.Final },
-			retiredAt: null,
-			HydraRelation: {
-				network: input.network,
-				localHotWalletId: input.localHotWalletId,
-				RemoteWallet: { walletAddress: input.counterpartyWalletAddress },
-			},
-		},
-		select: { status: true },
-	});
-	if (liveHead !== null) {
+export async function assertRelationHasNoLiveHead(input: RedemptionPair & { excludeInviteId?: string }): Promise<void> {
+	// What head creation refuses on, asked here too. Asked there alone, the
+	// refusal came after the issuer's Host had spent the nonce, leaving a funded
+	// node on each side and the issuer retrying.
+	const blocker = await findHeadReplacementBlocker(pairRelationWhere(input));
+	if (blocker?.kind === 'live') {
 		throw createHttpError(
 			409,
-			`you already have a ${liveHead.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
+			`you already have a ${blocker.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
 				'close and settle it before opening another, then ask them for a new invite',
+		);
+	}
+	if (blocker?.kind === 'unsettled') {
+		throw createHttpError(
+			409,
+			`your previous head with this counterparty on ${input.network} has not handed its funds back to L1 yet; ` +
+				'wait until its fanout is confirmed and reconciled, then retry the same invite code',
+		);
+	}
+	if (blocker?.kind === 'handoffs') {
+		throw createHttpError(
+			409,
+			`your previous head with this counterparty on ${input.network} still has payments or purchases ` +
+				'to hand back to L1; wait until they are adopted, then retry the same invite code',
 		);
 	}
 	const pending = await prisma.hydraHeadInvite.findFirst({
@@ -162,6 +184,7 @@ export function buildRedemptionPorts(input: {
 			await assertRelationHasNoLiveHead({
 				network: record.network,
 				localHotWalletId: record.localHotWalletId,
+				paymentSourceId: record.LocalHotWallet.paymentSourceId,
 				counterpartyWalletAddress: record.issuerWalletAddress,
 				excludeInviteId: record.id,
 			});
