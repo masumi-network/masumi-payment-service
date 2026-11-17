@@ -26,7 +26,7 @@ import {
 import {
 	canReportExpiredL2Reservation,
 	EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS,
-	L2_OPERATOR_RELEASE_GRACE_MS,
+	L2_ACTION_RELEASE_GRACE_MS,
 	L2_RESERVATION_EXPIRY_GRACE_MS,
 	L2_RESERVATION_RELEASE_GRACE_MS,
 	reportExpiredL2Reservations,
@@ -518,7 +518,7 @@ describe('expired L2 reservation reporting', () => {
 		const escrowRef = `${'d'.repeat(64)}#0`;
 		const walletRef = `${'e'.repeat(64)}#2`;
 		const refs = [escrowRef, walletRef];
-		const actionNowMs = recoveryNowMs + L2_OPERATOR_RELEASE_GRACE_MS;
+		const actionNowMs = recoveryNowMs + L2_ACTION_RELEASE_GRACE_MS;
 		const idleRound = {
 			inFlight: false,
 			tag: 'NoSeenSnapshot',

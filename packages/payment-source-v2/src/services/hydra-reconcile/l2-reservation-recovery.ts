@@ -5,6 +5,7 @@ import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { isLiveUnfencedSession } from './live-session-fence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import { isL2ReservationSpentByNudge, type L2ReleaseValueFloor } from './l2-release-nudge-proof';
@@ -29,11 +30,16 @@ const MAX_EXPIRED_L2_WARNING_SAMPLES = 10;
  */
 export const L2_RESERVATION_RELEASE_GRACE_MS = 5 * 60_000;
 /**
- * Slack past expiry for the slower releases: automatic release of an action,
- * which has no nudge, and an admin release of a row automatic recovery can still
- * release. The release grace plus five nudge intervals.
+ * Slack past expiry before an admin may release a row automatic recovery can
+ * still release. The release grace plus five nudge intervals.
  */
 export const L2_OPERATOR_RELEASE_GRACE_MS = L2_RESERVATION_RELEASE_GRACE_MS + 5 * L2_RELEASE_NUDGE_INTERVAL_MS;
+/**
+ * Slack past expiry before automatic recovery releases an action, which has no
+ * nudge. Two nudge intervals short of the admin's wait, so recovery gets its
+ * live-snapshot passes (one per interval) before an admin can act on the row.
+ */
+export const L2_ACTION_RELEASE_GRACE_MS = L2_OPERATOR_RELEASE_GRACE_MS - 2 * L2_RELEASE_NUDGE_INTERVAL_MS;
 /** What the node itself reports now, read live and never from replay. */
 export type HydraLiveSnapshot = {
 	round: HydraSnapshotRound;
@@ -42,6 +48,15 @@ export type HydraLiveSnapshot = {
 };
 
 const lastActionSnapshotReadAtByHead = new Map<string, number>();
+
+/** The head row is Open and no close was posted for it. */
+async function isHeadRowOpen(database: typeof prisma, hydraHeadId: string): Promise<boolean> {
+	const head = await database.hydraHead.findUnique({
+		where: { id: hydraHeadId },
+		select: { status: true, isClosing: true },
+	});
+	return head?.status === HydraHeadStatus.Open && !head.isClosing;
+}
 
 /**
  * The live snapshot for this scan's action releases, or null to hold them. Null
@@ -62,17 +77,10 @@ async function readActionLiveSnapshot(
 	}
 	if (lastActionSnapshotReadAtByHead.has(hydraHeadId)) return null;
 	try {
-		const isHeadOpen = async () => {
-			const head = await database.hydraHead.findUnique({
-				where: { id: hydraHeadId },
-				select: { status: true, isClosing: true },
-			});
-			return head?.status === HydraHeadStatus.Open && !head.isClosing;
-		};
-		if (!(await isHeadOpen())) return null;
+		if (!(await isHeadRowOpen(database, hydraHeadId))) return null;
 		const snapshot = await read();
 		// A close posted while the snapshot was read voids it.
-		if (!(await isHeadOpen())) return null;
+		if (!(await isHeadRowOpen(database, hydraHeadId))) return null;
 		// Only a read that could release starts the window: a node error or a
 		// round in flight retries on the next scan instead of holding every action
 		// for a full interval.
@@ -176,7 +184,7 @@ export async function reportExpiredL2Reservations(params: {
 	/** The node's live snapshot; an action is released only against it. */
 	readLiveSnapshot?: () => Promise<HydraLiveSnapshot>;
 	/** Whether `node` is still the session the connection manager holds. */
-	isCurrentNode?: () => boolean;
+	isCurrentNode?: () => boolean | Promise<boolean>;
 }): Promise<number> {
 	const { hydraHeadId, network, node, nowMs = Date.now(), database = prisma } = params;
 	// The head clock as it stood before the live snapshot is read. An action is
@@ -184,7 +192,8 @@ export async function reportExpiredL2Reservations(params: {
 	// snapshot read below, shared by every action of the scan, came after expiry.
 	const scanHeadClock = node.headClock;
 	const readLiveSnapshot = params.readLiveSnapshot ?? (() => readHydraLiveSnapshot(node));
-	const isCurrentNode = params.isCurrentNode ?? (() => getHydraConnectionManager().getNode(hydraHeadId) === node);
+	const isCurrentNode =
+		params.isCurrentNode ?? (() => isLiveUnfencedSession(getHydraConnectionManager(), hydraHeadId, node));
 	let liveSnapshot: Promise<HydraLiveSnapshot | null> | undefined;
 	const readLiveSnapshotOnce = () =>
 		(liveSnapshot ??= readActionLiveSnapshot(hydraHeadId, nowMs, database, readLiveSnapshot));
@@ -260,7 +269,7 @@ export async function reportExpiredL2Reservations(params: {
 				headClock: isAction ? scanHeadClock : node.headClock,
 				nowMs,
 				validityUpperBoundTimeMs,
-				graceMs: isAction ? L2_OPERATOR_RELEASE_GRACE_MS : L2_RESERVATION_RELEASE_GRACE_MS,
+				graceMs: isAction ? L2_ACTION_RELEASE_GRACE_MS : L2_RESERVATION_RELEASE_GRACE_MS,
 			}) &&
 			(isAction
 				? await releaseActionIfBodyUnapplied(
@@ -289,7 +298,7 @@ export async function reportExpiredL2Reservations(params: {
 	return reported;
 }
 
-function pruneExpiredL2WarningThrottle(nowMs: number): void {
+export function pruneExpiredL2WarningThrottle(nowMs: number): void {
 	for (const [key, warnedAtMs] of expiredL2WarningTimes) {
 		if (warnedAtMs > nowMs || nowMs - warnedAtMs >= EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS) {
 			expiredL2WarningTimes.delete(key);
@@ -377,8 +386,8 @@ async function releaseIfProvenDead(
  *
  * - the head is Open and its row is not closing: after a close, a contest can
  *   still carry a snapshot our node signed but never saw complete;
- * - the body was past its validity bound plus `L2_OPERATOR_RELEASE_GRACE_MS`
- *   (the wait an admin release of the same row has) on a fresh head clock
+ * - the body was past its validity bound plus `L2_ACTION_RELEASE_GRACE_MS`
+ *   (just short of an admin's wait for the same row) on a fresh head clock
  *   read before the live snapshot (the caller's gate), so no snapshot request
  *   made after that read can still include it;
  * - the node session is still the one the manager holds, so a reconnect has
@@ -394,8 +403,10 @@ async function releaseIfProvenDead(
  *
  * This trusts the local node's live state, not a signed nudge output, so the row
  * gets its own stamp (`l2ReleasedByUnspentInputsAt`). These are the same checks
- * an admin release makes (`bodyMayHaveAppliedReason`), so a later confirmation
- * halts replay and the admin re-apply can undo it, as for an operator release.
+ * an admin release makes (`bodyMayHaveAppliedReason`). If the body confirms
+ * after all, replay restores the row and applies it by itself
+ * (`reapplyUnspentInputsReleaseOnConfirmation`); only a request moved on since
+ * still holds replay for an admin.
  * An initial lock never takes this path: its double-lock risk needs the nudge
  * proof.
  */
@@ -408,7 +419,7 @@ async function releaseActionIfBodyUnapplied(
 	hydraHeadId: string,
 	database: typeof prisma,
 	readLiveSnapshot: () => Promise<HydraLiveSnapshot | null>,
-	isCurrentNode: () => boolean,
+	isCurrentNode: () => boolean | Promise<boolean>,
 ): Promise<boolean> {
 	const { intendedTxHash, l2ReservationInputRefs: inputRefs } = candidate;
 	if (
@@ -420,11 +431,14 @@ async function releaseActionIfBodyUnapplied(
 		return false;
 	}
 	const snapshot = await readLiveSnapshot();
-	if (snapshot === null || node.status !== HydraHeadStatus.Open || !isCurrentNode()) return false;
+	if (snapshot === null || node.status !== HydraHeadStatus.Open || !(await isCurrentNode())) return false;
 	const unspentInput = findLiveBodyInput(snapshot, inputRefs);
 	if (snapshot.round.inFlight || node.getConfirmedTransaction(intendedTxHash) || unspentInput === undefined) {
 		return false;
 	}
+	// One snapshot serves the whole scan, so a close posted since an earlier
+	// release in it must still stop this one.
+	if (!(await isHeadRowOpen(database, hydraHeadId))) return false;
 	const released = await releaseRejectedL2Reservation(candidate, database, 'unspent-inputs');
 	if (released) {
 		logger.warn('[HydraReconcile] released expired L2 action reservation: its body cannot apply and did not', {
@@ -439,7 +453,7 @@ async function releaseActionIfBodyUnapplied(
 	return released;
 }
 
-function shouldWarnExpiredL2Reservation(key: string, nowMs: number): boolean {
+export function shouldWarnExpiredL2Reservation(key: string, nowMs: number): boolean {
 	if (expiredL2WarningTimes.has(key)) return false;
 	// Never evict live throttle entries during one large scan: doing so would
 	// make an attacker-controlled key set churn and re-log every entry.

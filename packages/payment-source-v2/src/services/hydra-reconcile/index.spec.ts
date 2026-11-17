@@ -42,6 +42,7 @@ const mockDeserializeDatum = jest.fn<(_datumCbor: string) => unknown>();
 const mockDecodeDatum = jest.fn<(_datum: unknown) => unknown>();
 const mockParseEvidence = jest.fn<(_cborHex: string) => unknown>();
 const mockReportExpiredL2Reservations = jest.fn<() => Promise<number>>().mockResolvedValue(0);
+const mockReapplyOnConfirmation = jest.fn<(_args: unknown) => Promise<boolean>>(async () => false);
 const mockReleaseFinalHeadL2Reservations = jest
 	.fn<(params: { verifyFanoutOnChain: (references: readonly unknown[]) => Promise<unknown> }) => Promise<number>>()
 	.mockResolvedValue(0);
@@ -137,6 +138,7 @@ const mockConnectionManager = {
 	// queued reconcileEnabledState cannot immediately undo the disconnect.
 	queueDisconnect: mockDisconnect,
 	flushHeadStatus: mockFlushHeadStatus,
+	isStatusQuarantined: jest.fn(() => false),
 };
 
 jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
@@ -246,6 +248,10 @@ jest.unstable_mockModule('./live-escrow-memo', () => ({
 
 jest.unstable_mockModule('./l2-reservation-recovery', () => ({
 	reportExpiredL2Reservations: mockReportExpiredL2Reservations,
+}));
+
+jest.unstable_mockModule('./operator-l2-reservation-reapply', () => ({
+	reapplyUnspentInputsReleaseOnConfirmation: mockReapplyOnConfirmation,
 }));
 
 jest.unstable_mockModule('./final-l2-reservation-release', () => ({
@@ -1131,6 +1137,52 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockReportExpiredL2Reservations).not.toHaveBeenCalled();
 		expect(mockApplyDatum).not.toHaveBeenCalled();
 		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
+
+	// A body released on unspent inputs confirmed after all: replay restores it
+	// and applies it in the same pass, so the head never stalls on it.
+	it('applies a confirmed unspent-inputs release in the same pass instead of stalling', async () => {
+		mockGetReconciliationQueue.mockReturnValue([
+			{
+				txId: 'tx-released',
+				cborHex: 'tx-released',
+				confirmedAtMs: null,
+				snapshotSequence: 7,
+				snapshotTransactionIndex: 3,
+			},
+		]);
+		mockHandleTxConfirmed.mockResolvedValueOnce('retry').mockResolvedValueOnce('applied');
+		mockReapplyOnConfirmation.mockResolvedValueOnce(true);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockReapplyOnConfirmation).toHaveBeenCalledWith(
+			expect.objectContaining({ hydraHeadId: 'head-1', txId: 'tx-released' }),
+		);
+		expect(mockHandleTxConfirmed).toHaveBeenCalledTimes(2);
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ reconciliationStalledTxId: 'tx-released' }) }),
+		);
+		expect(mockMarkReconciled).toHaveBeenCalledWith('tx-released');
+	});
+
+	it('never restores a released row while a rollback fences the head', async () => {
+		mockGetReconciliationQueue.mockReturnValue([
+			{
+				txId: 'tx-released',
+				cborHex: 'tx-released',
+				confirmedAtMs: null,
+				snapshotSequence: 7,
+				snapshotTransactionIndex: 3,
+			},
+		]);
+		mockHandleTxConfirmed.mockResolvedValueOnce('retry');
+		mockConnectionManager.isStatusQuarantined.mockReturnValueOnce(true);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockReapplyOnConfirmation).not.toHaveBeenCalled();
+		expect(mockMarkReconciled).not.toHaveBeenCalled();
 	});
 
 	it('persists the ordered replay cursor before removing evidence from memory', async () => {
