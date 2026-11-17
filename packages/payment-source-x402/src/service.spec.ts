@@ -1,30 +1,30 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockSupportedPaymentSourceFindUnique = jest.fn() as jest.Mock<any>;
-const mockX402NetworkFindUnique = jest.fn() as jest.Mock<any>;
-const mockTxX402NetworkFindUnique = jest.fn() as jest.Mock<any>;
-const mockX402NetworkUpsert = jest.fn() as jest.Mock<any>;
-const mockX402SettlementFindUnique = jest.fn() as jest.Mock<any>;
-const mockX402SettlementCreate = jest.fn() as jest.Mock<any>;
-const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
-const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
-const mockX402PaymentAttemptUpdateMany = jest.fn() as jest.Mock<any>;
-const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<any>;
-const mockX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
-const mockTxX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
-const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
-const mockX402EvmWalletFindFirst = jest.fn() as jest.Mock<any>;
-const mockX402EvmWalletUpdateMany = jest.fn() as jest.Mock<any>;
-const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
-const mockX402EvmWalletCreate = jest.fn() as jest.Mock<any>;
-const mockX402WalletSecretFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
-const mockCounterpartyUpsert = jest.fn() as jest.Mock<any>;
-const mockCounterpartyFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
-const mockExecuteRaw = jest.fn() as jest.Mock<any>;
-const mockQueryRaw = jest.fn() as jest.Mock<any>;
+const mockSupportedPaymentSourceFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402NetworkFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockTxX402NetworkFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402NetworkUpsert = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402SettlementFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402SettlementCreate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402PaymentAttemptUpdateMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockTxX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402EvmWalletFindFirst = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402EvmWalletUpdateMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockApiKeyFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402EvmWalletCreate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockX402WalletSecretFindUniqueOrThrow = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockCounterpartyUpsert = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockCounterpartyFindUniqueOrThrow = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockExecuteRaw = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockQueryRaw = jest.fn() as jest.Mock<(...args: any[]) => any>;
 // On-chain reads for the buy-side balance pre-check (readContract = ERC-20 balanceOf).
-const mockReadContract = jest.fn() as jest.Mock<any>;
-const mockGetBalance = jest.fn() as jest.Mock<any>;
+const mockReadContract = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockGetBalance = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 // Minimal stand-in for Prisma's known-request error so the service's
 // `instanceof Prisma.PrismaClientKnownRequestError` checks behave under the db mock.
@@ -35,21 +35,21 @@ class MockPrismaClientKnownRequestError extends Error {
 		this.code = code;
 	}
 }
-const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
-const mockUnitValueFindMany = jest.fn() as jest.Mock<any>;
-const mockUnitValueFindFirstAfterMiss = jest.fn() as jest.Mock<any>;
-const mockUnitValueCount = jest.fn() as jest.Mock<any>;
-const mockUnitValueDeleteMany = jest.fn() as jest.Mock<any>;
-const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<any>;
-const mockUnitValueRefundFindFirst = jest.fn() as jest.Mock<any>;
+const mockUnitValueUpdateMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUnitValueFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUnitValueFindFirstAfterMiss = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUnitValueCount = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUnitValueDeleteMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUnitValueRefundFindFirst = jest.fn() as jest.Mock<(...args: any[]) => any>;
 const CREDIT_ROW_ID = 'credit-row-1';
-const mockTxPaymentAttemptCreate = jest.fn() as jest.Mock<any>;
-const mockPrismaTransaction = jest.fn() as jest.Mock<any>;
-const mockFacilitatorVerify = jest.fn() as jest.Mock<any>;
-const mockFacilitatorSettle = jest.fn() as jest.Mock<any>;
-const mockExtractAndValidatePaymentIdentifier = jest.fn() as jest.Mock<any>;
-const mockEncodePaymentSignatureHeader = jest.fn() as jest.Mock<any>;
-const mockCreatePaymentPayload = jest.fn() as jest.Mock<any>;
+const mockTxPaymentAttemptCreate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockPrismaTransaction = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockFacilitatorVerify = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockFacilitatorSettle = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockExtractAndValidatePaymentIdentifier = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockEncodePaymentSignatureHeader = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockCreatePaymentPayload = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 type MockX402Client = {
 	policies: Array<(version: number, requirements: any[]) => any[]>;

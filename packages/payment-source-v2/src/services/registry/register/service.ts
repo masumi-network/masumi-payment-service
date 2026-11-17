@@ -400,11 +400,7 @@ export async function registerAgentV2() {
 							fit.map((v) => v.item),
 							protocolParameters,
 							(subsetItems) => buildMintTx(subsetItems),
-							async (evaluationTx) =>
-								(await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-									tag?: string;
-									budget: { mem: number; steps: number };
-								}>,
+							async (evaluationTx) => await blockchainProvider.evaluateTx(evaluationTx),
 							(subsetItems, mintBudget) => buildMintTx(subsetItems, mintBudget),
 							(tx) => wallet.signTx(tx, true),
 						);

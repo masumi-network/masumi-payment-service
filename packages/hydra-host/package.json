@@ -22,11 +22,11 @@
 	"dependencies": {
 		"@meshsdk/core-cst": "1.9.0-beta.90",
 		"canonical-json": "0.2.0",
-		"swagger-ui-dist": "5.32.13",
-		"ws": "8.21.1"
+		"swagger-ui-dist": "5.35.0",
+		"ws": "8.23.0"
 	},
 	"devDependencies": {
-		"@jest/globals": "30.4.1",
+		"@jest/globals": "30.5.2",
 		"typescript": "5.8.3"
 	},
 	"scripts": {

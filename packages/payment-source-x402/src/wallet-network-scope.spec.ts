@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { X402_UNRESTRICTED } from './internal';
 
-const mockNetworkFindUnique = jest.fn() as jest.Mock<any>;
-const mockNetworkFindMany = jest.fn() as jest.Mock<any>;
-const mockWalletCreate = jest.fn() as jest.Mock<any>;
-const mockWalletFindFirst = jest.fn() as jest.Mock<any>;
-const mockWalletFindMany = jest.fn() as jest.Mock<any>;
-const mockWalletFindUnique = jest.fn() as jest.Mock<any>;
-const mockWalletUpdate = jest.fn() as jest.Mock<any>;
-const mockWalletCount = jest.fn() as jest.Mock<any>;
-const mockTransaction = jest.fn() as jest.Mock<any>;
-const mockExecuteRaw = jest.fn() as jest.Mock<any>;
-const mockSecretFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
+const mockNetworkFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockNetworkFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletCreate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletFindFirst = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletUpdate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletCount = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockTransaction = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockExecuteRaw = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSecretFindUniqueOrThrow = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 class MockPrismaClientKnownRequestError extends Error {
 	code: string;

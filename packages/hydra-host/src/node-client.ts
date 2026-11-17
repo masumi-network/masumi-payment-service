@@ -148,7 +148,7 @@ export class NodeClient {
 	 */
 	async fetchLastSeen(timeoutMs?: number): Promise<LastSeenSnapshotResponse> {
 		const body = await this.request('/snapshot/last-seen', undefined, timeoutMs);
-		return isPlainObject(body) ? (body as LastSeenSnapshotResponse) : {};
+		return isPlainObject(body) ? body : {};
 	}
 
 	async fetchConfirmedSnapshot(): Promise<unknown> {

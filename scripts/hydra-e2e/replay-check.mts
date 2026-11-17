@@ -96,7 +96,7 @@ function toVerified(raw: Raw): VerifiedHydraSnapshot {
 		outputMultiset: multiset(outputs.values()),
 		committedOutputs: partition(raw.utxoToCommit),
 		decommitOutputs: partition(raw.utxoToDecommit),
-	} as VerifiedHydraSnapshot;
+	};
 }
 
 const numbers = [...byNumber.keys()].sort((a, b) => a - b);

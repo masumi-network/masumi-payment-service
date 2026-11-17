@@ -46,7 +46,7 @@ async function provision(host: RunningHost, key: string, periods = PERIODS): Pro
 	if (result.status !== 200 && result.status !== 201) {
 		throw new Error(`provision failed (${result.status}): ${result.text}`);
 	}
-	return (result.body ?? {}) as ProvisionBody;
+	return result.body ?? {};
 }
 
 export async function provisionOn(host: RunningHost, key: string): Promise<NodeHandle> {

@@ -84,7 +84,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 			throw new Error(`Participant ${participant} not found in node`);
 		}
 
-		return await node.commit(utxos, blueprintTx as string | undefined);
+		return await node.commit(utxos, blueprintTx);
 	}
 
 	async close(): Promise<void> {

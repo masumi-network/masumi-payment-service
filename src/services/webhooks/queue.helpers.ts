@@ -28,7 +28,7 @@ export function buildEndpointWebhookPayload<TEventType extends WebhookEventType>
 	return {
 		...webhookPayload,
 		webhook_id: webhookId,
-	} as WebhookPayloadByEvent<TEventType>;
+	};
 }
 
 export function mergeWebhookEndpointBatch<T extends InclusiveCursorItem>(

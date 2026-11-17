@@ -75,7 +75,7 @@ export async function setupTracing() {
 	});
 
 	// Log processor configuration
-	const logRecordProcessor = new BatchLogRecordProcessor(logExporter);
+	const logRecordProcessor = new BatchLogRecordProcessor({ exporter: logExporter });
 
 	// Enhanced instrumentations for comprehensive monitoring
 	const instrumentations = [

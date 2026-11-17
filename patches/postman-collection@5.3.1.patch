@@ -14,7 +14,7 @@ index 0000000000000000000000000000000000000000..701c5a1ac4894d6694032b7870497025
 @@ -0,0 +1,53 @@
 +'use strict';
 +
-+// Postman Collection 5.2.0 uses Faker 5 names. The patched dependency is Faker 10.5.0.
++// Postman Collection 5.3.1 uses Faker 5 names. The patched dependency is Faker 10.5.0.
 +
 +var faker = require('@faker-js/faker/locale/en').faker,
 +    extend = function (module, aliases) {

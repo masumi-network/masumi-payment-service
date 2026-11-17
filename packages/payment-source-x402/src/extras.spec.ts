@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 
-const mockPaymentAttemptFindMany = jest.fn() as jest.Mock<any>;
+const mockPaymentAttemptFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 // Mock the heavy module surface so the pure/aggregation logic can be exercised without a
 // real database, RPC, or logger.

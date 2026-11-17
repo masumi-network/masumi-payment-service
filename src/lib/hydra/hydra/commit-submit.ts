@@ -19,13 +19,13 @@ const MAX_FAILURE_REASON_LENGTH = 512;
 const SENSITIVE_FAILURE_KEY = /(?:cbor|transaction|witness|secret|mnemonic|private|signing.?key)/i;
 
 export function interpretCardanoTxSubmitResult(result: unknown): CardanoTxSubmitResult {
-	if (result && typeof result === 'object' && 'tag' in result && (result as { tag: unknown }).tag === SUCCESS_TAG) {
+	if (result && typeof result === 'object' && 'tag' in result && result.tag === SUCCESS_TAG) {
 		return { ok: true };
 	}
 
 	const reason =
 		result && typeof result === 'object' && 'failureReason' in result
-			? stringifyReason((result as { failureReason: unknown }).failureReason)
+			? stringifyReason(result.failureReason)
 			: stringifyReason(result);
 	return { ok: false, reason };
 }

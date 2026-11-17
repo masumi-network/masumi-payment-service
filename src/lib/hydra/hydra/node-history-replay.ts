@@ -210,7 +210,7 @@ export class HydraHistoryReplay {
 		this._unpinnedBytes = 0;
 		const isUnsupportedPersistenceRotation = normalizedError === this.host.persistenceRotationError;
 		if (isUnsupportedPersistenceRotation) {
-			this.host.onRotationReplayFailure(normalizedError as HydraProtocolError);
+			this.host.onRotationReplayFailure(normalizedError);
 		}
 		if (isFirstFailure) {
 			this.host.onReplayFailed(normalizedError);
