@@ -223,7 +223,7 @@ describe('redeeming a correctly signed invite', () => {
 
 		await expect(redeem(Network.Preprod, {})).rejects.toMatchObject({
 			status: 409,
-			message: expect.stringMatching(/has not handed its funds back to L1 .* The invite has not been used/),
+			message: expect.stringMatching(/has not handed its funds back to L1 .* retry the same invite code/),
 		});
 		expect(mockHostFindMany).not.toHaveBeenCalled();
 		expect(mockProvision).not.toHaveBeenCalled();

@@ -10,7 +10,7 @@ const mockAdvanceRedemption = jest.fn() as AnyMock;
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHeadInvite: { findMany: mockInviteFindMany, updateMany: async () => ({ count: 1 }) },
-		hydraHead: { findMany: mockHeadFindMany, findFirst: async () => null },
+		hydraHead: { findMany: mockHeadFindMany },
 		paymentRequest: { count: async () => 0, findMany: async () => [] },
 		purchaseRequest: { count: async () => 0, findMany: async () => [] },
 	},
@@ -42,6 +42,7 @@ const acknowledged = {
 	network: 'Preprod',
 	localHotWalletId: 'wallet-1',
 	issuerWalletAddress: 'addr_test1issuer',
+	LocalHotWallet: { paymentSourceId: 'source-1' },
 };
 
 const settledFinalHead = {

@@ -105,10 +105,15 @@ async function failStaleUnconfirmed(now: number, outcome: ResumeOutcome): Promis
 /**
  * True while the pair cannot get a new head yet: a live head, or an earlier one
  * that has not handed off. The database half of what head creation refuses on;
- * the L1 half runs again before anything is posted.
+ * the L1 half runs before a redemption is posted, and again in head creation.
  */
 async function hasBlockingHead(record: RedeemerRecord): Promise<boolean> {
-	const relation = pairRelationWhere(record.network, record.localHotWalletId, record.issuerWalletAddress);
+	const relation = pairRelationWhere({
+		network: record.network,
+		localHotWalletId: record.localHotWalletId,
+		paymentSourceId: record.LocalHotWallet.paymentSourceId,
+		counterpartyWalletAddress: record.issuerWalletAddress,
+	});
 	return (await findPriorHeadBlocker(prisma, relation)) !== null;
 }
 

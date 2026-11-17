@@ -4,7 +4,7 @@
  * knows none of them.
  */
 import createHttpError from 'http-errors';
-import { HydraInviteRole, HydraInviteStatus, type Network, type Prisma } from '@/generated/prisma/client';
+import { HydraInviteRole, HydraInviteStatus, WalletType, type Network, type Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { findHeadReplacementBlocker } from '@/routes/api/hydra/head/create-head';
 import { decrypt } from '@/utils/security/encryption';
@@ -33,13 +33,29 @@ export type RedeemerRecord = Prisma.HydraHeadInviteGetPayload<{
 	include: { LocalHotWallet: true; HydraHost: true };
 }>;
 
-/** The relation between our wallet and a counterparty, which holds at most one live head. */
-export function pairRelationWhere(
-	network: Network,
-	localHotWalletId: string,
-	counterpartyWalletAddress: string,
-): Prisma.HydraRelationWhereInput {
-	return { network, localHotWalletId, RemoteWallet: { walletAddress: counterpartyWalletAddress } };
+export type RedemptionPair = {
+	network: Network;
+	localHotWalletId: string;
+	/** The local wallet's payment source: the counterparty's wallet row is filed under it. */
+	paymentSourceId: string;
+	counterpartyWalletAddress: string;
+};
+
+/**
+ * The relation createHeadFromExchange upserts for this pair, and only that one.
+ * A looser match also finds relations to the same address under another wallet
+ * row, which head creation never touches, and would block on their heads.
+ */
+export function pairRelationWhere(pair: RedemptionPair): Prisma.HydraRelationWhereInput {
+	return {
+		network: pair.network,
+		localHotWalletId: pair.localHotWalletId,
+		RemoteWallet: {
+			paymentSourceId: pair.paymentSourceId,
+			walletAddress: pair.counterpartyWalletAddress,
+			type: WalletType.Seller,
+		},
+	};
 }
 
 /**
@@ -51,18 +67,11 @@ export function pairRelationWhere(
  * its head, burns its nonce and then cannot be finished. `excludeInviteId` is the
  * redemption that is asking, so it does not count against itself.
  */
-export async function assertRelationHasNoLiveHead(input: {
-	network: Network;
-	localHotWalletId: string;
-	counterpartyWalletAddress: string;
-	excludeInviteId?: string;
-}): Promise<void> {
+export async function assertRelationHasNoLiveHead(input: RedemptionPair & { excludeInviteId?: string }): Promise<void> {
 	// What head creation refuses on, asked here too. Asked there alone, the
 	// refusal came after the issuer's Host had spent the nonce, leaving a funded
 	// node on each side and the issuer retrying.
-	const blocker = await findHeadReplacementBlocker(
-		pairRelationWhere(input.network, input.localHotWalletId, input.counterpartyWalletAddress),
-	);
+	const blocker = await findHeadReplacementBlocker(pairRelationWhere(input));
 	if (blocker?.kind === 'live') {
 		throw createHttpError(
 			409,
@@ -70,11 +79,18 @@ export async function assertRelationHasNoLiveHead(input: {
 				'close and settle it before opening another, then ask them for a new invite',
 		);
 	}
-	if (blocker !== null) {
+	if (blocker?.kind === 'unsettled') {
 		throw createHttpError(
 			409,
 			`your previous head with this counterparty on ${input.network} has not handed its funds back to L1 yet; ` +
-				'wait until its fanout is confirmed and reconciled, then retry. The invite has not been used',
+				'wait until its fanout is confirmed and reconciled, then retry the same invite code',
+		);
+	}
+	if (blocker?.kind === 'handoffs') {
+		throw createHttpError(
+			409,
+			`your previous head with this counterparty on ${input.network} still has payments or purchases ` +
+				'to hand back to L1; wait until they are adopted, then retry the same invite code',
 		);
 	}
 	const pending = await prisma.hydraHeadInvite.findFirst({
@@ -168,6 +184,7 @@ export function buildRedemptionPorts(input: {
 			await assertRelationHasNoLiveHead({
 				network: record.network,
 				localHotWalletId: record.localHotWalletId,
+				paymentSourceId: record.LocalHotWallet.paymentSourceId,
 				counterpartyWalletAddress: record.issuerWalletAddress,
 				excludeInviteId: record.id,
 			});
