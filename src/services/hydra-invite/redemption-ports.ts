@@ -4,14 +4,9 @@
  * knows none of them.
  */
 import createHttpError from 'http-errors';
-import {
-	HydraHeadStatus,
-	HydraInviteRole,
-	HydraInviteStatus,
-	type Network,
-	type Prisma,
-} from '@/generated/prisma/client';
+import { HydraInviteRole, HydraInviteStatus, type Network, type Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { findHeadReplacementBlocker } from '@/routes/api/hydra/head/create-head';
 import { decrypt } from '@/utils/security/encryption';
 import {
 	checkHostPeerTarget,
@@ -38,6 +33,15 @@ export type RedeemerRecord = Prisma.HydraHeadInviteGetPayload<{
 	include: { LocalHotWallet: true; HydraHost: true };
 }>;
 
+/** The relation between our wallet and a counterparty, which holds at most one live head. */
+export function pairRelationWhere(
+	network: Network,
+	localHotWalletId: string,
+	counterpartyWalletAddress: string,
+): Prisma.HydraRelationWhereInput {
+	return { network, localHotWalletId, RemoteWallet: { walletAddress: counterpartyWalletAddress } };
+}
+
 /**
  * Refuse a redemption that cannot become a head, before anything is spent.
  *
@@ -53,45 +57,24 @@ export async function assertRelationHasNoLiveHead(input: {
 	counterpartyWalletAddress: string;
 	excludeInviteId?: string;
 }): Promise<void> {
-	const liveHead = await prisma.hydraHead.findFirst({
-		where: {
-			status: { not: HydraHeadStatus.Final },
-			retiredAt: null,
-			HydraRelation: {
-				network: input.network,
-				localHotWalletId: input.localHotWalletId,
-				RemoteWallet: { walletAddress: input.counterpartyWalletAddress },
-			},
-		},
-		select: { status: true },
-	});
-	if (liveHead !== null) {
+	// What head creation refuses on, asked here too. Asked there alone, the
+	// refusal came after the issuer's Host had spent the nonce, leaving a funded
+	// node on each side and the issuer retrying.
+	const blocker = await findHeadReplacementBlocker(
+		pairRelationWhere(input.network, input.localHotWalletId, input.counterpartyWalletAddress),
+	);
+	if (blocker?.kind === 'live') {
 		throw createHttpError(
 			409,
-			`you already have a ${liveHead.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
+			`you already have a ${blocker.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
 				'close and settle it before opening another, then ask them for a new invite',
 		);
 	}
-	// The same columns verifyPriorHydraFanouts refuses on when the head is
-	// created. Asked there alone, the refusal came after the issuer's Host had
-	// spent the nonce, leaving a funded node on each side and the issuer retrying.
-	const unsettledHead = await prisma.hydraHead.findFirst({
-		where: {
-			status: HydraHeadStatus.Final,
-			OR: [{ reconciliationCompletedAt: null }, { fanoutTxHash: null }],
-			HydraRelation: {
-				network: input.network,
-				localHotWalletId: input.localHotWalletId,
-				RemoteWallet: { walletAddress: input.counterpartyWalletAddress },
-			},
-		},
-		select: { id: true },
-	});
-	if (unsettledHead !== null) {
+	if (blocker !== null) {
 		throw createHttpError(
 			409,
 			`your previous head with this counterparty on ${input.network} has not handed its funds back to L1 yet; ` +
-				'wait until its fanout is confirmed and reconciled, then ask them for a new invite',
+				'wait until its fanout is confirmed and reconciled, then retry. The invite has not been used',
 		);
 	}
 	const pending = await prisma.hydraHeadInvite.findFirst({

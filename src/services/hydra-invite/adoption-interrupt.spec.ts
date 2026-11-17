@@ -348,6 +348,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 }));
 jest.unstable_mockModule('@/routes/api/hydra/head/create-head', () => ({
 	createBoundHydraHead: fakeCreateBoundHydraHead,
+	findHeadReplacementBlocker: async () => null,
 }));
 jest.unstable_mockModule('@meshsdk/core', () => ({ resolvePaymentKeyHash: (address: string) => `pkh(${address})` }));
 jest.unstable_mockModule('./node-keys', () => ({ deriveNodeCardanoVkey: (key: string) => `vkh(${key})` }));

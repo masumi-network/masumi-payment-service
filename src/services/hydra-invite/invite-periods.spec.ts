@@ -11,7 +11,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { MeshWallet } from '@meshsdk/core';
-import { HydraHeadStatus, Network, PaymentSourceType, HotWalletType } from '@/generated/prisma/client';
+import { Network, PaymentSourceType, HotWalletType } from '@/generated/prisma/client';
 import type { Mock } from 'jest-mock';
 import type { HydraHeadInvitePayloadInput } from './invite-payload';
 
@@ -23,15 +23,14 @@ const LEDGER_PARAMS_HASH = 'sha256:params';
 const mockHotWalletFindFirst = jest.fn() as AnyMock;
 const mockInviteFindUnique = jest.fn() as AnyMock;
 const mockInviteFindFirst = jest.fn() as AnyMock;
-const mockHeadFindFirst = jest.fn() as AnyMock;
 const mockHostFindMany = jest.fn() as AnyMock;
 const mockProvision = jest.fn() as AnyMock;
+const mockFindHeadReplacementBlocker = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hotWallet: { findFirst: mockHotWalletFindFirst },
 		hydraHeadInvite: { findUnique: mockInviteFindUnique, findFirst: mockInviteFindFirst, create: jest.fn() },
-		hydraHead: { findFirst: mockHeadFindFirst },
 		hydraHost: { findMany: mockHostFindMany },
 		hydraLocalParticipant: { findFirst: jest.fn(), create: jest.fn() },
 	},
@@ -80,6 +79,7 @@ jest.unstable_mockModule('@/services/hydra-node-funding/service', () => ({
 
 jest.unstable_mockModule('@/routes/api/hydra/head/create-head', () => ({
 	createBoundHydraHead: jest.fn(),
+	findHeadReplacementBlocker: mockFindHeadReplacementBlocker,
 }));
 
 let mintHeadInvite: typeof import('./orchestrator').mintHeadInvite;
@@ -156,7 +156,7 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	mockInviteFindUnique.mockResolvedValue(null);
 	mockInviteFindFirst.mockResolvedValue(null);
-	mockHeadFindFirst.mockResolvedValue(null);
+	mockFindHeadReplacementBlocker.mockResolvedValue(null);
 	// The first thing a reservation does. Reaching it means every period check passed.
 	mockHostFindMany.mockRejectedValue(new Error(REACHED_RESERVATION));
 });
@@ -219,22 +219,12 @@ describe('redeeming a correctly signed invite', () => {
 	// funds back to L1. Found only after the issuer's Host had spent the nonce, that
 	// refusal stranded a funded node on each side (live on preprod, 2026-11-03).
 	it('with a counterparty whose previous head has not handed off is refused before provisioning', async () => {
-		mockHeadFindFirst.mockImplementation(async (args: { where: { status: unknown } }) =>
-			args.where.status === HydraHeadStatus.Final ? { id: 'head-final-not-handed-off' } : null,
-		);
+		mockFindHeadReplacementBlocker.mockResolvedValue({ kind: 'unsettled' });
 
 		await expect(redeem(Network.Preprod, {})).rejects.toMatchObject({
 			status: 409,
-			message: expect.stringMatching(/previous head with this counterparty .* has not handed its funds back to L1/),
+			message: expect.stringMatching(/has not handed its funds back to L1 .* The invite has not been used/),
 		});
-		expect(mockHeadFindFirst).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: expect.objectContaining({
-					status: HydraHeadStatus.Final,
-					OR: [{ reconciliationCompletedAt: null }, { fanoutTxHash: null }],
-				}),
-			}),
-		);
 		expect(mockHostFindMany).not.toHaveBeenCalled();
 		expect(mockProvision).not.toHaveBeenCalled();
 	});
