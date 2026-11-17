@@ -1,8 +1,9 @@
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
@@ -28,11 +29,91 @@ const MAX_EXPIRED_L2_WARNING_SAMPLES = 10;
  */
 export const L2_RESERVATION_RELEASE_GRACE_MS = 5 * 60_000;
 /**
- * Slack past expiry before an action reservation may be released. An action has
- * no release nudge to confirm the body dead, so it waits as long as an admin
- * does for a row automatic recovery can prove (`L2_OPERATOR_RELEASE_GRACE_MS`).
+ * Slack past expiry for the slower releases: automatic release of an action,
+ * which has no nudge, and an admin release of a row automatic recovery can still
+ * release. The release grace plus five nudge intervals.
  */
-export const L2_ACTION_RELEASE_GRACE_MS = L2_RESERVATION_RELEASE_GRACE_MS + 5 * L2_RELEASE_NUDGE_INTERVAL_MS;
+export const L2_OPERATOR_RELEASE_GRACE_MS = L2_RESERVATION_RELEASE_GRACE_MS + 5 * L2_RELEASE_NUDGE_INTERVAL_MS;
+/** What the node itself reports now, read live and never from replay. */
+export type HydraLiveSnapshot = {
+	round: HydraSnapshotRound;
+	/** Output refs (`txHash#index`, lowercase) in the node's confirmed snapshot. */
+	liveRefs: ReadonlySet<string>;
+};
+
+const lastActionSnapshotReadAtByHead = new Map<string, number>();
+
+/**
+ * The live snapshot for this scan's action releases, or null to hold them. Null
+ * unless the head row is Open and not closing: a contest can still carry a snapshot our node
+ * signed but never saw complete. Read at most once per nudge interval per head:
+ * an action that never releases (all its inputs spent) must not cost a full
+ * UTxO fetch on every reconcile tick.
+ */
+async function readActionLiveSnapshot(
+	hydraHeadId: string,
+	nowMs: number,
+	database: typeof prisma,
+	read: () => Promise<HydraLiveSnapshot>,
+): Promise<HydraLiveSnapshot | null> {
+	for (const [headId, readAtMs] of lastActionSnapshotReadAtByHead) {
+		if (readAtMs > nowMs || nowMs - readAtMs >= L2_RELEASE_NUDGE_INTERVAL_MS)
+			lastActionSnapshotReadAtByHead.delete(headId);
+	}
+	if (lastActionSnapshotReadAtByHead.has(hydraHeadId)) return null;
+	try {
+		const isHeadOpen = async () => {
+			const head = await database.hydraHead.findUnique({
+				where: { id: hydraHeadId },
+				select: { status: true, isClosing: true },
+			});
+			return head?.status === HydraHeadStatus.Open && !head.isClosing;
+		};
+		if (!(await isHeadOpen())) return null;
+		const snapshot = await read();
+		// A close posted while the snapshot was read voids it.
+		if (!(await isHeadOpen())) return null;
+		// Only a read that could release starts the window: a node error or a
+		// round in flight retries on the next scan instead of holding every action
+		// for a full interval.
+		if (!snapshot.round.inFlight) lastActionSnapshotReadAtByHead.set(hydraHeadId, nowMs);
+		return snapshot;
+	} catch (error) {
+		if (shouldWarnExpiredL2Reservation(`${hydraHeadId}:live-snapshot`, nowMs)) {
+			logger.warn('[HydraReconcile] could not read the live snapshot for expired L2 actions; they stay held', {
+				hydraHeadId,
+				error: error instanceof Error ? error.message : error,
+			});
+		}
+		return null;
+	}
+}
+
+/**
+ * Read the node's snapshot round, then its confirmed UTxO set. The round is read
+ * first, so a round that confirms between the two reads shows up in the UTxO set
+ * instead of slipping past both. Replay is never the source here: on 2026-10-22
+ * the history stream went silent while the head clock stayed fresh.
+ */
+export async function readHydraLiveSnapshot(node: HydraNode, withUtxos = true): Promise<HydraLiveSnapshot> {
+	const round = await fetchHydraSnapshotRound(node);
+	// A round in flight already voids the answer, so the full UTxO set is skipped.
+	const utxos = withUtxos && !round.inFlight ? await node.snapshotUTxO() : [];
+	// Same shape as `requireHydraInputRefs`, which recorded the refs.
+	return {
+		round,
+		liveRefs: new Set(utxos.map((utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase())),
+	};
+}
+
+/**
+ * A body input still in the live confirmed snapshot, or undefined. An output is
+ * spent once and a body applies atomically, so one such input proves the body
+ * is not in that snapshot. Meaningless while a round is in flight.
+ */
+export function findLiveBodyInput(snapshot: HydraLiveSnapshot, inputRefs: readonly string[]): string | undefined {
+	return inputRefs.find((reference) => snapshot.liveRefs.has(reference));
+}
 
 export type L2ReservationRecoveryGate = {
 	hasVerifiedPinnedSessions: boolean;
@@ -78,9 +159,11 @@ export function canReportExpiredL2Reservation(gate: L2ReservationRecoveryGate): 
  * but cannot prove that a locally accepted transaction is absent from the live
  * ledger while it remains unsnapshotted. Releasing on negative replay evidence,
  * or on a node's TxInvalid, could authorize a conflicting retry. A reservation
- * is released only once its own release nudge, which spends the body's wallet
- * inputs, shows up in a verified snapshot (`./l2-release-nudge-proof`).
- * Everything else stays fail-closed and reported.
+ * lock is released only once its own release nudge, which spends the body's
+ * wallet inputs, shows up in a verified snapshot (`./l2-release-nudge-proof`).
+ * A non-locking action is released on the node's live state instead
+ * (`releaseActionIfBodyUnapplied`). Everything else stays fail-closed and
+ * reported.
  */
 export async function reportExpiredL2Reservations(params: {
 	hydraHeadId: string;
@@ -90,11 +173,21 @@ export async function reportExpiredL2Reservations(params: {
 	database?: typeof prisma;
 	/** Makes an idle head confirm the newer snapshot release waits for. */
 	nudge?: (candidate: L2ReleaseNudgeCandidate) => Promise<unknown>;
-	/** The node's snapshot round in flight; an action is released only while none is. */
-	readSnapshotRound?: () => Promise<HydraSnapshotRound>;
+	/** The node's live snapshot; an action is released only against it. */
+	readLiveSnapshot?: () => Promise<HydraLiveSnapshot>;
+	/** Whether `node` is still the session the connection manager holds. */
+	isCurrentNode?: () => boolean;
 }): Promise<number> {
 	const { hydraHeadId, network, node, nowMs = Date.now(), database = prisma } = params;
-	const readSnapshotRound = params.readSnapshotRound ?? (() => fetchHydraSnapshotRound(node));
+	// The head clock as it stood before the live snapshot is read. An action is
+	// released only if it was already past its grace on this clock, so the one
+	// snapshot read below, shared by every action of the scan, came after expiry.
+	const scanHeadClock = node.headClock;
+	const readLiveSnapshot = params.readLiveSnapshot ?? (() => readHydraLiveSnapshot(node));
+	const isCurrentNode = params.isCurrentNode ?? (() => getHydraConnectionManager().getNode(hydraHeadId) === node);
+	let liveSnapshot: Promise<HydraLiveSnapshot | null> | undefined;
+	const readLiveSnapshotOnce = () =>
+		(liveSnapshot ??= readActionLiveSnapshot(hydraHeadId, nowMs, database, readLiveSnapshot));
 	const nudge =
 		params.nudge ??
 		((candidate: L2ReleaseNudgeCandidate) =>
@@ -157,29 +250,28 @@ export async function reportExpiredL2Reservations(params: {
 		// nudge proof does. It reads the node's own verified snapshot: snapshot
 		// confirmations never advance the persisted tip.
 		const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+		const isAction = candidate.l2ReservationPreviousTransactionId !== null;
 		if (
 			verifiedSnapshotNumber !== undefined &&
 			canReportExpiredL2Reservation({
 				hasVerifiedPinnedSessions: node.hasVerifiedPinnedSessions,
 				historyReady: node.confirmedTransactionHistoryReady,
 				queuedTransactions: node.getConfirmedTransactionsForReconciliation().length,
-				headClock: node.headClock,
+				headClock: isAction ? scanHeadClock : node.headClock,
 				nowMs,
 				validityUpperBoundTimeMs,
-				graceMs:
-					candidate.l2ReservationPreviousTransactionId === null
-						? L2_RESERVATION_RELEASE_GRACE_MS
-						: L2_ACTION_RELEASE_GRACE_MS,
+				graceMs: isAction ? L2_OPERATOR_RELEASE_GRACE_MS : L2_RESERVATION_RELEASE_GRACE_MS,
 			}) &&
-			(await releaseIfProvenDead(
-				candidate,
-				verifiedSnapshotNumber,
-				node,
-				hydraHeadId,
-				database,
-				nudge,
-				readSnapshotRound,
-			))
+			(isAction
+				? await releaseActionIfBodyUnapplied(
+						candidate,
+						node,
+						hydraHeadId,
+						database,
+						readLiveSnapshotOnce,
+						isCurrentNode,
+					)
+				: await releaseIfProvenDead(candidate, verifiedSnapshotNumber, node, hydraHeadId, database, nudge))
 		) {
 			continue;
 		}
@@ -244,13 +336,7 @@ async function releaseIfProvenDead(
 	hydraHeadId: string,
 	database: typeof prisma,
 	nudge: (candidate: L2ReleaseNudgeCandidate) => Promise<unknown>,
-	readSnapshotRound: () => Promise<HydraSnapshotRound>,
 ): Promise<boolean> {
-	// An action has no value floor and its escrow input is a script UTxO the
-	// wallet cannot nudge-spend, so it is judged on the head's own state instead.
-	if (candidate.l2ReservationPreviousTransactionId !== null) {
-		return await releaseActionIfBodyUnapplied(candidate, node, hydraHeadId, database, readSnapshotRound);
-	}
 	// Reservations made before inputs were recorded, and any without a value
 	// floor, cannot be proven dead.
 	const valueFloor = l2ReleaseValueFloor(candidate);
@@ -284,27 +370,34 @@ async function releaseIfProvenDead(
 
 /**
  * Release an expired non-locking action (request, collect or authorize a
- * refund, submit a result, collect, ...) whose body provably cannot apply and
- * has not. Fail-closed: every unknown retains. It needs, all at once:
+ * refund, submit a result, collect, ...) whose body cannot apply and has not.
+ * An action has no value floor, and its escrow input is a script UTxO the wallet
+ * cannot nudge-spend, so it is judged on the node's live state instead.
+ * Fail-closed: every unknown retains. It needs, all at once:
  *
- * - the body is past its validity bound plus `L2_ACTION_RELEASE_GRACE_MS` on a
- *   fresh head clock (the caller's gate), so no snapshot request made now can
- *   still include it;
- * - our node shows no snapshot round in flight, so none signed before expiry
+ * - the head is Open and its row is not closing: after a close, a contest can
+ *   still carry a snapshot our node signed but never saw complete;
+ * - the body was past its validity bound plus `L2_OPERATOR_RELEASE_GRACE_MS`
+ *   (the wait an admin release of the same row has) on a fresh head clock
+ *   read before the live snapshot (the caller's gate), so no snapshot request
+ *   made after that read can still include it;
+ * - the node session is still the one the manager holds, so a reconnect has
+ *   not replayed a confirmation this check missed;
+ * - the node reports no snapshot round in flight, so none signed before expiry
  *   can still confirm it;
  * - the body is in no confirmed history;
- * - EVERY input the body spends, the escrow included, is still in the node's
- *   verified current snapshot. A body applies atomically, so one that applied
- *   has spent all of them.
+ * - at least ONE input the body spends is still in the node's live confirmed
+ *   UTxO set. An output is spent once and a body applies atomically, so that
+ *   input proves the body is not in the confirmed snapshot. A body that cannot
+ *   land because another tx spent its escrow keeps its wallet inputs unspent and
+ *   so still releases.
  *
- * Unlike a lock's nudge proof this reads the node's reference mapping, which is
- * the configured local-node trust (`readVerifiedCurrentOutput`). That is
- * acceptable here only because a wrong release of an action moves no funds: it
- * returns the request to its retry action, a retry spends an escrow output that
- * can be spent once, and a wrong release is undone by the admin re-apply. So the
- * row is stamped like an operator release (`l2ReleasedByOperatorAt`), never as
- * an input proof, whose later confirmation the re-apply refuses. An initial lock
- * never takes this path: its double-lock risk needs the nudge proof.
+ * This trusts the local node's live state, not a signed nudge output, so the row
+ * gets its own stamp (`l2ReleasedByUnspentInputsAt`). These are the same checks
+ * an admin release makes (`bodyMayHaveAppliedReason`), so a later confirmation
+ * halts replay and the admin re-apply can undo it, as for an operator release.
+ * An initial lock never takes this path: its double-lock risk needs the nudge
+ * proof.
  */
 async function releaseActionIfBodyUnapplied(
 	candidate: Parameters<typeof releaseRejectedL2Reservation>[0] & {
@@ -314,30 +407,22 @@ async function releaseActionIfBodyUnapplied(
 	node: HydraNode,
 	hydraHeadId: string,
 	database: typeof prisma,
-	readSnapshotRound: () => Promise<HydraSnapshotRound>,
+	readLiveSnapshot: () => Promise<HydraLiveSnapshot | null>,
+	isCurrentNode: () => boolean,
 ): Promise<boolean> {
 	const { intendedTxHash, l2ReservationInputRefs: inputRefs } = candidate;
-	if (intendedTxHash === null || inputRefs.length === 0) return false;
-	let round: HydraSnapshotRound;
-	try {
-		round = await readSnapshotRound();
-	} catch (error) {
-		logger.warn('[HydraReconcile] could not read the snapshot round for an expired L2 action; reservation stays held', {
-			hydraHeadId,
-			transactionId: candidate.id,
-			error: error instanceof Error ? error.message : error,
-		});
+	if (
+		intendedTxHash === null ||
+		inputRefs.length === 0 ||
+		node.status !== HydraHeadStatus.Open ||
+		node.getConfirmedTransaction(intendedTxHash)
+	) {
 		return false;
 	}
-	// Read after the round, with no await in between: a round that confirms
-	// meanwhile moves the snapshot number and leaves the inputs unread.
-	const snapshotNumber = node.verifiedSnapshotNumber;
-	if (
-		round.inFlight ||
-		snapshotNumber === undefined ||
-		node.getConfirmedTransaction(intendedTxHash) ||
-		!inputRefs.every((reference) => node.getVerifiedCurrentOutput(reference, snapshotNumber) !== null)
-	) {
+	const snapshot = await readLiveSnapshot();
+	if (snapshot === null || node.status !== HydraHeadStatus.Open || !isCurrentNode()) return false;
+	const unspentInput = findLiveBodyInput(snapshot, inputRefs);
+	if (snapshot.round.inFlight || node.getConfirmedTransaction(intendedTxHash) || unspentInput === undefined) {
 		return false;
 	}
 	const released = await releaseRejectedL2Reservation(candidate, database, 'unspent-inputs');
@@ -346,7 +431,8 @@ async function releaseActionIfBodyUnapplied(
 			hydraHeadId,
 			transactionId: candidate.id,
 			intendedTxHash,
-			snapshotNumber: snapshotNumber.toString(),
+			unspentInput,
+			snapshotRoundTag: snapshot.round.tag,
 			inputCount: inputRefs.length,
 		});
 	}

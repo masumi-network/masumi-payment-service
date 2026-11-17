@@ -155,9 +155,8 @@ export async function releaseRejectedL2Reservation(
 						status: TransactionStatus.RolledBack,
 						lastCheckedAt: new Date(),
 						...(proof === 'spent-by-release-nudge' ? { l2ReleasedByInputProofAt: new Date() } : {}),
-						// An 'unspent-inputs' release is no proof the body is dead, so it keeps the
-						// operator stamp: that is what lets the admin re-apply undo it.
-						...(proof === 'operator' || proof === 'unspent-inputs' ? { l2ReleasedByOperatorAt: new Date() } : {}),
+						...(proof === 'operator' ? { l2ReleasedByOperatorAt: new Date() } : {}),
+						...(proof === 'unspent-inputs' ? { l2ReleasedByUnspentInputsAt: new Date() } : {}),
 					},
 				});
 

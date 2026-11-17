@@ -268,9 +268,9 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		});
 	});
 
-	// The unspent-inputs release is no proof the body is dead, so it keeps the
-	// operator stamp: that is what lets the admin re-apply undo a wrong release.
-	it('stamps an unspent-inputs release of an action as an operator release', async () => {
+	// An automatic unspent-inputs release gets its own stamp: it is neither an
+	// admin decision nor the nudge proof the re-apply refuses to undo.
+	it('stamps an unspent-inputs release of an action with its own stamp', async () => {
 		mockFindUnique.mockResolvedValue(
 			pendingRejected({
 				l2RejectedByHeadAt: null,
@@ -289,7 +289,8 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		);
 		const data = mockTransactionUpdate.mock.calls[0]?.[0]?.data as Record<string, unknown>;
 		expect(data.status).toBe(TransactionStatus.RolledBack);
-		expect(data.l2ReleasedByOperatorAt).toEqual(expect.any(Date));
+		expect(data.l2ReleasedByUnspentInputsAt).toEqual(expect.any(Date));
+		expect(data).not.toHaveProperty('l2ReleasedByOperatorAt');
 		expect(data).not.toHaveProperty('l2ReleasedByInputProofAt');
 		expect(mockHotWalletUpdateMany).toHaveBeenCalledTimes(1);
 		expect(mockPurchaseUpdate).toHaveBeenCalledTimes(1);

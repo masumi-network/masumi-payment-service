@@ -35,6 +35,7 @@ import { logger } from '@masumi/payment-core/logger';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { parseHydraTransactionEvidence } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { L2_RELEASED_RESERVATION_FILTER } from '@/utils/hydra/l2-released-filter';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
 import { paymentL2ActionRetry, purchaseL2ActionRetry } from './l2-reservation-release';
 import { REPLAY_APPLY_RETRY_REASON } from './replay-stall-reason';
@@ -44,7 +45,7 @@ export type StalledReleasedL2Reservation = {
 	/** Echo it back to re-apply: the call is refused if the row changed. */
 	updatedAt: Date;
 	intendedTxHash: string;
-	releasedBy: 'input-proof' | 'operator';
+	releasedBy: 'input-proof' | 'operator' | 'unspent-inputs';
 	releasedAt: Date;
 	kind: 'initial-lock' | 'action';
 	purchaseRequestIds: string[];
@@ -81,6 +82,7 @@ const releasedRowSelect = {
 	newOnChainState: true,
 	l2ReleasedByInputProofAt: true,
 	l2ReleasedByOperatorAt: true,
+	l2ReleasedByUnspentInputsAt: true,
 	l2ReservationPreviousActionId: true,
 	l2ReservationPreviousTransactionId: true,
 	BlocksWallet: { select: { id: true } },
@@ -109,7 +111,7 @@ const releasedOnHead = (headId: string, intendedTxHash: string) => ({
 	layer: TransactionLayer.L2,
 	status: TransactionStatus.RolledBack,
 	intendedTxHash,
-	OR: [{ l2ReleasedByInputProofAt: { not: null } }, { l2ReleasedByOperatorAt: { not: null } }],
+	AND: [L2_RELEASED_RESERVATION_FILTER],
 });
 
 async function loadHead(headId: string) {
@@ -238,8 +240,13 @@ function toStalled(row: ReleasedRow, node: HydraNode | null): StalledReleasedL2R
 		updatedAt: row.updatedAt,
 		// Both are guaranteed by `releasedOnHead`, which selected the row.
 		intendedTxHash: row.intendedTxHash!,
-		releasedBy: row.l2ReleasedByInputProofAt != null ? 'input-proof' : 'operator',
-		releasedAt: (row.l2ReleasedByInputProofAt ?? row.l2ReleasedByOperatorAt)!,
+		releasedBy:
+			row.l2ReleasedByInputProofAt != null
+				? 'input-proof'
+				: row.l2ReleasedByUnspentInputsAt != null
+					? 'unspent-inputs'
+					: 'operator',
+		releasedAt: (row.l2ReleasedByInputProofAt ?? row.l2ReleasedByUnspentInputsAt ?? row.l2ReleasedByOperatorAt)!,
 		kind: row.l2ReservationPreviousTransactionId == null ? 'initial-lock' : 'action',
 		purchaseRequestIds: row.PurchaseRequestHistory.map((purchase) => purchase.id),
 		paymentRequestIds: row.PaymentRequestHistory.map((payment) => payment.id),
@@ -311,6 +318,7 @@ export async function reapplyReleasedL2Reservation(params: {
 						status: TransactionStatus.Pending,
 						l2ReleasedByInputProofAt: null,
 						l2ReleasedByOperatorAt: null,
+						l2ReleasedByUnspentInputsAt: null,
 					},
 				});
 				for (const payment of fresh.PaymentRequestHistory) {

@@ -100,7 +100,7 @@ const stalledReleaseShape = z.object({
 	transactionId: z.string(),
 	updatedAt: z.string().describe('Send it back to re-apply; the call is refused if the row changed'),
 	intendedTxHash: z.string().describe('Hash of the released body that confirmed in the head'),
-	releasedBy: z.enum(['input-proof', 'operator']).describe('Who released the reservation'),
+	releasedBy: z.enum(['input-proof', 'operator', 'unspent-inputs']).describe('Who released the reservation'),
 	releasedAt: z.string(),
 	kind: z.enum(['initial-lock', 'action']).describe('An initial lock, or an action on an existing escrow'),
 	purchaseRequestIds: z.array(z.string()),

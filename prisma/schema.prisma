@@ -261,6 +261,11 @@ model Transaction {
   /// is dead (the nudge never applied, or the row has no value floor). Like
   /// l2ReleasedByInputProofAt, a later confirmation of the body halts replay.
   l2ReleasedByOperatorAt                     DateTime?
+  /// Set when automatic recovery released an expired non-locking action because
+  /// one of its inputs was still in the node's live snapshot. It trusts the
+  /// local node, so like l2ReleasedByOperatorAt a later confirmation halts
+  /// replay and the admin re-apply can undo it.
+  l2ReleasedByUnspentInputsAt                DateTime?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
