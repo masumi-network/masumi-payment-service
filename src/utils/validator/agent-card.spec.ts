@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ClientRequest } from 'node:http';
 import type { RequestOptions } from 'node:https';
 
-const mockResolveWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
+const mockResolveWebhookDestinationAllowed = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 class TestWebhookDestinationPolicyError extends Error {
 	constructor(public readonly reason: string) {

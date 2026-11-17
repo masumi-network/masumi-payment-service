@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockRuleFindMany = jest.fn() as jest.Mock<any>;
-const mockRuleUpdate = jest.fn() as jest.Mock<any>;
-const mockNetworkFindMany = jest.fn() as jest.Mock<any>;
-const mockReadAssetAmount = jest.fn() as jest.Mock<any>;
+const mockRuleFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockRuleUpdate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockNetworkFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockReadAssetAmount = jest.fn() as jest.Mock<(...args: any[]) => any>;
 const mockLoggerWarn = jest.fn();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
