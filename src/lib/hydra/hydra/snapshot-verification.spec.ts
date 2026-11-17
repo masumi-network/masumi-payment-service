@@ -719,6 +719,73 @@ describe('Hydra 2.3 snapshot verification', () => {
 				),
 			).toBeNull();
 		});
+
+		// After `adoptL1Binding`, a fanout over several steps reports the earlier
+		// steps' payouts at index 1 onwards (index 0 is the continuing head) and
+		// the terminal step's outputs from index 0, with its change last.
+		describe('over several L1 steps', () => {
+			const partialTxHash = '7a'.repeat(32);
+			const burnTxHash = '7b'.repeat(32);
+			const otherPayout = serializeHydraSnapshotOutput(output({ lovelace: 4_000_000 }));
+			const signed = (outputs: readonly string[]) => ({
+				headId: HEAD_ID,
+				number: 2,
+				version: 1,
+				outputs: new Map(outputs.map((value, index) => [`${'e9'.repeat(32)}#${index}`, value])),
+				outputMultiset: new Map(outputs.map((value) => [value, outputs.filter((other) => other === value).length])),
+				committedOutputs: new Map<string, string>(),
+				decommitOutputs: new Map<string, string>(),
+			});
+			const at = (txHash: string, outputIndex: number, serializedOutput: string) => ({
+				txHash,
+				outputIndex,
+				snapshotNumber: 2,
+				serializedOutput,
+			});
+
+			it('drops the terminal change even when a partial-step payout is byte-equal to it', () => {
+				// The node wallet was also paid in-head, the same value as its change.
+				const fanoutOutputs = new Map([
+					[`${partialTxHash}#1`, change],
+					[`${burnTxHash}#0`, otherPayout],
+					[`${burnTxHash}#1`, change],
+				]);
+				const snapshot = signed([change, otherPayout]);
+
+				expect(resolveVerifiedHydraFanoutReferences(snapshot, fanoutOutputs)).toEqual([
+					at(partialTxHash, 1, change),
+					at(burnTxHash, 0, otherPayout),
+				]);
+				expect(resolveVerifiedHydraFanoutReference(snapshot, fanoutOutputs, change)).toEqual(
+					at(partialTxHash, 1, change),
+				);
+			});
+
+			it('drops the change of a burn-only terminal step that distributed nothing', () => {
+				expect(
+					resolveVerifiedHydraFanoutReferences(
+						signed([payout, otherPayout]),
+						new Map([
+							[`${partialTxHash}#1`, payout],
+							[`${partialTxHash}#2`, otherPayout],
+							[`${burnTxHash}#0`, change],
+						]),
+					),
+				).toEqual([at(partialTxHash, 1, payout), at(partialTxHash, 2, otherPayout)]);
+			});
+
+			it('never drops a partial-step output as change', () => {
+				expect(
+					resolveVerifiedHydraFanoutReferences(
+						signed([payout]),
+						new Map([
+							[`${partialTxHash}#1`, payout],
+							[`${partialTxHash}#2`, change],
+						]),
+					),
+				).toBeNull();
+			});
+		});
 	});
 });
 

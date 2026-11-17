@@ -194,10 +194,20 @@ function expectedFanoutMultisets(snapshot: VerifiedHydraSnapshot): Array<Readonl
  * head stayed Final with its payments pinned in-head, and the relation's next
  * head was refused.
  *
- * So one surplus entry may be dropped, and only the last output of its
- * transaction, which is where the wallet puts change. What is left must still
- * be exactly a signed multiset, and `verifyHydraFanoutOnChain` proves on chain
- * that the dropped trailing output is change back to a spending wallet.
+ * So one surplus entry may be dropped, and only the last output of the
+ * terminal step, which is where the wallet puts change. The terminal step is
+ * the one transaction whose reported outputs include index 0: a partial step
+ * keeps index 0 for the continuing head, so none of its outputs (bound to L1 by
+ * `bindFinalizedFanoutToL1Chain` at index 1 onwards) is at index 0. That makes
+ * the dropped entry unique even when a partial-step payout is byte-equal to the
+ * change. A burn-only terminal step is usually not keyed in the map at all (see
+ * `findHeadBurnTxHash`); if it is, with only its change, that is the same shape:
+ * the change is its index 0 and its only entry.
+ *
+ * What is left must still be exactly a signed multiset. The dropped entry is
+ * not proved on chain here and nothing reads it: every resolver works from the
+ * returned references, and `verifyHydraFanoutOnChain` checks those, including
+ * that at most one trailing output of each step is change to a spending wallet.
  */
 function withoutWalletChange(
 	snapshot: VerifiedHydraSnapshot,
@@ -210,11 +220,14 @@ function withoutWalletChange(
 	};
 	if (accountsFor(reported)) return [...reported];
 	const lastIndexByTx = new Map<string, number>();
+	const terminalTxHashes = new Set<string>();
 	for (const { txHash, outputIndex } of reported) {
 		lastIndexByTx.set(txHash, Math.max(lastIndexByTx.get(txHash) ?? -1, outputIndex));
+		if (outputIndex === 0) terminalTxHashes.add(txHash);
 	}
 	const changeCandidates = reported.filter(
 		(change) =>
+			terminalTxHashes.has(change.txHash) &&
 			lastIndexByTx.get(change.txHash) === change.outputIndex &&
 			accountsFor(reported.filter((reference) => reference !== change)),
 	);
@@ -223,8 +236,9 @@ function withoutWalletChange(
 }
 
 /**
- * Bind the complete signature-verified final state to hydra-node's complete
- * chain-observed fanout map. Unlike the single-output resolver below, this can
+ * Bind the complete signature-verified final state to hydra-node's
+ * chain-observed fanout map, less at most one wallet change entry (see
+ * `withoutWalletChange`). Unlike the single-output resolver below, this can
  * retain duplicate values because every actual L1 reference is independently
  * checked and the complete value multiset is authenticated.
  */
@@ -247,7 +261,7 @@ export function resolveVerifiedHydraFanoutReferences(
 	// rejected them anyway, since each step numbers its outputs from zero.
 	// What still has to hold — that the steps form one chain ending in the head's
 	// token burn — is proved on chain by the fanout verifier, and that every
-	// signed output is accounted for exactly once is the multiset check above.
+	// signed output is accounted for exactly once is `withoutWalletChange`.
 	if (new Set(references.map(({ txHash, outputIndex }) => `${txHash}#${outputIndex}`)).size !== references.length) {
 		return null;
 	}
@@ -274,7 +288,9 @@ export function resolveVerifiedHydraFanoutReference(
 ): VerifiedHydraFanoutReference | null {
 	const verifiedFanoutReferences = resolveVerifiedHydraFanoutReferences(snapshot, fanoutOutputs);
 	if (!verifiedFanoutReferences) return null;
-	const fanoutMultiset = outputMultiset(fanoutOutputs.values());
+	// Count from the verified references, not the reported map: the map may still
+	// hold the wallet change, which can be byte-equal to a signed output.
+	const fanoutMultiset = outputMultiset(verifiedFanoutReferences.map(({ serializedOutput }) => serializedOutput));
 
 	if (snapshot.outputMultiset.get(serializedOutput) !== 1 || fanoutMultiset.get(serializedOutput) !== 1) {
 		return null;
