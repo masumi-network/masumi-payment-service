@@ -23,11 +23,17 @@ import { shortenAddress } from '@/lib/utils';
 
 const REPLAY_APPLY_RETRY = 'replay-apply-retry';
 
+const RELEASED_BY_LABEL: Record<HydraStalledRelease['releasedBy'], string> = {
+  operator: 'an admin',
+  'input-proof': 'automatic recovery',
+  'unspent-inputs': "automatic recovery (an input still unspent in our node's live snapshot)",
+};
+
 function reapplyDescription(release: HydraStalledRelease): string {
   const ids = [...release.purchaseRequestIds, ...release.paymentRequestIds]
     .map((id) => shortenAddress(id, 8))
     .join(', ');
-  const releasedBy = release.releasedBy === 'operator' ? 'an admin' : 'automatic recovery';
+  const releasedBy = RELEASED_BY_LABEL[release.releasedBy];
   return `The body ${shortenAddress(release.intendedTxHash, 12)} was released by ${releasedBy} on ${new Date(release.releasedAt).toLocaleString()}, and our node shows it confirmed in the head after all.\n\nRe-applying puts ${ids} back on this reservation and its in-flight action. The next sync pass then applies the body like any confirmed transaction, and the head starts syncing again.`;
 }
 

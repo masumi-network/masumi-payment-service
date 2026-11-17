@@ -36237,7 +36237,8 @@
                                                             "type": "string",
                                                             "enum": [
                                                                 "input-proof",
-                                                                "operator"
+                                                                "operator",
+                                                                "unspent-inputs"
                                                             ],
                                                             "description": "Who released the reservation"
                                                         },

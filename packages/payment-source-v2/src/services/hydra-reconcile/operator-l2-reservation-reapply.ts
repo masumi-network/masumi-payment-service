@@ -15,6 +15,11 @@
  * the row, its next action the in-flight one. The next replay pass applies the
  * body the normal way, and the batcher never sees a retry action to rebuild.
  *
+ * A release on unspent inputs (`l2ReleasedByUnspentInputsAt`) usually needs no
+ * admin: replay runs the same restore by itself when the body confirms
+ * (`reapplyUnspentInputsReleaseOnConfirmation`). Only when the request was
+ * moved on since does replay hold for an admin, as for any other release.
+ *
  * An initial lock is refused. Its release returned the purchase to locking
  * and overwrote the purchase fields the body's datum was built from, and the
  * purchase may already be locked again. A release on the input proof is
@@ -35,7 +40,9 @@ import { logger } from '@masumi/payment-core/logger';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { parseHydraTransactionEvidence } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { L2_RELEASED_RESERVATION_FILTER } from '@/utils/hydra/l2-released-filter';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
+import { pruneExpiredL2WarningThrottle, shouldWarnExpiredL2Reservation } from './l2-reservation-recovery';
 import { paymentL2ActionRetry, purchaseL2ActionRetry } from './l2-reservation-release';
 import { REPLAY_APPLY_RETRY_REASON } from './replay-stall-reason';
 
@@ -44,7 +51,7 @@ export type StalledReleasedL2Reservation = {
 	/** Echo it back to re-apply: the call is refused if the row changed. */
 	updatedAt: Date;
 	intendedTxHash: string;
-	releasedBy: 'input-proof' | 'operator';
+	releasedBy: 'input-proof' | 'operator' | 'unspent-inputs';
 	releasedAt: Date;
 	kind: 'initial-lock' | 'action';
 	purchaseRequestIds: string[];
@@ -81,6 +88,7 @@ const releasedRowSelect = {
 	newOnChainState: true,
 	l2ReleasedByInputProofAt: true,
 	l2ReleasedByOperatorAt: true,
+	l2ReleasedByUnspentInputsAt: true,
 	l2ReservationPreviousActionId: true,
 	l2ReservationPreviousTransactionId: true,
 	BlocksWallet: { select: { id: true } },
@@ -109,7 +117,7 @@ const releasedOnHead = (headId: string, intendedTxHash: string) => ({
 	layer: TransactionLayer.L2,
 	status: TransactionStatus.RolledBack,
 	intendedTxHash,
-	OR: [{ l2ReleasedByInputProofAt: { not: null } }, { l2ReleasedByOperatorAt: { not: null } }],
+	AND: [L2_RELEASED_RESERVATION_FILTER],
 });
 
 async function loadHead(headId: string) {
@@ -238,14 +246,191 @@ function toStalled(row: ReleasedRow, node: HydraNode | null): StalledReleasedL2R
 		updatedAt: row.updatedAt,
 		// Both are guaranteed by `releasedOnHead`, which selected the row.
 		intendedTxHash: row.intendedTxHash!,
-		releasedBy: row.l2ReleasedByInputProofAt != null ? 'input-proof' : 'operator',
-		releasedAt: (row.l2ReleasedByInputProofAt ?? row.l2ReleasedByOperatorAt)!,
+		releasedBy:
+			row.l2ReleasedByInputProofAt != null
+				? 'input-proof'
+				: row.l2ReleasedByUnspentInputsAt != null
+					? 'unspent-inputs'
+					: 'operator',
+		releasedAt: (row.l2ReleasedByInputProofAt ?? row.l2ReleasedByUnspentInputsAt ?? row.l2ReleasedByOperatorAt)!,
 		kind: row.l2ReservationPreviousTransactionId == null ? 'initial-lock' : 'action',
 		purchaseRequestIds: row.PurchaseRequestHistory.map((purchase) => purchase.id),
 		paymentRequestIds: row.PaymentRequestHistory.map((payment) => payment.id),
 		reapplicable: reason === null,
 		blockedReason: reason,
 	};
+}
+
+const CHANGED_CONCURRENTLY = 'The reservation or a request on it changed concurrently; reload and retry';
+const FENCED_BY_ROLLBACK = 'A rollback fences the head; retry once it settles';
+
+/**
+ * Put a released action reservation back exactly where the release took it
+ * from: the row Pending with no release stamp, each request's current
+ * transaction the row and its next action the in-flight one. The next replay of
+ * the body then applies it the normal way. Returns why it refused, with nothing
+ * written, or null once restored.
+ */
+async function restoreReleasedL2Reservation(
+	row: ReleasedRow,
+	node: HydraNode | null,
+	isFenced: () => boolean = () => false,
+): Promise<string | null> {
+	const previousTransactionId = row.l2ReservationPreviousTransactionId;
+	if (previousTransactionId == null) return INITIAL_LOCK_REASON;
+
+	// The exact inverse of the action branch of `releaseRejectedL2Reservation`.
+	// The checks run again on a read inside the transaction, and every write is
+	// guarded on that read, so a request that moved in between aborts it.
+	const restoreCurrent = {
+		CurrentTransaction: { connect: { id: row.id } },
+		TransactionHistory: { disconnect: { id: row.id }, connect: { id: previousTransactionId } },
+	};
+	const requestGuard = (request: { id: string; nextActionId: string }) => ({
+		id: request.id,
+		nextActionId: request.nextActionId,
+		currentTransactionId: previousTransactionId,
+		layer: TransactionLayer.L2,
+	});
+	let refused: string | null;
+	try {
+		refused = await prisma.$transaction(
+			async (tx) => {
+				const fresh = await tx.transaction.findUnique({ where: { id: row.id }, select: releasedRowSelect });
+				// Checked before any write, so a refusal commits nothing.
+				if (fresh?.updatedAt.getTime() !== row.updatedAt.getTime()) return CHANGED_CONCURRENTLY;
+				const reason = blockedReason(fresh, node);
+				if (reason !== null) return reason;
+				// Last check before any write: a rollback that arrived meanwhile wins.
+				if (isFenced()) return FENCED_BY_ROLLBACK;
+				await tx.transaction.update({
+					where: { id: row.id, updatedAt: row.updatedAt, status: TransactionStatus.RolledBack, txHash: null },
+					data: {
+						status: TransactionStatus.Pending,
+						l2ReleasedByInputProofAt: null,
+						l2ReleasedByOperatorAt: null,
+						l2ReleasedByUnspentInputsAt: null,
+					},
+				});
+				for (const payment of fresh.PaymentRequestHistory) {
+					const released = releasedPaymentAction(fresh, payment)!;
+					await tx.paymentRequest.update({
+						where: requestGuard(payment),
+						data: {
+							...connectPreviousAction(payment.nextActionId),
+							...createNextPaymentAction(
+								released.requestedAction,
+								released.resultHash == null ? undefined : { resultHash: released.resultHash },
+							),
+							...restoreCurrent,
+						},
+					});
+				}
+				for (const purchase of fresh.PurchaseRequestHistory) {
+					await tx.purchaseRequest.update({
+						where: requestGuard(purchase),
+						data: {
+							...connectPreviousAction(purchase.nextActionId),
+							...createNextPurchaseAction(releasedPurchaseAction(fresh, purchase)!.requestedAction),
+							...restoreCurrent,
+						},
+					});
+				}
+				return null;
+			},
+			{
+				isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+				timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+				maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+			},
+		);
+	} catch (error) {
+		// P2025: a guarded row moved. P2034/P2028: a concurrent writer aborted the
+		// serializable transaction. Nothing committed either way.
+		if (
+			error instanceof Prisma.PrismaClientKnownRequestError &&
+			(error.code === 'P2025' || error.code === 'P2034' || error.code === 'P2028')
+		) {
+			return CHANGED_CONCURRENTLY;
+		}
+		throw error;
+	}
+	return refused;
+}
+
+/**
+ * Replay's own re-apply, for a body that confirmed after automatic recovery
+ * released it on unspent inputs. That release trusted the node's live state, so
+ * the confirmation means it guessed wrong. Nothing else is wrong: the escrow is
+ * spent once, by this body. So replay restores the row and applies the body
+ * instead of stalling the head for an admin. True when the row was restored.
+ *
+ * Every other release keeps the stall: an initial lock may be locked again, an
+ * input proof failing needs a person, and an admin release gets an admin.
+ */
+export async function reapplyUnspentInputsReleaseOnConfirmation(params: {
+	hydraHeadId: string;
+	txId: string;
+	node: HydraNode;
+}): Promise<boolean> {
+	const { hydraHeadId, txId, node } = params;
+	const manager = getHydraConnectionManager();
+	// Every released row for this body, so one an admin or a proof released is
+	// never applied over by restoring another: then replay holds as before. A
+	// cheap read first: most retries have no released row at all.
+	const released = await prisma.transaction.findMany({
+		where: releasedOnHead(hydraHeadId, txId),
+		select: {
+			id: true,
+			l2ReleasedByUnspentInputsAt: true,
+			l2ReleasedByOperatorAt: true,
+			l2ReleasedByInputProofAt: true,
+		},
+		take: 2,
+	});
+	if (released.length === 0) return false;
+	const [only] = released;
+	if (
+		released.length !== 1 ||
+		only.l2ReleasedByUnspentInputsAt == null ||
+		only.l2ReleasedByOperatorAt != null ||
+		only.l2ReleasedByInputProofAt != null
+	) {
+		return false;
+	}
+	const row = await prisma.transaction.findUnique({ where: { id: only.id }, select: releasedRowSelect });
+	if (!row) return false;
+	let reason: string | null;
+	try {
+		reason = await restoreReleasedL2Reservation(
+			row,
+			node,
+			() => manager.getNode(hydraHeadId) !== node || manager.isStatusQuarantined(hydraHeadId),
+		);
+	} catch (error) {
+		// Never skip the caller's stall marker: a failed restore holds like any retry.
+		reason = `restore failed: ${error instanceof Error ? error.message : String(error)}`;
+	}
+	if (reason !== null) {
+		// Replay retries every pass while it holds: warn once an hour per row.
+		const nowMs = Date.now();
+		pruneExpiredL2WarningThrottle(nowMs);
+		if (shouldWarnExpiredL2Reservation(`reapply:${row.id}`, nowMs)) {
+			logger.warn('[HydraReconcile] could not re-apply an unspent-inputs release whose body confirmed; replay holds', {
+				hydraHeadId,
+				transactionId: row.id,
+				intendedTxHash: txId,
+				reason,
+			});
+		}
+		return false;
+	}
+	logger.error('[HydraReconcile] an unspent-inputs release was wrong: its body confirmed; re-applied it', {
+		hydraHeadId,
+		transactionId: row.id,
+		intendedTxHash: txId,
+	});
+	return true;
 }
 
 /** The released reservation the head's replay is held on, or null when it is not held on one. */
@@ -283,78 +468,8 @@ export async function reapplyReleasedL2Reservation(params: {
 	if (!stalled.reapplicable) {
 		throw createHttpError(409, stalled.blockedReason ?? 'The reservation cannot be re-applied now');
 	}
-	const previousTransactionId = row.l2ReservationPreviousTransactionId!;
-
-	// The exact inverse of the action branch of `releaseRejectedL2Reservation`.
-	// The checks run again on a read inside the transaction, and every write is
-	// guarded on that read, so a request that moved in between aborts it.
-	const restoreCurrent = {
-		CurrentTransaction: { connect: { id: row.id } },
-		TransactionHistory: { disconnect: { id: row.id }, connect: { id: previousTransactionId } },
-	};
-	const requestGuard = (request: { id: string; nextActionId: string }) => ({
-		id: request.id,
-		nextActionId: request.nextActionId,
-		currentTransactionId: previousTransactionId,
-		layer: TransactionLayer.L2,
-	});
-	try {
-		await prisma.$transaction(
-			async (tx) => {
-				const fresh = await tx.transaction.findUnique({ where: { id: row.id }, select: releasedRowSelect });
-				if (fresh?.updatedAt.getTime() !== row.updatedAt.getTime() || blockedReason(fresh, node) !== null) {
-					throw createHttpError(409, 'The reservation or a request on it changed concurrently; reload and retry');
-				}
-				await tx.transaction.update({
-					where: { id: row.id, updatedAt: row.updatedAt, status: TransactionStatus.RolledBack, txHash: null },
-					data: {
-						status: TransactionStatus.Pending,
-						l2ReleasedByInputProofAt: null,
-						l2ReleasedByOperatorAt: null,
-					},
-				});
-				for (const payment of fresh.PaymentRequestHistory) {
-					const released = releasedPaymentAction(fresh, payment)!;
-					await tx.paymentRequest.update({
-						where: requestGuard(payment),
-						data: {
-							...connectPreviousAction(payment.nextActionId),
-							...createNextPaymentAction(
-								released.requestedAction,
-								released.resultHash == null ? undefined : { resultHash: released.resultHash },
-							),
-							...restoreCurrent,
-						},
-					});
-				}
-				for (const purchase of fresh.PurchaseRequestHistory) {
-					await tx.purchaseRequest.update({
-						where: requestGuard(purchase),
-						data: {
-							...connectPreviousAction(purchase.nextActionId),
-							...createNextPurchaseAction(releasedPurchaseAction(fresh, purchase)!.requestedAction),
-							...restoreCurrent,
-						},
-					});
-				}
-			},
-			{
-				isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-				timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-				maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-			},
-		);
-	} catch (error) {
-		// P2025: a guarded row moved. P2034/P2028: a concurrent writer aborted the
-		// serializable transaction. Nothing committed either way.
-		if (
-			error instanceof Prisma.PrismaClientKnownRequestError &&
-			(error.code === 'P2025' || error.code === 'P2034' || error.code === 'P2028')
-		) {
-			throw createHttpError(409, 'The reservation or a request on it changed concurrently; reload and retry');
-		}
-		throw error;
-	}
+	const refused = await restoreReleasedL2Reservation(row, node);
+	if (refused !== null) throw createHttpError(409, refused);
 	logger.warn('[HydraReconcile] admin re-applied a released L2 reservation whose body confirmed', {
 		hydraHeadId: head.id,
 		transactionId: row.id,

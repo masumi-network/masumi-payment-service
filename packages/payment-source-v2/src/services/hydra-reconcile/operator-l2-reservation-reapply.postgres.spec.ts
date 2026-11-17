@@ -46,7 +46,7 @@ if (databaseUrl != null) process.env.DATABASE_URL = databaseUrl;
 let confirmedBodies = new Map<string, HydraConfirmedTransaction>();
 const node = { getConfirmedTransaction: (txHash: string) => confirmedBodies.get(txHash) ?? null };
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
-	getHydraConnectionManager: () => ({ getNode: () => node }),
+	getHydraConnectionManager: () => ({ getNode: () => node, isStatusQuarantined: () => false }),
 }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -56,7 +56,7 @@ const { prisma } = await import('@masumi/payment-core/db');
 const { generateBlockchainIdentifier } = await import('@masumi/payment-core/blockchain-identifier');
 const { applyConfirmedHydraTransaction } = await import('@/services/hydra-connection-manager/head-tx-confirmed');
 const { releaseRejectedL2Reservation } = await import('./l2-reservation-release');
-const { findStalledReleasedL2Reservation, reapplyReleasedL2Reservation } =
+const { findStalledReleasedL2Reservation, reapplyReleasedL2Reservation, reapplyUnspentInputsReleaseOnConfirmation } =
 	await import('./operator-l2-reservation-reapply');
 const { REPLAY_APPLY_RETRY_REASON } = await import('./replay-stall-reason');
 
@@ -183,7 +183,10 @@ async function seedHead() {
  * A payment whose WithdrawInitiated reservation the admin released: the state
  * the incident left, reached through the real release.
  */
-async function seedReleasedWithdrawal(body: HydraConfirmedTransaction) {
+async function seedReleasedWithdrawal(
+	body: HydraConfirmedTransaction,
+	proof: 'operator' | 'unspent-inputs' = 'operator',
+) {
 	const escrow = await prisma.transaction.create({
 		data: {
 			id: nextId('escrow'),
@@ -271,7 +274,7 @@ async function seedReleasedWithdrawal(body: HydraConfirmedTransaction) {
 			l2ReservationPreviousTransactionId: escrow.id,
 		},
 		prisma,
-		'operator',
+		proof,
 	);
 	expect(released).toBe(true);
 	return { escrow, reservation, payment };
@@ -376,6 +379,80 @@ describePostgres('re-applying a released L2 reservation whose body confirmed (Po
 		expect(settled.onChainState).toBe(OnChainState.Withdrawn);
 		expect(settled.currentTransactionId).toBe(reservation.id);
 		expect(settled.TransactionHistory.map((row) => row.id)).toContain(escrow.id);
+	});
+
+	// Automatic recovery released the action on unspent inputs and guessed
+	// wrong. Replay restores it by itself and applies it: no stall, no admin.
+	it('re-applies a confirmed unspent-inputs release without an admin', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { escrow, reservation, payment } = await seedReleasedWithdrawal(body, 'unspent-inputs');
+
+		await expect(applyConfirmedHydraTransaction(host, ids.head, body.txId, body)).resolves.toBe('retry');
+		await expect(
+			reapplyUnspentInputsReleaseOnConfirmation({ hydraHeadId: ids.head, txId: body.txId, node: node as never }),
+		).resolves.toBe(true);
+		await expect(applyConfirmedHydraTransaction(host, ids.head, body.txId, body)).resolves.toBe('applied');
+
+		const confirmed = await prisma.transaction.findUniqueOrThrow({ where: { id: reservation.id } });
+		expect(confirmed).toMatchObject({
+			status: TransactionStatus.Confirmed,
+			txHash: body.txId,
+			l2ReleasedByUnspentInputsAt: null,
+			newOnChainState: OnChainState.Withdrawn,
+		});
+		const settled = await prisma.paymentRequest.findUniqueOrThrow({
+			where: { id: payment.id },
+			include: { TransactionHistory: { select: { id: true } } },
+		});
+		expect(settled.onChainState).toBe(OnChainState.Withdrawn);
+		expect(settled.currentTransactionId).toBe(reservation.id);
+		expect(settled.TransactionHistory.map((row) => row.id)).toContain(escrow.id);
+	});
+
+	// The usual shape after a wrong release: retries found the escrow spent in
+	// the head and parked the request. That still restores.
+	it('re-applies a confirmed unspent-inputs release whose failed retries parked the request', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { payment } = await seedReleasedWithdrawal(body, 'unspent-inputs');
+		await moveOn(payment.id, [{ requestedAction: PaymentAction.WaitingForManualAction }]);
+
+		await expect(
+			reapplyUnspentInputsReleaseOnConfirmation({ hydraHeadId: ids.head, txId: body.txId, node: node as never }),
+		).resolves.toBe(true);
+		await expect(applyConfirmedHydraTransaction(host, ids.head, body.txId, body)).resolves.toBe('applied');
+		const settled = await prisma.paymentRequest.findUniqueOrThrow({ where: { id: payment.id } });
+		expect(settled.onChainState).toBe(OnChainState.Withdrawn);
+	});
+
+	it('leaves an admin release to the admin: replay still holds', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { reservation } = await seedReleasedWithdrawal(body, 'operator');
+
+		await expect(
+			reapplyUnspentInputsReleaseOnConfirmation({ hydraHeadId: ids.head, txId: body.txId, node: node as never }),
+		).resolves.toBe(false);
+		const untouched = await prisma.transaction.findUniqueOrThrow({ where: { id: reservation.id } });
+		expect(untouched.status).toBe(TransactionStatus.RolledBack);
+		await expect(applyConfirmedHydraTransaction(host, ids.head, body.txId, body)).resolves.toBe('retry');
+	});
+
+	it('holds an unspent-inputs release whose request was moved on to another action', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { reservation, payment } = await seedReleasedWithdrawal(body, 'unspent-inputs');
+		await moveOn(payment.id, [
+			{ requestedAction: PaymentAction.WaitingForManualAction },
+			{ requestedAction: PaymentAction.AuthorizeRefundRequested },
+		]);
+
+		await expect(
+			reapplyUnspentInputsReleaseOnConfirmation({ hydraHeadId: ids.head, txId: body.txId, node: node as never }),
+		).resolves.toBe(false);
+		const untouched = await prisma.transaction.findUniqueOrThrow({ where: { id: reservation.id } });
+		expect(untouched.status).toBe(TransactionStatus.RolledBack);
 	});
 
 	it('refuses while a retry of the released action is in flight', async () => {

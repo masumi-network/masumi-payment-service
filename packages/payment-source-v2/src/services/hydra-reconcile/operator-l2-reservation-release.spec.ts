@@ -29,9 +29,8 @@ jest.unstable_mockModule('./l2-reservation-release', () => ({
 	releaseRejectedL2Reservation: mockRelease,
 }));
 
-const { listHeldL2Reservations, releaseHeldL2Reservation, L2_OPERATOR_RELEASE_GRACE_MS } =
-	await import('./operator-l2-reservation-release');
-const { L2_RESERVATION_RELEASE_GRACE_MS } = await import('./l2-reservation-recovery');
+const { listHeldL2Reservations, releaseHeldL2Reservation } = await import('./operator-l2-reservation-release');
+const { L2_OPERATOR_RELEASE_GRACE_MS, L2_RESERVATION_RELEASE_GRACE_MS } = await import('./l2-reservation-recovery');
 const { resolveHydraL2EvidenceSlotConfig } = await import('@/utils/hydra/l2-slot-context');
 
 const NOW_MS = Date.UTC(2026, 9, 17);
@@ -203,7 +202,7 @@ describe('listHeldL2Reservations', () => {
 		it('holds a provable row while recovery still has nudge passes left', async () => {
 			const reservation = await listOne({ invalidHereafterSlot: slotExpiredAgo(between) });
 			expect(reservation.releasable).toBe(false);
-			expect(reservation.blockedReason).toMatch(/Automatic recovery may still prove/);
+			expect(reservation.blockedReason).toMatch(/Automatic recovery may still release/);
 		});
 
 		it('releases a provable row once those passes are over', async () => {
@@ -213,15 +212,22 @@ describe('listHeldL2Reservations', () => {
 			expect(reservation.releasable).toBe(true);
 		});
 
+		const action = {
+			l2ReservationPreviousTransactionId: 'escrow-tx',
+			PurchaseRequestCurrent: [],
+			PaymentRequestCurrent: [{ id: 'payment-1' }],
+		};
+
+		// Automatic recovery releases an action with recorded inputs on the same grace.
+		it('holds an action with recorded inputs while recovery may still release it', async () => {
+			const reservation = await listOne({ ...action, invalidHereafterSlot: slotExpiredAgo(between) });
+			expect(reservation.releasable).toBe(false);
+			expect(reservation.blockedReason).toMatch(/Automatic recovery may still release/);
+		});
+
 		it.each([
-			[
-				'an action with no value floor',
-				{
-					l2ReservationPreviousTransactionId: 'escrow-tx',
-					PurchaseRequestCurrent: [],
-					PaymentRequestCurrent: [{ id: 'payment-1' }],
-				},
-			],
+			['an action with no recorded inputs', { ...action, l2ReservationInputRefs: [] }],
+			['an action whose inputs our node no longer maps', { ...action, l2ReservationInputRefs: [inputB] }],
 			['a row with no recorded inputs', { l2ReservationInputRefs: [] }],
 		])('releases %s after the release grace alone', async (_case, row) => {
 			const reservation = await listOne({ ...row, invalidHereafterSlot: slotExpiredAgo(between) });

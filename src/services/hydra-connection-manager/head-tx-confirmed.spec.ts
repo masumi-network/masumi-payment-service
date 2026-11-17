@@ -43,8 +43,14 @@ describe('applyConfirmedHydraTransaction after a release', () => {
 				where: expect.objectContaining({
 					status: TransactionStatus.RolledBack,
 					AND: expect.arrayContaining([
-						// An admin release is held the same way as a proven one.
-						{ OR: [{ l2ReleasedByInputProofAt: { not: null } }, { l2ReleasedByOperatorAt: { not: null } }] },
+						// Admin and unspent-inputs releases are held the same way as a proven one.
+						{
+							OR: [
+								{ l2ReleasedByInputProofAt: { not: null } },
+								{ l2ReleasedByOperatorAt: { not: null } },
+								{ l2ReleasedByUnspentInputsAt: { not: null } },
+							],
+						},
 					]),
 				}),
 			}),

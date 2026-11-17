@@ -15,6 +15,7 @@ import { Network, OnChainState, TransactionStatus } from '@/generated/prisma/cli
 import { HydraProvider, type HydraConfirmedTransaction } from '@/lib/hydra';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
+import { L2_RELEASED_RESERVATION_FILTER } from '@/utils/hydra/l2-released-filter';
 import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
 import {
 	applyDatumStateToLocalRequests,
@@ -55,15 +56,12 @@ export async function applyConfirmedHydraTransaction(
 	});
 
 	if (!tx) {
-		// A body released on the input proof, or by an admin, must never confirm.
+		// A released body (input proof, admin, or unspent inputs) must never confirm.
 		// If one does, its purchase may already be locked again: stop this head's
 		// replay here, loudly, rather than let datum sync guess against the new state.
 		const released = await prisma.transaction.findFirst({
 			where: {
-				AND: [
-					{ OR: [{ txHash: txId }, { intendedTxHash: txId }] },
-					{ OR: [{ l2ReleasedByInputProofAt: { not: null } }, { l2ReleasedByOperatorAt: { not: null } }] },
-				],
+				AND: [{ OR: [{ txHash: txId }, { intendedTxHash: txId }] }, L2_RELEASED_RESERVATION_FILTER],
 				layer: 'L2',
 				hydraHeadId,
 				status: TransactionStatus.RolledBack,

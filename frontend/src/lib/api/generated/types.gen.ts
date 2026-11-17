@@ -15375,7 +15375,7 @@ export type GetHydraHeadL2ReservationsStalledReleaseResponses = {
                 /**
                  * Who released the reservation
                  */
-                releasedBy: 'input-proof' | 'operator';
+                releasedBy: 'input-proof' | 'operator' | 'unspent-inputs';
                 releasedAt: string;
                 /**
                  * An initial lock, or an action on an existing escrow
