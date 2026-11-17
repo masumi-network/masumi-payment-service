@@ -41,6 +41,15 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
 
    Do this for each new release. See [Apply migrations on each release](#apply-migrations-on-each-release).
 
+   On a new database, seed it once after this step, before you start the container. The release image cannot run
+   the seed, because it does not contain the workspace packages that `prisma/seed.ts` imports. Run the seed from a
+   checkout of the same tag or commit as the image, with the same `DATABASE_URL` and the seed variables listed
+   under Getting Started in the [README](../README.md):
+
+   ```
+   pnpm run prisma:seed
+   ```
+
 4. Run the container with runtime env injection:
 
    ```
@@ -121,8 +130,20 @@ continues to work after it is applied:
 - Add tables, columns, and indexes in one release.
 - Drop or rename a column only in a later release, after no deployed version reads or writes it.
 
-[docs/migrations/web3-cardano-v2.md](migrations/web3-cardano-v2.md) is an example. Its Migration B must ship in a
-later release than Migration A.
+This rule applies to new migrations. Many migrations that are already in `prisma/migrations` do not follow it. For
+example, `20260527010000_drop_transaction_history_scalars` drops two `Transaction` columns, and
+`20261027000300_drop_hydra_head_signed_snapshot` drops a table. If your database is several releases behind, the
+pending set can contain such a migration. Then the old version fails on queries that use the dropped schema, from
+the moment the job applies it until the new version starts. To prevent this, stop the old version before you run
+`scripts/migrate.sh`, and start the new version after it succeeds. The App Platform pre-deploy job above cannot do
+this, because it runs while the old version serves traffic. For such a release, plan a maintenance window, or accept
+errors from the old version during the deploy.
+
+[docs/migrations/web3-cardano-v2.md](migrations/web3-cardano-v2.md) is the most important case. Its Migration A
+and Migration B are already in the same release, so one run of `scripts/migrate.sh` applies both, and the old
+version loses the `RegistryRequest.paymentType` column while it still uses it. If your database does not have
+Migration A yet, stop the old version before you run `scripts/migrate.sh`. The runbook's way to apply Migration A
+alone needs `psql` and a checkout of this repository, and the release image has neither.
 
 ## When a migration deploy fails
 
@@ -180,9 +201,7 @@ Both commands take the migration's directory name, not its path — for example
 
 The commands above run from a checkout of this repository. Inside the release
 image, use `node_modules/.bin/prisma` in place of `pnpm exec prisma`, and
-`sh scripts/migrate.sh` in place of `pnpm run prisma:migrate`. pnpm downloads its
-pinned version on first use, so it fails in a container without internet access.
-For example:
+`sh scripts/migrate.sh` in place of `pnpm run prisma:migrate`. For example:
 
 ```bash
 docker run --rm --env-file .env masumi-payment-service node_modules/.bin/prisma migrate resolve --config prisma/prisma.config.ts --rolled-back <migration_name>
