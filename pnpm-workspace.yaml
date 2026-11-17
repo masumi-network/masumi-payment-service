@@ -56,7 +56,6 @@ overrides:
   gcp-metadata>gaxios: 7.3.1
   # minimatch GHSA-g3hv-75wg-m249 is fixed only in 11.0.1. typescript-estree and
   # test-exclude still ask for 9 or 10 and call only minimatch(path, pattern).
-  '@typescript-eslint/typescript-estree>minimatch': 11.0.7
   test-exclude>minimatch: 11.0.7
 
 patchedDependencies:
