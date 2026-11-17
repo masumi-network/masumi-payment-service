@@ -5,7 +5,11 @@ const config = {
   output: 'src/lib/api/generated',
   plugins: [
     ...defaultPlugins,
-    '@hey-api/client-axios',
+    {
+      // The app sets baseURL at runtime (AppContext). Do not bake in the spec server URL.
+      baseUrl: false,
+      name: '@hey-api/client-axios',
+    },
     '@hey-api/schemas',
     {
       dates: true,
