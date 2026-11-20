@@ -61,10 +61,60 @@ function isSameUtxo(left: UTxO, right: UTxO): boolean {
  * The collateral is only handed back to coin selection when excluding it
  * would leave nothing to balance with — a tx that cannot be funded is worse
  * than one that consumes the reserve.
+ *
+ * Pure-ADA UTxOs are offered first (see `preferAdaOnlyUtxos`): a fee input
+ * must not drag the agent NFT or other tokens into the change output. The
+ * callers' collateral fallback re-offers the whole wallet when ADA-only
+ * cannot balance the tx.
  */
 export function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
 	const spendableUtxos = walletUtxos.filter((utxo) => !isSameUtxo(utxo, collateralUtxo));
-	return spendableUtxos.length > 0 ? spendableUtxos : walletUtxos;
+	return spendableUtxos.length > 0 ? preferAdaOnlyUtxos(spendableUtxos) : walletUtxos;
+}
+
+/**
+ * Coin-selection candidates for FEE inputs: the pure-ADA UTxOs when there are
+ * any, otherwise the list unchanged.
+ *
+ * Mesh's `selectUtxosFrom` may pick any candidate, and every token on a picked
+ * UTxO lands in the change output. That silently moves the agent registry NFT
+ * or a stablecoin balance as a side effect of paying a fee, and a guarded
+ * co-signer refuses the resulting change (`asset_not_listed`). Callers that
+ * offer this subset must fall back to the full wallet when it cannot balance
+ * the tx — see `buildPreferringAdaOnlyInputs`.
+ */
+export function preferAdaOnlyUtxos(utxos: UTxO[]): UTxO[] {
+	const adaOnlyUtxos = utxos.filter(isPureAdaUtxo);
+	// Same reference back when there is nothing to prefer, so callers can tell.
+	return adaOnlyUtxos.length === 0 || adaOnlyUtxos.length === utxos.length ? utxos : adaOnlyUtxos;
+}
+
+/**
+ * Runs `build` with the wallet's pure-ADA UTxOs only, and re-runs it with the
+ * whole wallet if that attempt fails (today's behaviour). Any error triggers
+ * the retry on purpose: "ADA-only cannot cover it" surfaces as several Mesh
+ * messages or as an empty pool, and a genuine failure just fails again, with
+ * its own error, on the second attempt.
+ *
+ * For builders that have no collateral fallback of their own; the interaction
+ * builders get the same preference through `getSpendableWalletUtxos`.
+ */
+export async function buildPreferringAdaOnlyInputs<T>(
+	walletUtxos: UTxO[],
+	build: (candidateUtxos: UTxO[]) => Promise<T>,
+): Promise<T> {
+	const candidateUtxos = preferAdaOnlyUtxos(walletUtxos);
+	if (candidateUtxos === walletUtxos) {
+		return await build(walletUtxos);
+	}
+	try {
+		return await build(candidateUtxos);
+	} catch (error) {
+		logger.warn('Tx could not be built from ADA-only wallet UTxOs; retrying with token-carrying UTxOs offered too', {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return await build(walletUtxos);
+	}
 }
 
 /** Stable `txHash#index` key for a UTxO reference. */
@@ -160,7 +210,12 @@ export function selectCollateralUtxo(
 }
 
 /**
- * Sorts UTXOs by lovelace amount in descending order (O(n log n)).
+ * Sorts UTXOs by lovelace amount in descending order (O(n log n)), pure-ADA
+ * UTxOs ahead of token-carrying ones.
+ *
+ * Registry paths take `[0]` as the forced tx input; leading with a pure-ADA
+ * UTxO keeps the agent NFT / other tokens from being moved as a side effect.
+ * A token-carrying UTxO still leads when the wallet has no pure-ADA one.
  *
  * Uses BigInt comparisons throughout — see `getLovelaceFromUtxo`. The
  * comparator cannot return `bigint`, so it converts the sign of the
@@ -169,11 +224,13 @@ export function selectCollateralUtxo(
 export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
 	const utxosWithLovelace = utxos.map((utxo) => ({
 		utxo,
+		isPureAda: isPureAdaUtxo(utxo),
 		lovelace: getLovelaceFromUtxo(utxo),
 	}));
 
 	return utxosWithLovelace
 		.sort((a, b) => {
+			if (a.isPureAda !== b.isPureAda) return a.isPureAda ? -1 : 1;
 			if (b.lovelace > a.lovelace) return 1;
 			if (b.lovelace < a.lovelace) return -1;
 			// Deterministic tie-break. Registry paths take `[0]` as the tx's

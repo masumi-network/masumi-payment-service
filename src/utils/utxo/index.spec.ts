@@ -1,7 +1,10 @@
+import { jest } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
 import {
+	buildPreferringAdaOnlyInputs,
 	getSpendableWalletUtxos,
 	pickCollateralUtxo,
+	preferAdaOnlyUtxos,
 	rankCollateralCandidates,
 	selectCollateralUtxo,
 	sortAndLimitUtxos,
@@ -139,6 +142,24 @@ describe('sortUtxosByLovelaceDesc', () => {
 	});
 });
 
+describe('sortUtxosByLovelaceDesc with token-carrying UTxOs', () => {
+	it('leads with a pure-ADA UTxO even when a token UTxO holds more lovelace', () => {
+		const tokenUtxo = makeUtxo({ txHash: 'agent-nft', amount: [lovelace(90_000_000), token(1)] });
+		const adaUtxo = makeUtxo({ txHash: 'ada', amount: [lovelace(10_000_000)] });
+
+		expect(sortUtxosByLovelaceDesc([tokenUtxo, adaUtxo]).map((utxo) => utxo.input.txHash)).toEqual([
+			'ada',
+			'agent-nft',
+		]);
+	});
+
+	it('leads with the token UTxO when the wallet has no pure-ADA UTxO', () => {
+		const tokenUtxo = makeUtxo({ txHash: 'agent-nft', amount: [lovelace(90_000_000), token(1)] });
+
+		expect(sortUtxosByLovelaceDesc([tokenUtxo])[0]).toBe(tokenUtxo);
+	});
+});
+
 describe('selectCollateralUtxo', () => {
 	it('keeps the reported large ADA UTxO spendable by selecting the smaller qualifying collateral', () => {
 		const small = makeUtxo({ txHash: 'small', amount: [lovelace(3_336_392)] });
@@ -203,6 +224,68 @@ describe('getSpendableWalletUtxos', () => {
 		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_000_000)] });
 
 		expect(getSpendableWalletUtxos([collateral], collateral)).toEqual([collateral]);
+	});
+});
+
+describe('ADA-only fee inputs', () => {
+	const tokenUtxo = makeUtxo({ txHash: 'agent-nft', amount: [lovelace(50_000_000), token(1)] });
+	const adaUtxo = makeUtxo({ txHash: 'ada', amount: [lovelace(6_000_000)] });
+
+	it('getSpendableWalletUtxos keeps a token UTxO out of the candidates when ADA-only ones exist', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_000_000)] });
+
+		expect(getSpendableWalletUtxos([collateral, tokenUtxo, adaUtxo], collateral)).toEqual([adaUtxo]);
+	});
+
+	it('getSpendableWalletUtxos still offers token UTxOs when no ADA-only UTxO is left', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_000_000)] });
+
+		expect(getSpendableWalletUtxos([collateral, tokenUtxo], collateral)).toEqual([tokenUtxo]);
+	});
+
+	it('preferAdaOnlyUtxos returns the same list when there is nothing to prefer', () => {
+		const onlyTokens = [tokenUtxo];
+		const onlyAda = [adaUtxo];
+
+		expect(preferAdaOnlyUtxos(onlyTokens)).toBe(onlyTokens);
+		expect(preferAdaOnlyUtxos(onlyAda)).toBe(onlyAda);
+		expect(preferAdaOnlyUtxos([tokenUtxo, adaUtxo])).toEqual([adaUtxo]);
+	});
+
+	it('buildPreferringAdaOnlyInputs builds from the ADA-only UTxOs and does not retry on success', async () => {
+		const build = jest.fn(async (utxos: UTxO[]) => `tx-${utxos.length}`);
+
+		await expect(buildPreferringAdaOnlyInputs([tokenUtxo, adaUtxo], build)).resolves.toBe('tx-1');
+		expect(build).toHaveBeenCalledTimes(1);
+		expect(build).toHaveBeenCalledWith([adaUtxo]);
+	});
+
+	it('buildPreferringAdaOnlyInputs falls back to the whole wallet when ADA-only cannot build', async () => {
+		const build = jest.fn(async (utxos: UTxO[]) => {
+			if (utxos.length === 1) throw new Error('UTxO Balance Insufficient');
+			return 'tx-all';
+		});
+
+		await expect(buildPreferringAdaOnlyInputs([tokenUtxo, adaUtxo], build)).resolves.toBe('tx-all');
+		expect(build).toHaveBeenNthCalledWith(1, [adaUtxo]);
+		expect(build).toHaveBeenNthCalledWith(2, [tokenUtxo, adaUtxo]);
+	});
+
+	it('buildPreferringAdaOnlyInputs builds once when the wallet has no token UTxO', async () => {
+		const build = jest.fn(async () => {
+			throw new Error('boom');
+		});
+
+		await expect(buildPreferringAdaOnlyInputs([adaUtxo], build)).rejects.toThrow('boom');
+		expect(build).toHaveBeenCalledTimes(1);
+	});
+
+	it('buildPreferringAdaOnlyInputs surfaces the fallback attempt error when both attempts fail', async () => {
+		const build = jest.fn(async (utxos: UTxO[]) => {
+			throw new Error(utxos.length === 1 ? 'ada-only failed' : 'full wallet failed');
+		});
+
+		await expect(buildPreferringAdaOnlyInputs([tokenUtxo, adaUtxo], build)).rejects.toThrow('full wallet failed');
 	});
 });
 

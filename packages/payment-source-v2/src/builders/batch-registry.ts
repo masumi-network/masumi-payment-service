@@ -14,6 +14,7 @@ import {
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { getCachedChainProtocolParameters, withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { buildPreferringAdaOnlyInputs } from '@/utils/utxo';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
 import { nativeAssetCount } from './batch-helpers';
 import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
@@ -168,7 +169,24 @@ function findMintExUnits(evaluated: EvalAction[]): ExUnits | undefined {
 export async function generateRegistryBatchMintTransaction(
 	...args: Parameters<typeof buildRegistryBatchMintTransaction>
 ): Promise<string> {
-	return await withMeshCostModelLock('registry', () => buildRegistryBatchMintTransaction(...args));
+	const [provider, network, script, address, policyId, items, collateralUtxo, walletUtxos, ...rest] = args;
+	// Fee inputs come from pure-ADA UTxOs first so a token UTxO (e.g. another
+	// agent NFT) is not moved as a side effect; the whole wallet is the fallback.
+	return await withMeshCostModelLock('registry', () =>
+		buildPreferringAdaOnlyInputs(walletUtxos, (candidateUtxos) =>
+			buildRegistryBatchMintTransaction(
+				provider,
+				network,
+				script,
+				address,
+				policyId,
+				items,
+				collateralUtxo,
+				candidateUtxos,
+				...rest,
+			),
+		),
+	);
 }
 
 async function buildRegistryBatchMintTransaction(
@@ -334,7 +352,23 @@ async function buildRegistryBatchMintTransaction(
 export async function generateRegistryBatchDeregisterTransactionAutomaticFees(
 	...args: Parameters<typeof buildRegistryBatchDeregisterTransactionAutomaticFees>
 ): Promise<string> {
-	return await withMeshCostModelLock('registry', () => buildRegistryBatchDeregisterTransactionAutomaticFees(...args));
+	const [provider, network, script, address, policyId, items, collateralUtxo, walletUtxos, ...rest] = args;
+	// ADA-only fee inputs first, whole wallet as the fallback (see the mint builder).
+	return await withMeshCostModelLock('registry', () =>
+		buildPreferringAdaOnlyInputs(walletUtxos, (candidateUtxos) =>
+			buildRegistryBatchDeregisterTransactionAutomaticFees(
+				provider,
+				network,
+				script,
+				address,
+				policyId,
+				items,
+				collateralUtxo,
+				candidateUtxos,
+				...rest,
+			),
+		),
+	);
 }
 
 async function buildRegistryBatchDeregisterTransactionAutomaticFees(
@@ -514,7 +548,23 @@ async function buildBatchDeregisterTx(
 export async function generateRegistryBatchUpdateTransactionAutomaticFees(
 	...args: Parameters<typeof buildRegistryBatchUpdateTransactionAutomaticFees>
 ): Promise<string> {
-	return await withMeshCostModelLock('registry', () => buildRegistryBatchUpdateTransactionAutomaticFees(...args));
+	const [provider, network, script, address, policyId, items, collateralUtxo, walletUtxos, ...rest] = args;
+	// ADA-only fee inputs first, whole wallet as the fallback (see the mint builder).
+	return await withMeshCostModelLock('registry', () =>
+		buildPreferringAdaOnlyInputs(walletUtxos, (candidateUtxos) =>
+			buildRegistryBatchUpdateTransactionAutomaticFees(
+				provider,
+				network,
+				script,
+				address,
+				policyId,
+				items,
+				collateralUtxo,
+				candidateUtxos,
+				...rest,
+			),
+		),
+	);
 }
 
 async function buildRegistryBatchUpdateTransactionAutomaticFees(

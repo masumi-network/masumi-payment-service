@@ -221,6 +221,29 @@ describe('getSpendableWalletUtxos', () => {
 		expect(getSpendableWalletUtxos([collateral], collateral)).toEqual([collateral]);
 	});
 
+	it('offers pure-ADA UTxOs only, keeping a token UTxO out of fee-input selection', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', lovelace: '8000000' });
+		const tokenUtxo = makeUtxo({
+			txHash: 'agent-nft',
+			lovelace: '50000000',
+			extraAssets: [{ unit: 'aaaa.deadbeef', quantity: '1' }],
+		});
+		const funding = makeUtxo({ txHash: 'funding', lovelace: '6000000' });
+
+		expect(getSpendableWalletUtxos([collateral, tokenUtxo, funding], collateral)).toEqual([funding]);
+	});
+
+	it('still offers token UTxOs when no pure-ADA UTxO remains', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', lovelace: '8000000' });
+		const tokenUtxo = makeUtxo({
+			txHash: 'agent-nft',
+			lovelace: '50000000',
+			extraAssets: [{ unit: 'aaaa.deadbeef', quantity: '1' }],
+		});
+
+		expect(getSpendableWalletUtxos([collateral, tokenUtxo], collateral)).toEqual([tokenUtxo]);
+	});
+
 	// Complements getWalletUtxosForSelection above, which excludes script
 	// spending inputs but deliberately leaves the collateral in.
 	it('composes with getWalletUtxosForSelection to exclude both script inputs and collateral', () => {
