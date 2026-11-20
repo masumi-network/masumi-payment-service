@@ -40,6 +40,8 @@ type HydraHeadChainOutput = {
 	address: string;
 	amount: Array<{ unit: string; quantity: string }>;
 	inline_datum: string | null;
+	/** The transaction that spent this output, when the observer reports it (Blockfrost does). */
+	consumed_by_tx?: string | null;
 };
 
 export type HydraHeadChainObserver = {
@@ -102,7 +104,7 @@ export async function observeHydraHeadIsOpenOnChain(options: {
 	headId: string;
 	headScriptHash?: string;
 	observerTimeoutMs?: number;
-}): Promise<{ state: HydraHeadChainState; latestTxHash: string }> {
+}): Promise<{ state: HydraHeadChainState; latestTxHash: string; headOutputSpentBy: string | null }> {
 	const headId = normalizeHex(options.headId, 56, 'Hydra head id');
 	const acceptedHeadScriptHashes = knownHydraHeadScriptHashes(options.headScriptHash);
 	const stateToken = `${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
@@ -136,16 +138,21 @@ export async function observeHydraHeadIsOpenOnChain(options: {
 			output.amount.some(({ unit, quantity }) => unit.toLowerCase() === stateToken && quantity === '1'),
 	);
 	// No head output: the state token was burnt (fanout) or left the script.
-	if (!headOutput) return { state: 'gone', latestTxHash };
+	if (!headOutput) return { state: 'gone', latestTxHash, headOutputSpentBy: null };
 	let datum: PlutusData | null = null;
 	try {
 		datum = headOutput.inline_datum ? PlutusData.from_hex(headOutput.inline_datum) : null;
 	} catch {
 		datum = null;
 	}
+	const spentBy = headOutput.consumed_by_tx?.toLowerCase() ?? null;
 	// Anything at the head script that is not a readable Open datum counts as
 	// closed: the operator then checks that the node runs, the safe side.
-	return { state: datum != null && isOpenStateDatum(datum) ? 'open' : 'closed', latestTxHash };
+	return {
+		state: datum != null && isOpenStateDatum(datum) ? 'open' : 'closed',
+		latestTxHash,
+		headOutputSpentBy: spentBy !== null && /^[0-9a-f]{64}$/.test(spentBy) ? spentBy : null,
+	};
 }
 
 /** `Open OpenDatum` is constructor 0 with one field, itself constructor 0 (see `validateOpenDatum`). */

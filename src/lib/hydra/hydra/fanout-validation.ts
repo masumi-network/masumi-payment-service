@@ -471,6 +471,12 @@ async function verifyFanoutStep(params: {
  * a `FinalPartialFanoutTx` with only the wallet change (`HeadLogic.hs:1620` at
  * 2.4.1). No entry of the finalized map is keyed by that transaction, so its
  * hash has to come from L1.
+ *
+ * Blockfrost's asset transaction list never names that burn, because no output
+ * of it holds the token (preprod, 2026-11-03: burn 04e5573e… missing, the Close
+ * newest). The burn is then the transaction that spent the head output of that
+ * newest entry. Whatever is found here is only a candidate: the caller verifies
+ * it consumed the bound head input and burned the exact token set.
  */
 async function findHeadBurnTxHash(options: {
 	headStateObserver: HydraHeadChainObserver | undefined;
@@ -487,8 +493,9 @@ async function findHeadBurnTxHash(options: {
 		headScriptHash: options.headScriptHash,
 		observerTimeoutMs: options.observerTimeoutMs,
 	});
-	if (chain.state !== 'gone') fail('Hydra head is still held on L1, so its fanout has no terminal step yet');
-	return chain.latestTxHash;
+	if (chain.state === 'gone') return chain.latestTxHash;
+	if (chain.headOutputSpentBy !== null) return chain.headOutputSpentBy;
+	fail('Hydra head is still held on L1, so its fanout has no terminal step yet');
 }
 
 export async function verifyHydraFanoutOnChain(options: {

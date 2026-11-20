@@ -308,6 +308,41 @@ describe('verifyHydraFanoutOnChain', () => {
 		).resolves.toEqual([expect.objectContaining({ txHash: terminal.txHash, confirmations: 8 })]);
 	});
 
+	// What Blockfrost actually answers (preprod, 2026-11-03, burn 04e5573e…): the
+	// asset's transaction list never names the burn, because no output of it holds
+	// the token. Its newest entry is the Close, whose head output the burn spent.
+	it('finds the burn through the spend of the last head output when the asset list omits it', async () => {
+		const terminal = buildFanout({ outputCount: 0, change: {} });
+		const value = fixture({ fanout: terminal });
+		const closeTxHash = 'c1'.repeat(32);
+		const headStateObserver = {
+			assetsTransactions: jest.fn(async () => [{ tx_hash: closeTxHash }]),
+			txsUtxos: jest.fn(async (txHash: string) => ({
+				hash: txHash,
+				outputs: [
+					{
+						address: HEAD_ADDRESS,
+						amount: [{ unit: `${HEAD_ID}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`, quantity: '1' }],
+						inline_datum: null,
+						consumed_by_tx: terminal.txHash,
+					},
+				],
+			})),
+		};
+
+		await expect(
+			verifyHydraFanoutOnChain({
+				observer: value.observer,
+				headStateObserver,
+				headId: HEAD_ID,
+				participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				references: [],
+				requiredConfirmations: 5,
+			}),
+		).resolves.toEqual([expect.objectContaining({ txHash: terminal.txHash, confirmations: 8 })]);
+		expect(headStateObserver.txsUtxos).toHaveBeenCalledWith(closeTxHash);
+	});
+
 	it('accepts one fully bound, confirmed official fanout transaction', async () => {
 		const value = fixture();
 		await expect(verify(value)).resolves.toEqual([
