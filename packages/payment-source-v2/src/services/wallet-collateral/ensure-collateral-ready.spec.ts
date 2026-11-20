@@ -3,6 +3,7 @@ import {
 	buildUnlockWalletLockData,
 	classifyWalletState,
 	COLLATERAL_RESERVE_LOVELACE,
+	describeCollateralFunding,
 	PREP_TX_MIN_LOVELACE,
 } from './ensure-collateral-ready';
 import { WALLET_SPLITTER_LOVELACE } from '../../builders/batch-helpers';
@@ -212,6 +213,33 @@ describe('buildUnlockWalletLockData', () => {
 		// (latter is a no-op). Pin the literal so a typo doesn't silently
 		// degrade to "do nothing".
 		expect(payload.PendingTransaction.disconnect).toBe(true);
+	});
+});
+
+describe('describeCollateralFunding', () => {
+	it('names the holdings, the 7 ADA total and the 5 ADA collateral in ADA', () => {
+		const message = describeCollateralFunding('addr_test1qrtest', classifyWalletState([]));
+		expect(message).toBe(
+			'addr_test1qrtest holds 0 ADA in 0 UTxO(s) but needs at least 7 ADA in total: one UTxO of at least 5 ADA kept as collateral for script transactions, plus ADA for the transaction fee and the minimum change output',
+		);
+	});
+
+	it('renders fractional ADA without raw lovelace', () => {
+		const message = describeCollateralFunding(
+			'addr_test1qrtest',
+			classifyWalletState([
+				makeUtxo({ amount: [lovelace('4470000')] }),
+				makeUtxo({ outputIndex: 1, amount: [lovelace('1')] }),
+			]),
+		);
+		expect(message).toContain('holds 4.470001 ADA in 2 UTxO(s)');
+		expect(message).not.toMatch(/lovelace/i);
+	});
+
+	it('derives the amounts from the exported constants', () => {
+		const message = describeCollateralFunding('a', classifyWalletState([]));
+		expect(message).toContain(`${PREP_TX_MIN_LOVELACE / 1_000_000n} ADA in total`);
+		expect(message).toContain(`${COLLATERAL_RESERVE_LOVELACE / 1_000_000n} ADA kept as collateral`);
 	});
 });
 

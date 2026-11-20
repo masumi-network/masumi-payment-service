@@ -26,9 +26,15 @@ import {
 } from '@/services/registry/shared';
 import { pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
-import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import {
+	classifyWalletState,
+	describeCollateralFunding,
+	ensureCollateralReady,
+} from '../../wallet-collateral/ensure-collateral-ready';
+import {
+	clearRegistryFundingNote,
 	MAX_COLLATERAL_PREP_FAILURES,
+	noteRegistryRequestsWaitingForFunds,
 	recordRegistryPrepFailure,
 	resetRegistryPrepFailureCount,
 } from '../../wallet-collateral/prep-failure-guard';
@@ -158,6 +164,11 @@ function validateAndBuildItem(
 	};
 }
 
+// Shown as `error` on requests that stay queued until the wallet is funded.
+function buildFundingNote(address: string, utxos: UTxO[]): string {
+	return `Waiting for funds: ${describeCollateralFunding(address, classifyWalletState(utxos))}. Top up this address with ADA; registration retries automatically.`;
+}
+
 export async function registerAgentV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -224,18 +235,25 @@ export async function registerAgentV2() {
 					}
 					const { wallet, utxos, address } = walletSession;
 					if (utxos.length === 0) {
+						// Empty wallet: not a per-item failure, so keep the items queued
+						// (next tick after the wallet is funded re-batches them) but record
+						// WHY on each request so the API shows it instead of `error: null`.
+						const fundingNote = buildFundingNote(address, utxos);
 						logger.warn(
-							'V2 register batch hot wallet has no UTxOs; leaving items in pool for next tick [batch-fallback]',
+							`V2 register batch hot wallet has no UTxOs; leaving items queued [batch-fallback]: ${fundingNote}`,
 							{
 								batchSize: registryRequests.length,
 							},
 						);
-						// Empty wallet — transient operational state. Leave
-						// items queued; next tick after wallet has UTxOs
-						// re-batches them.
+						await noteRegistryRequestsWaitingForFunds(
+							registryRequests.map((request) => request.id),
+							fundingNote,
+						);
 						await unlockHotWallet(firstRequest.SmartContractWallet.id);
 						return;
 					}
+					// Wallet holds UTxOs again: drop any funding note from an earlier tick.
+					await clearRegistryFundingNote(registryRequests.map((request) => request.id));
 
 					const collateralCheck = await ensureCollateralReady({
 						walletDbId: firstRequest.SmartContractWallet.id,
@@ -296,8 +314,13 @@ export async function registerAgentV2() {
 					// next tick, when the wallet may have more UTxOs.
 					const collateralUtxo = pickBatchCollateral(utxos, []);
 					if (collateralUtxo == null) {
+						const fundingNote = buildFundingNote(address, utxos);
 						logger.warn(
-							'V2 register batch: no wallet UTxO has enough lovelace to serve as collateral (>=5 ADA); deferring to next tick',
+							`V2 register batch: no wallet UTxO can serve as collateral; deferring to next tick: ${fundingNote}`,
+						);
+						await noteRegistryRequestsWaitingForFunds(
+							registryRequests.map((request) => request.id),
+							fundingNote,
 						);
 						await unlockHotWallet(firstRequest.SmartContractWallet.id);
 						return;
