@@ -23,6 +23,7 @@ import { HydraHeadStatus, HydraInviteStatus, Network } from '@/generated/prisma/
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
+import { hydraSigningKeyRawHex } from '@/lib/hydra/hydra/keys';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { getCachedBlockfrostProvider } from '@/utils/mesh-cost-model-sync';
 import { nodeCardanoAddress } from './node-address';
@@ -289,12 +290,13 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 
 	// Signs only. Its own derived address is a base address and therefore not
 	// where these funds are, which is exactly why the inputs are named below
-	// rather than selected by the wallet.
+	// rather than selected by the wallet. The Host hands the key over as a
+	// cardano-cli text envelope; Mesh takes only the bare 32-byte key inside it.
 	const signer = new MeshWallet({
 		networkId: convertNetworkToId(network),
 		fetcher: provider,
 		submitter: provider,
-		key: { type: 'cli', payment: decrypt(nodeSigningKey) },
+		key: { type: 'cli', payment: hydraSigningKeyRawHex(decrypt(nodeSigningKey)) },
 	});
 
 	const builder = new MeshTxBuilder({ fetcher: provider, submitter: provider, verbose: false });

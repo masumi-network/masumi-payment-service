@@ -53,6 +53,10 @@ export function hydraVerificationKeyRawHex(input: string): string {
 	return normalizeHydraVerificationKeyCborHex(input).slice(HYDRA_KEY_CBOR_PREFIX.length);
 }
 
+export function hydraSigningKeyRawHex(input: string): string {
+	return normalizeHydraSigningKeyCborHex(input).slice(HYDRA_KEY_CBOR_PREFIX.length);
+}
+
 export function deriveHydraVerificationKeyCborHex(signingKey: string): string {
 	const normalizedSigningKey = normalizeHydraSigningKeyCborHex(signingKey);
 	const seed = Buffer.from(normalizedSigningKey.slice(HYDRA_KEY_CBOR_PREFIX.length), 'hex');
