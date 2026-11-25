@@ -47,29 +47,66 @@ export async function lockAndQueryPurchases({
 	/// is exactly as eligible as it was.
 	excludeRequestIds?: string[] | undefined;
 }) {
+	const paymentSourceWhere: Prisma.PaymentSourceWhereInput = {
+		syncInProgress: false,
+		deletedAt: null,
+		disablePaymentAt: null,
+		paymentSourceType,
+	};
+	const hotWalletWhere: Prisma.HotWalletWhereInput = {
+		PendingTransaction: { is: null },
+		lockedAt: null,
+		deletedAt: null,
+		type: HotWalletType.Purchasing,
+	};
+	// The one request filter, shared by the gate and the per-wallet lock so the
+	// two cannot drift apart. `cooldownCutoff` is per payment source in the lock.
+	const buildRequestWhere = (
+		smartContractWallet: Prisma.HotWalletWhereInput,
+		cooldownCutoff: number,
+	): Prisma.PurchaseRequestWhereInput => ({
+		...(excludeRequestIds !== undefined && excludeRequestIds.length > 0 ? { id: { notIn: excludeRequestIds } } : {}),
+		buyerCoolDownTime: { lt: cooldownCutoff },
+		submitResultTime: submitResultTime,
+		unlockTime: unlockTime,
+		NextAction: {
+			requestedAction: purchasingAction,
+			errorType: null,
+		},
+		resultHash: resultHash,
+		onChainState: onChainState,
+		SmartContractWallet: smartContractWallet,
+		// Optional OR group — only included when caller supplies
+		// `orFilters`. Each entry is fully ANDed against the
+		// outer predicates, so callers can supply per-variant
+		// onChainState / time-window constraints that differ
+		// across an `OR` axis.
+		...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
+		...(layer ? { layer } : {}),
+	});
+
 	try {
+		// Step 0: one cheap existence check; see lockAndQueryPayments. The
+		// filter is a superset of the per-wallet one, so a miss proves the lock
+		// below would find nothing.
+		const candidate = await prisma.purchaseRequest.findFirst({
+			where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }, Date.now()),
+			select: { id: true },
+		});
+		if (candidate == null) return [];
+
 		// Step 1: read the candidate payment sources + their unlocked hot
 		// wallets outside any transaction. See lockAndQueryPayments for the
 		// rationale: the per-wallet $transaction below holds the lock that
 		// matters; this query is just a read-only fan-out source.
 		const paymentSources = await prisma.paymentSource.findMany({
-			where: {
-				syncInProgress: false,
-				deletedAt: null,
-				disablePaymentAt: null,
-				paymentSourceType,
-			},
+			where: paymentSourceWhere,
 			include: {
 				AdminWallets: true,
 				FeeReceiverNetworkWallet: true,
 				PaymentSourceConfig: true,
 				HotWallets: {
-					where: {
-						PendingTransaction: { is: null },
-						lockedAt: null,
-						deletedAt: null,
-						type: HotWalletType.Purchasing,
-					},
+					where: hotWalletWhere,
 					select: {
 						id: true,
 					},
@@ -100,33 +137,15 @@ export async function lockAndQueryPurchases({
 								prisma.$transaction(
 									async (prisma) => {
 										const potentialPurchasingRequests = await prisma.purchaseRequest.findMany({
-											where: {
-												...(excludeRequestIds !== undefined && excludeRequestIds.length > 0
-													? { id: { notIn: excludeRequestIds } }
-													: {}),
-												buyerCoolDownTime: { lt: Date.now() - minCooldownTime },
-												submitResultTime: submitResultTime,
-												unlockTime: unlockTime,
-												NextAction: {
-													requestedAction: purchasingAction,
-													errorType: null,
-												},
-												resultHash: resultHash,
-												onChainState: onChainState,
-												SmartContractWallet: {
+											where: buildRequestWhere(
+												{
 													id: hotWallet.id,
 													PendingTransaction: { is: null },
 													lockedAt: null,
 													deletedAt: null,
 												},
-												// Optional OR group — only included when caller supplies
-												// `orFilters`. Each entry is fully ANDed against the
-												// outer predicates, so callers can supply per-variant
-												// onChainState / time-window constraints that differ
-												// across an `OR` axis.
-												...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
-												...(layer ? { layer } : {}),
-											},
+												Date.now() - minCooldownTime,
+											),
 											orderBy: {
 												createdAt: 'asc',
 											},

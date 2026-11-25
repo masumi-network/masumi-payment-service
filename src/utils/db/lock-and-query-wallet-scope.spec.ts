@@ -10,6 +10,16 @@ const mockPurchaseRequestFindMany = jest.fn() as AnyMock;
 const mockRegistryRequestFindMany = jest.fn() as AnyMock;
 const mockInboxAgentRegistrationRequestFindMany = jest.fn() as AnyMock;
 const mockHotWalletUpdate = jest.fn() as AnyMock;
+const mockPaymentRequestFindFirst = jest.fn() as AnyMock;
+const mockPurchaseRequestFindFirst = jest.fn() as AnyMock;
+const mockRegistryRequestFindFirst = jest.fn() as AnyMock;
+const mockInboxAgentRegistrationRequestFindFirst = jest.fn() as AnyMock;
+const gateMocks = [
+	mockPaymentRequestFindFirst,
+	mockPurchaseRequestFindFirst,
+	mockRegistryRequestFindFirst,
+	mockInboxAgentRegistrationRequestFindFirst,
+];
 
 const txClient = {
 	paymentSource: {
@@ -44,6 +54,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		paymentSource: {
 			findMany: mockPaymentSourceFindMany,
 		},
+		paymentRequest: { findFirst: mockPaymentRequestFindFirst },
+		purchaseRequest: { findFirst: mockPurchaseRequestFindFirst },
+		registryRequest: { findFirst: mockRegistryRequestFindFirst },
+		inboxAgentRegistrationRequest: { findFirst: mockInboxAgentRegistrationRequestFindFirst },
 		$transaction: mockTransaction,
 	},
 }));
@@ -112,6 +126,31 @@ describe('lock-and-query helpers wallet scoping', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockWalletLock();
+		gateMocks.forEach((gate) => gate.mockResolvedValue({ id: 'candidate' }));
+	});
+
+	it('skips the payment-source read and every lock transaction when nothing is eligible', async () => {
+		gateMocks.forEach((gate) => gate.mockResolvedValue(null));
+		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['wallet-a'])]);
+
+		const results = await Promise.all([
+			lockAndQueryPayments({ paymentStatus: PaymentAction.SubmitResultRequested, maxBatchSize: 10 }),
+			lockAndQueryPurchases({ purchasingAction: PurchasingAction.FundsLockingRequested, maxBatchSize: 10 }),
+			lockAndQueryRegistryRequests({
+				state: RegistrationState.RegistrationRequested,
+				maxBatchSize: 10,
+				paymentSourceType: PaymentSourceType.Web3CardanoV1,
+			}),
+			lockAndQueryInboxAgentRegistrationRequests({
+				state: RegistrationState.RegistrationRequested,
+				maxBatchSize: 10,
+			}),
+		]);
+
+		expect(results).toEqual([[], [], [], []]);
+		gateMocks.forEach((gate) => expect(gate).toHaveBeenCalledTimes(1));
+		expect(mockPaymentSourceFindMany).not.toHaveBeenCalled();
+		expect(mockTransaction).not.toHaveBeenCalled();
 	});
 
 	it('returns one payment batch per locked selling wallet', async () => {
