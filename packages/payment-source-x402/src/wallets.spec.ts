@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockNetworkFindUnique = jest.fn() as jest.Mock<any>;
-const mockSecretFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
-const mockWalletCreate = jest.fn() as jest.Mock<any>;
-const mockExecuteRaw = jest.fn() as jest.Mock<any>;
+const mockNetworkFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSecretFindUniqueOrThrow = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWalletCreate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockExecuteRaw = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 class MockPrismaClientKnownRequestError extends Error {
 	code: string;

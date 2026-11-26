@@ -10,6 +10,16 @@ const mockPurchaseRequestFindMany = jest.fn() as AnyMock;
 const mockRegistryRequestFindMany = jest.fn() as AnyMock;
 const mockInboxAgentRegistrationRequestFindMany = jest.fn() as AnyMock;
 const mockHotWalletUpdate = jest.fn() as AnyMock;
+const mockPaymentRequestFindFirst = jest.fn() as AnyMock;
+const mockPurchaseRequestFindFirst = jest.fn() as AnyMock;
+const mockRegistryRequestFindFirst = jest.fn() as AnyMock;
+const mockInboxAgentRegistrationRequestFindFirst = jest.fn() as AnyMock;
+const gateMocks = [
+	mockPaymentRequestFindFirst,
+	mockPurchaseRequestFindFirst,
+	mockRegistryRequestFindFirst,
+	mockInboxAgentRegistrationRequestFindFirst,
+];
 
 const txClient = {
 	paymentSource: {
@@ -44,6 +54,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		paymentSource: {
 			findMany: mockPaymentSourceFindMany,
 		},
+		paymentRequest: { findFirst: mockPaymentRequestFindFirst },
+		purchaseRequest: { findFirst: mockPurchaseRequestFindFirst },
+		registryRequest: { findFirst: mockRegistryRequestFindFirst },
+		inboxAgentRegistrationRequest: { findFirst: mockInboxAgentRegistrationRequestFindFirst },
 		$transaction: mockTransaction,
 	},
 }));
@@ -112,6 +126,71 @@ describe('lock-and-query helpers wallet scoping', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockWalletLock();
+		gateMocks.forEach((gate) => gate.mockResolvedValue({ id: 'candidate' }));
+	});
+
+	it('skips the payment-source read and every lock transaction when nothing is eligible', async () => {
+		gateMocks.forEach((gate) => gate.mockResolvedValue(null));
+		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['wallet-a'])]);
+
+		const results = await Promise.all([
+			lockAndQueryPayments({ paymentStatus: PaymentAction.SubmitResultRequested, maxBatchSize: 10 }),
+			lockAndQueryPurchases({ purchasingAction: PurchasingAction.FundsLockingRequested, maxBatchSize: 10 }),
+			lockAndQueryRegistryRequests({
+				state: RegistrationState.RegistrationRequested,
+				maxBatchSize: 10,
+				paymentSourceType: PaymentSourceType.Web3CardanoV1,
+			}),
+			lockAndQueryInboxAgentRegistrationRequests({
+				state: RegistrationState.RegistrationRequested,
+				maxBatchSize: 10,
+			}),
+		]);
+
+		expect(results).toEqual([[], [], [], []]);
+		gateMocks.forEach((gate) => expect(gate).toHaveBeenCalledTimes(1));
+		expect(mockPaymentSourceFindMany).not.toHaveBeenCalled();
+		expect(mockTransaction).not.toHaveBeenCalled();
+	});
+
+	it('leaves cooldown out of the existence check, so it never rejects a row the lock would take', async () => {
+		// The lock compares against now - cooldownTime per source. A gate using
+		// "now" rejected rows at an equal millisecond and with a negative cooldown.
+		gateMocks.forEach((gate) => gate.mockResolvedValue(null));
+
+		await lockAndQueryPayments({ paymentStatus: PaymentAction.SubmitResultRequested, maxBatchSize: 10 });
+		await lockAndQueryPurchases({ purchasingAction: PurchasingAction.FundsLockingRequested, maxBatchSize: 10 });
+
+		expect(mockPaymentRequestFindFirst.mock.calls[0][0].where.sellerCoolDownTime).toBeUndefined();
+		expect(mockPurchaseRequestFindFirst.mock.calls[0][0].where.buyerCoolDownTime).toBeUndefined();
+	});
+
+	it("still enforces each source's cooldown in the per-wallet lock query", async () => {
+		const clock = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+		try {
+			mockPaymentSourceFindMany.mockResolvedValue([
+				{ ...buildPaymentSource(['wallet-a']), id: 'source-a', cooldownTime: 60_000 },
+				{ ...buildPaymentSource(['wallet-b']), id: 'source-b', cooldownTime: 10_000 },
+			]);
+			mockPaymentRequestFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+			mockPurchaseRequestFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+			await lockAndQueryPayments({ paymentStatus: PaymentAction.SubmitResultRequested, maxBatchSize: 10 });
+			await lockAndQueryPurchases({ purchasingAction: PurchasingAction.FundsLockingRequested, maxBatchSize: 10 });
+
+			const cutoffByWallet = (calls: unknown[][], field: string) =>
+				Object.fromEntries(
+					calls.map(([args]) => {
+						const where = (args as { where: Record<string, unknown> & { SmartContractWallet: { id: string } } }).where;
+						return [where.SmartContractWallet.id, where[field]];
+					}),
+				);
+			const expected = { 'wallet-a': { lt: 940_000 }, 'wallet-b': { lt: 990_000 } };
+			expect(cutoffByWallet(mockPaymentRequestFindMany.mock.calls, 'sellerCoolDownTime')).toEqual(expected);
+			expect(cutoffByWallet(mockPurchaseRequestFindMany.mock.calls, 'buyerCoolDownTime')).toEqual(expected);
+		} finally {
+			clock.mockRestore();
+		}
 	});
 
 	it('returns one payment batch per locked selling wallet', async () => {

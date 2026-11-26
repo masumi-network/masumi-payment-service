@@ -34,7 +34,7 @@ function toJsonObject(value: unknown): Prisma.JsonObject {
 
 function toRequirementExtra(value: unknown): X402RequirementExtra {
 	if (value != null && typeof value === 'object' && !Array.isArray(value)) {
-		return value as X402RequirementExtra;
+		return value;
 	}
 	return {};
 }

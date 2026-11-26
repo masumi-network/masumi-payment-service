@@ -92,7 +92,7 @@ export class HydraConnectionManager {
 		getProvider: (hydraHeadId) => this.getProvider(hydraHeadId),
 		getNode: (hydraHeadId) => this.getNode(hydraHeadId),
 		flushHeadStatus: (hydraHeadId) => this.flushHeadStatus(hydraHeadId),
-		isStatusQuarantined: (hydraHeadId) => this.getSession(hydraHeadId)?.isQuarantined ?? false,
+		isStatusQuarantined: (hydraHeadId) => this.isStatusQuarantined(hydraHeadId),
 	};
 
 	async initialize(): Promise<void> {
@@ -444,6 +444,10 @@ export class HydraConnectionManager {
 
 	getNode(hydraHeadId: string): HydraNode | null {
 		return this.getHead(hydraHeadId)?.mainNode ?? null;
+	}
+
+	isStatusQuarantined(hydraHeadId: string): boolean {
+		return this.getSession(hydraHeadId)?.isQuarantined ?? false;
 	}
 
 	getProvider(hydraHeadId: string): HydraProvider | null {

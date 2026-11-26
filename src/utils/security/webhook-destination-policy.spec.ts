@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockLookup = jest.fn() as jest.Mock<any>;
+const mockLookup = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 jest.unstable_mockModule('node:dns/promises', () => ({
 	lookup: mockLookup,

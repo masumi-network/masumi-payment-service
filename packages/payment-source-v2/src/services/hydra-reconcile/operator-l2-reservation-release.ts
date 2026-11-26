@@ -2,13 +2,14 @@
  * The admin path for an expired L2 reservation that automatic recovery cannot
  * release.
  *
- * Automatic recovery releases only on proof: the reservation's own release
- * nudge in a verified snapshot (`./l2-release-nudge-proof`). Some reservations
- * can never get that proof. The nudge is refused forever when another
- * transaction already spent one of the body's inputs. A withdrawal can spend the
- * nudge's output before release reads it. A row with no value floor (a
- * non-locking action) is never nudged at all. Each one pins its wallet until an
- * admin decides.
+ * Automatic recovery releases an initial lock only on proof: its own release
+ * nudge in a verified snapshot (`./l2-release-nudge-proof`). It releases a
+ * non-locking action on the node's live state, when one body input is still
+ * unspent (`releaseActionIfBodyUnapplied`). Some reservations get neither. The
+ * nudge is refused forever when another transaction already spent one of the
+ * body's inputs. A withdrawal can spend the nudge's output before release reads
+ * it. An action whose inputs are all spent, or that has no recorded inputs, is
+ * never released automatically. Each one pins its wallet until an admin decides.
  *
  * The admin decision is not a proof. The one thing it cannot rule out is that
  * the body applied in a snapshot the node withheld. A release then lets the
@@ -18,17 +19,15 @@
  * acknowledge the rest, and marks the row `l2ReleasedByOperatorAt`: a later
  * confirmation of the body halts the head's replay instead of being applied.
  *
- * A row automatic recovery can still prove (recorded inputs and a value floor)
- * gets `L2_OPERATOR_RELEASE_GRACE_MS` first, so the admin only takes the risk
- * once several nudge passes have had their chance.
+ * A row automatic recovery can still release (recorded inputs, and a value
+ * floor or an action) gets `L2_OPERATOR_RELEASE_GRACE_MS` first, so the admin
+ * only takes the risk once several recovery passes have had their chance.
  */
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import type { UTxO } from '@meshsdk/core';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
-import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
 import { readHydraSignedTransactionShape } from '@/lib/hydra/hydra/signed-transaction-shape';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
@@ -36,17 +35,14 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import {
 	canReportExpiredL2Reservation,
+	findLiveBodyInput,
+	type HydraLiveSnapshot,
+	L2_OPERATOR_RELEASE_GRACE_MS,
 	L2_RESERVATION_RELEASE_GRACE_MS,
 	l2ReleaseValueFloor,
+	readHydraLiveSnapshot,
 } from './l2-reservation-recovery';
-import { L2_RELEASE_NUDGE_INTERVAL_MS } from './l2-reservation-nudge';
 import { releaseRejectedL2Reservation } from './l2-reservation-release';
-
-/**
- * How long past expiry a row automatic recovery can still prove waits before
- * an admin may release it: the release grace plus five nudge intervals.
- */
-export const L2_OPERATOR_RELEASE_GRACE_MS = L2_RESERVATION_RELEASE_GRACE_MS + 5 * L2_RELEASE_NUDGE_INTERVAL_MS;
 
 export type HeldL2Reservation = {
 	transactionId: string;
@@ -135,6 +131,7 @@ function blockedReason(
 	expiresAtMs: bigint | null,
 	nowMs: number,
 	isHeadClosing: boolean,
+	inputsReportedUnspent: number | null,
 ) {
 	if (isHeadClosing) return HEAD_CLOSING_REASON;
 	if (row.txHash != null) return 'The body was accepted by the head (it has a txHash); it is not a dead reservation';
@@ -142,8 +139,14 @@ function blockedReason(
 	if (row.intendedTxHash != null && node.getConfirmedTransaction(row.intendedTxHash)) {
 		return 'Our node shows this body confirmed; the normal replay will settle it';
 	}
-	// A row recovery can prove gets its nudge passes first.
-	const isProvable = row.l2ReservationInputRefs.length > 0 && l2ReleaseValueFloor(row) !== null;
+	// A row recovery can still release gets its passes first: a lock with a value
+	// floor (nudge proof), or an action with an input our node still maps (live
+	// unspent-input check). That map is replay state, a hint that only sets how
+	// long the admin waits; the release itself re-reads the live snapshot.
+	const isProvable =
+		row.l2ReservationInputRefs.length > 0 &&
+		(l2ReleaseValueFloor(row) !== null ||
+			(row.l2ReservationPreviousTransactionId !== null && (inputsReportedUnspent ?? 0) > 0));
 	const expired = canReportExpiredL2Reservation({
 		hasVerifiedPinnedSessions: node.hasVerifiedPinnedSessions,
 		historyReady: node.confirmedTransactionHistoryReady,
@@ -155,7 +158,7 @@ function blockedReason(
 	});
 	if (!expired) {
 		return isProvable
-			? `Automatic recovery may still prove this one dead: wait until the body is ${L2_OPERATOR_RELEASE_GRACE_MS / 60_000} minutes past its validity bound on a fresh head clock, with history verified and replayed`
+			? `Automatic recovery may still release this one: wait until the body is ${L2_OPERATOR_RELEASE_GRACE_MS / 60_000} minutes past its validity bound on a fresh head clock, with history verified and replayed`
 			: 'Not provably expired yet: the body must be past its validity bound plus the release grace on a fresh head clock, with history verified and replayed';
 	}
 	return null;
@@ -173,7 +176,13 @@ function toHeld(
 			? null
 			: hydraValidityUpperBoundTimeMs({ validityUpperSlot: row.invalidHereafterSlot }, slotConfig);
 	const snapshotNumber = node?.verifiedSnapshotNumber;
-	const reason = blockedReason(row, node, expiresAtMs, nowMs, isHeadClosing);
+	const inputsReportedUnspent =
+		node && snapshotNumber !== undefined
+			? row.l2ReservationInputRefs.filter(
+					(reference) => node.getVerifiedCurrentOutput(reference, snapshotNumber) !== null,
+				).length
+			: null;
+	const reason = blockedReason(row, node, expiresAtMs, nowMs, isHeadClosing, inputsReportedUnspent);
 	return {
 		transactionId: row.id,
 		updatedAt: row.updatedAt,
@@ -184,12 +193,7 @@ function toHeld(
 		paymentRequestIds: row.PaymentRequestCurrent.map((payment) => payment.id),
 		walletAddress: row.BlocksWallet?.walletAddress ?? null,
 		inputRefs: row.l2ReservationInputRefs,
-		inputsReportedUnspent:
-			node && snapshotNumber !== undefined
-				? row.l2ReservationInputRefs.filter(
-						(reference) => node.getVerifiedCurrentOutput(reference, snapshotNumber) !== null,
-					).length
-				: null,
+		inputsReportedUnspent,
 		releaseNudgeTxHash:
 			row.l2ReleaseNudgeTx == null ? null : (readHydraSignedTransactionShape(row.l2ReleaseNudgeTx)?.txHash ?? null),
 		rejectedByHeadReason: row.l2RejectedByHeadReason,
@@ -236,27 +240,20 @@ export async function listHeldL2Reservations(
  *   snapshot our node confirmed proves the body is not in that snapshot. When
  *   every input is gone, the body itself may have spent them. A row with no
  *   recorded inputs has nothing to check.
- *
- * `last-seen` is read first, so a round that confirms between the two reads
- * shows up in the UTxO set instead of slipping past both.
  */
 async function bodyMayHaveAppliedReason(node: HydraNode, inputRefs: readonly string[]): Promise<string | null> {
-	let round: HydraSnapshotRound;
-	let utxos: UTxO[];
+	let snapshot: HydraLiveSnapshot;
 	try {
-		round = await fetchHydraSnapshotRound(node);
-		utxos = inputRefs.length === 0 ? [] : await node.snapshotUTxO();
+		snapshot = await readHydraLiveSnapshot(node, inputRefs.length > 0);
 	} catch (error) {
 		logger.warn('[HydraReconcile] could not read the head snapshot for an operator release', { error });
 		throw createHttpError(502, 'Could not read the head snapshot to check the body inputs');
 	}
-	if (round.inFlight) {
-		return `A snapshot round is in flight (${round.tag}) and may confirm this body; retry once it settles`;
+	if (snapshot.round.inFlight) {
+		return `A snapshot round is in flight (${snapshot.round.tag}) and may confirm this body; retry once it settles`;
 	}
 	if (inputRefs.length === 0) return null;
-	// Same shape as `requireHydraInputRefs`, which recorded the refs.
-	const live = new Set(utxos.map((utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()));
-	if (inputRefs.some((reference) => live.has(reference))) return null;
+	if (findLiveBodyInput(snapshot, inputRefs) !== undefined) return null;
 	return 'Every input of this body is already spent in the head, so the body may have applied; check the head history before releasing';
 }
 

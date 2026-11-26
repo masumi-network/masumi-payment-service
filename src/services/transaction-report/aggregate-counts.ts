@@ -54,7 +54,7 @@ export function getReportCountDates(
 		let earliest = dateByPayment.get(row.blockchainIdentifier) ?? null;
 		for (const candidate of countableDates(row, dateBasis)) {
 			if (!isDateInRange(candidate, from, to)) continue;
-			if (earliest == null || (candidate as Date).getTime() < earliest.getTime()) earliest = candidate as Date;
+			if (earliest == null || (candidate as Date).getTime() < earliest.getTime()) earliest = candidate;
 		}
 		dateByPayment.set(row.blockchainIdentifier, earliest);
 	}

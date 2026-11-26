@@ -1,8 +1,8 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { HydraHeadStatus, Network } from '@/generated/prisma/client';
 
-const mockFindUnique = jest.fn() as jest.Mock<any>;
-const mockFindFirst = jest.fn() as jest.Mock<any>;
+const mockFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockFindFirst = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {

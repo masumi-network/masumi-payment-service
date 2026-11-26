@@ -84,6 +84,8 @@ export async function checkCapabilities(hosts: RunningHost[]): Promise<void> {
 	const [a, b] = await Promise.all(
 		hosts.map(async (host) => {
 			const result = await http(`${host.spec.baseUrl}/v1/capabilities`, { token: host.spec.adminToken });
+			// The cast narrows unknown for the checks below. typescript-eslint 8.73 misreads it as unnecessary.
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
 			return (result.body ?? {}) as { ledgerParamsHash?: string | null; scriptCatalogue?: unknown };
 		}),
 	);

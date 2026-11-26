@@ -35,11 +35,7 @@ import {
 	normalizeCreditUnit,
 	planCreditDelta,
 } from './credit-units';
-import {
-	computePermissionFromFlags,
-	flagsFromLegacyPermission,
-	LegacyPermission,
-} from '@masumi/payment-core/permissions';
+import { computePermissionFromFlags, flagsFromLegacyPermission } from '@masumi/payment-core/permissions';
 
 export {
 	addAPIKeySchemaInput,
@@ -239,7 +235,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const hasExplicitFlags = input.canRead !== undefined || input.canPay !== undefined || input.canAdmin !== undefined;
 
 		if (hasExplicitFlags && input.permission !== undefined) {
-			const legacyFlags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			const legacyFlags = flagsFromLegacyPermission(input.permission);
 			const requested = {
 				canRead: input.canRead ?? legacyFlags.canRead,
 				canPay: input.canPay ?? legacyFlags.canPay,
@@ -259,7 +255,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		if (hasExplicitFlags && input.permission !== undefined) {
-			const legacyFlags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			const legacyFlags = flagsFromLegacyPermission(input.permission);
 			canRead = legacyFlags.canRead;
 			canPay = legacyFlags.canPay;
 			canAdmin = legacyFlags.canAdmin;
@@ -270,7 +266,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 			canAdmin = input.canAdmin ?? false;
 		} else if (input.permission) {
 			// Legacy permission input - convert to flags
-			const flags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			const flags = flagsFromLegacyPermission(input.permission);
 			canRead = flags.canRead;
 			canPay = flags.canPay;
 			canAdmin = flags.canAdmin;

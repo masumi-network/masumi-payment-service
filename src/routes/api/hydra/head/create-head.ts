@@ -18,8 +18,29 @@ import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-sem
 import createHttpError from 'http-errors';
 
 import { assertContestationPeriodAllowed } from '@/services/hydra-invite/provisioning';
-import { hasUnsettledHydraRequestState, unsettledL2TransactionWhere } from '../deletion-guard';
 import { headInclude, verifyPriorHydraFanouts, type HydraHeadRecord } from './index';
+import { findPriorHeadBlocker, type PriorHeadBlocker } from './prior-head-blocker';
+
+const PRIOR_HEAD_BLOCKER_MESSAGES: Record<PriorHeadBlocker['kind'], string> = {
+	live: 'Hydra relation already has a non-final head',
+	unsettled: 'Previous Hydra head fanout is not independently confirmed or its L2 state is not fully adopted',
+	handoffs: 'Previous Hydra head still has unadopted fanout handoffs',
+};
+
+/**
+ * Everything createBoundHydraHead refuses on about earlier heads, asked before
+ * anything is spent. The database half returns its reason; the L1 half throws
+ * the same 409 or 503 head creation would.
+ */
+export async function findHeadReplacementBlocker(
+	relation: Prisma.HydraRelationWhereInput,
+): Promise<PriorHeadBlocker | null> {
+	const blocker = await findPriorHeadBlocker(prisma, relation);
+	if (blocker !== null) return blocker;
+	const relations = await prisma.hydraRelation.findMany({ where: relation, select: { id: true } });
+	for (const { id } of relations) await verifyPriorHydraFanouts(id);
+	return null;
+}
 
 export async function createBoundHydraHead(input: {
 	hydraRelationId: string;
@@ -77,17 +98,9 @@ export async function createBoundHydraHead(input: {
 							ORDER BY "id"
 							FOR UPDATE
 						`);
-						const activeHead = await tx.hydraHead.findFirst({
-							where: {
-								hydraRelationId: relation.id,
-								status: { not: HydraHeadStatus.Final },
-								// A retired head can never reach Final; it no longer holds the relation.
-								retiredAt: null,
-							},
-							select: { id: true },
-						});
-						if (activeHead) {
-							throw createHttpError(409, 'Hydra relation already has a non-final head');
+						const blocker = await findPriorHeadBlocker(tx, { id: relation.id });
+						if (blocker !== null) {
+							throw createHttpError(409, PRIOR_HEAD_BLOCKER_MESSAGES[blocker.kind]);
 						}
 
 						const priorFinalHeads = await tx.hydraHead.findMany({
@@ -95,12 +108,7 @@ export async function createBoundHydraHead(input: {
 								hydraRelationId: relation.id,
 								status: HydraHeadStatus.Final,
 							},
-							select: {
-								id: true,
-								fanoutTxHash: true,
-								reconciliationCompletedAt: true,
-								_count: { select: { Transactions: { where: unsettledL2TransactionWhere } } },
-							},
+							select: { id: true, fanoutTxHash: true },
 						});
 						if (
 							priorFinalHeads.length !== verifiedPriorFanouts.fanoutTxHashByHeadId.size ||
@@ -109,31 +117,6 @@ export async function createBoundHydraHead(input: {
 							)
 						) {
 							throw createHttpError(409, 'Previous Hydra head fanout evidence changed during replacement verification');
-						}
-						const unsafePriorHead = priorFinalHeads.find(
-							(head) =>
-								head.fanoutTxHash == null || head.reconciliationCompletedAt == null || head._count.Transactions !== 0,
-						);
-						if (unsafePriorHead) {
-							throw createHttpError(
-								409,
-								'Previous Hydra head fanout is not independently confirmed or its L2 state is not fully adopted',
-							);
-						}
-						const priorHeadIds = priorFinalHeads.map(({ id }) => id);
-						if (priorHeadIds.length > 0) {
-							const [paymentHandoffs, purchaseHandoffs] = await Promise.all([
-								tx.paymentRequest.count({
-									where: { hydraFanoutHandoffHeadId: { in: priorHeadIds } },
-								}),
-								tx.purchaseRequest.count({
-									where: { hydraFanoutHandoffHeadId: { in: priorHeadIds } },
-								}),
-							]);
-							const hasUnsettledRequests = await hasUnsettledHydraRequestState(tx, priorHeadIds);
-							if (paymentHandoffs !== 0 || purchaseHandoffs !== 0 || hasUnsettledRequests) {
-								throw createHttpError(409, 'Previous Hydra head still has unadopted fanout handoffs');
-							}
 						}
 
 						const localParticipant = await tx.hydraLocalParticipant.findUnique({

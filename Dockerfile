@@ -22,8 +22,6 @@ RUN pnpm install --frozen-lockfile
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 RUN pnpm run swagger-json
 
-#RUN pnpm run prisma:migrate
-
 # Frontend build step
 FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS frontend-builder
 RUN npm install -g pnpm
@@ -56,7 +54,9 @@ RUN pnpm run build
 # Final stage
 FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS runner
 RUN apt-get update -y && apt-get install -y openssl
-RUN npm install -g pnpm
+# Keep in sync with `packageManager` in package.json. Another version makes pnpm
+# download the pinned one at startup, which fails without internet access.
+RUN npm install -g pnpm@10.30.2
 WORKDIR /usr/src/app
 
 # Copy backend files
@@ -69,6 +69,8 @@ COPY --from=backend-builder /usr/src/app/src ./src
 COPY --from=backend-builder /usr/src/app/public ./public
 COPY --from=backend-builder /usr/src/app/tsconfig.json ./tsconfig.json
 COPY --from=backend-builder /usr/src/app/eslint.config.mjs ./eslint.config.mjs
+# Not a build output, so it comes from the build context.
+COPY scripts/migrate.sh ./scripts/migrate.sh
 
 # Copy frontend files
 COPY --from=frontend-builder /usr/src/app/frontend/dist ./frontend/dist

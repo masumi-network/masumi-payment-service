@@ -1,4 +1,4 @@
-import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType, Prisma, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
@@ -13,28 +13,53 @@ export async function lockAndQueryRegistryRequests({
 	paymentSourceType: PaymentSourceType;
 }) {
 	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
+	const paymentSourceWhere: Prisma.PaymentSourceWhereInput = {
+		syncInProgress: false,
+		deletedAt: null,
+		disablePaymentAt: null,
+		paymentSourceType,
+	};
+	const hotWalletWhere: Prisma.HotWalletWhereInput = {
+		...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
+		PendingTransaction: null,
+		lockedAt: null,
+		deletedAt: null,
+	};
+	// The one request filter, shared by the gate and the per-wallet lock so the
+	// two cannot drift apart.
+	const buildRequestWhere = (wallet: Prisma.HotWalletWhereInput): Prisma.RegistryRequestWhereInput => ({
+		state: state,
+		...(locksSellingWallet
+			? { SmartContractWallet: wallet }
+			: {
+					OR: [
+						{ DeregistrationHotWallet: { is: wallet } },
+						{ deregistrationHotWalletId: null, SmartContractWallet: wallet },
+					],
+				}),
+	});
+
+	// Step 0: one cheap existence check. Most ticks find nothing, and without
+	// this an idle tick still opens one Serializable transaction per unlocked
+	// wallet. The filter matches any eligible wallet, so it is a superset of the
+	// per-wallet one and a miss proves the lock below would find nothing.
+	const candidate = await prisma.registryRequest.findFirst({
+		where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }),
+		select: { id: true },
+	});
+	if (candidate == null) return [];
 
 	// Step 1: read candidate payment sources + unlocked hot wallets. The
 	// per-wallet $transaction below provides Serializable isolation around
 	// the actual lock — see lockAndQueryPayments for the rationale.
 	const paymentSources = await prisma.paymentSource.findMany({
-		where: {
-			syncInProgress: false,
-			deletedAt: null,
-			disablePaymentAt: null,
-			paymentSourceType,
-		},
+		where: paymentSourceWhere,
 		include: {
 			HotWallets: {
 				include: {
 					Secret: true,
 				},
-				where: {
-					...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
-					PendingTransaction: null,
-					lockedAt: null,
-					deletedAt: null,
-				},
+				where: hotWalletWhere,
 			},
 			AdminWallets: true,
 			FeeReceiverNetworkWallet: true,
@@ -64,41 +89,12 @@ export async function lockAndQueryRegistryRequests({
 							prisma.$transaction(
 								async (prisma) => {
 									const potentialRegistryRequests = await prisma.registryRequest.findMany({
-										where: {
-											state: state,
-											...(locksSellingWallet
-												? {
-														SmartContractWallet: {
-															id: hotWallet.id,
-															deletedAt: null,
-															PendingTransaction: { is: null },
-															lockedAt: null,
-														},
-													}
-												: {
-														OR: [
-															{
-																DeregistrationHotWallet: {
-																	is: {
-																		id: hotWallet.id,
-																		deletedAt: null,
-																		PendingTransaction: { is: null },
-																		lockedAt: null,
-																	},
-																},
-															},
-															{
-																deregistrationHotWalletId: null,
-																SmartContractWallet: {
-																	id: hotWallet.id,
-																	deletedAt: null,
-																	PendingTransaction: { is: null },
-																	lockedAt: null,
-																},
-															},
-														],
-													}),
-										},
+										where: buildRequestWhere({
+											id: hotWallet.id,
+											deletedAt: null,
+											PendingTransaction: { is: null },
+											lockedAt: null,
+										}),
 										include: {
 											SmartContractWallet: {
 												include: {

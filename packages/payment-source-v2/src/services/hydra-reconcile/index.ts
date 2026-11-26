@@ -55,8 +55,10 @@ import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-ve
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { KEY_RELEASE_MIN_CONFIRMATIONS } from '@/services/hydra-node-funding/key-release-depth';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
+import { isLiveUnfencedSession } from './live-session-fence';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
+import { reapplyUnspentInputsReleaseOnConfirmation } from './operator-l2-reservation-reapply';
 import { recordReplayedCloseSnapshot } from './replayed-close';
 import { REPLAY_APPLY_RETRY_REASON } from './replay-stall-reason';
 import {
@@ -125,6 +127,32 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 		} catch (error) {
 			logger.warn('[HydraReconcile] Failed to reconcile head', { hydraHeadId: head.id, error });
 		}
+	}
+}
+
+/**
+ * Restores a released row whose body confirmed, only on the live unfenced
+ * session. Any error counts as "not restored", so the caller still marks the
+ * replay stalled in this pass.
+ */
+async function restoreConfirmedRelease(
+	connectionManager: ReturnType<typeof getHydraConnectionManager>,
+	hydraHeadId: string,
+	node: HydraNode,
+	txId: string,
+): Promise<boolean> {
+	try {
+		return (
+			(await isLiveUnfencedSession(connectionManager, hydraHeadId, node)) &&
+			(await reapplyUnspentInputsReleaseOnConfirmation({ hydraHeadId, txId, node }))
+		);
+	} catch (error) {
+		logger.warn('[HydraReconcile] could not check a released row whose body confirmed; replay holds', {
+			hydraHeadId,
+			intendedTxHash: txId,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return false;
 	}
 }
 
@@ -206,11 +234,21 @@ async function reconcileHead(
 			await markReconciliationStalled(hydraHeadId, confirmedTransaction.txId, 'evidence-parse-failed');
 			return;
 		}
-		const outcome = await connectionManager.handleTxConfirmed(
+		let outcome = await connectionManager.handleTxConfirmed(
 			hydraHeadId,
 			confirmedTransaction.txId,
 			confirmedTransaction,
 		);
+		// A body automatic recovery released on unspent inputs confirmed after
+		// all. The escrow was spent once, by this body, so restore the row and
+		// apply it now instead of stalling the head for an admin.
+		if (
+			outcome === 'retry' &&
+			node != null &&
+			(await restoreConfirmedRelease(connectionManager, hydraHeadId, node, confirmedTransaction.txId))
+		) {
+			outcome = await connectionManager.handleTxConfirmed(hydraHeadId, confirmedTransaction.txId, confirmedTransaction);
+		}
 		if (outcome === 'retry') {
 			// Later confirmations may depend on this transaction's persisted UTxO
 			// lineage. Keep the entire causal suffix queued and retry it in order.
@@ -231,8 +269,9 @@ async function reconcileHead(
 		await clearReconciliationStall(hydraHeadId);
 	}
 	// The live UTxO tip can infer absence only after one authenticated, untruncated
-	// history pass reached its matching Greetings marker. Expired reservations are
-	// released only on verified-snapshot input proof and reported otherwise:
+	// history pass reached its matching Greetings marker. Expired locks are
+	// released only on verified-snapshot input proof, expired actions only on the
+	// node's live snapshot, and both are reported otherwise:
 	// history absence cannot prove that a locally accepted transaction is absent
 	// while it remains outside a signed snapshot.
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;

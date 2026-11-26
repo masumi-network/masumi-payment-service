@@ -24,12 +24,7 @@ export function extractReferenceSignatureFromUtxo(utxo: UTxO): string | null {
 	} catch {
 		return null;
 	}
-	if (
-		decoded == null ||
-		typeof decoded !== 'object' ||
-		!('fields' in decoded) ||
-		!Array.isArray((decoded as { fields: unknown }).fields)
-	) {
+	if (decoded == null || typeof decoded !== 'object' || !('fields' in decoded) || !Array.isArray(decoded.fields)) {
 		return null;
 	}
 	const fields = (decoded as { fields: Array<{ bytes?: unknown }> }).fields;

@@ -2,16 +2,16 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { WebhookDeliveryStatus, WebhookEventType, WebhookFormat, X402EvmWalletType } from '@/generated/prisma/client';
 import type { StoredWebhookPayload } from '@/types/webhook-payloads';
 
-const mockWebhookEndpointFindUnique = jest.fn() as jest.Mock<any>;
-const mockWebhookEndpointUpdate = jest.fn() as jest.Mock<any>;
-const mockWebhookDeliveryFindUnique = jest.fn() as jest.Mock<any>;
-const mockWebhookDeliveryUpdate = jest.fn() as jest.Mock<any>;
-const mockHydraHeadFindUnique = jest.fn() as jest.Mock<any>;
-const mockResolveWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
-const mockPostPinnedWebhook = jest.fn() as jest.Mock<any>;
-const loggerInfo = jest.fn() as jest.Mock<any>;
-const loggerWarn = jest.fn() as jest.Mock<any>;
-const loggerError = jest.fn() as jest.Mock<any>;
+const mockWebhookEndpointFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWebhookEndpointUpdate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWebhookDeliveryFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockWebhookDeliveryUpdate = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockHydraHeadFindUnique = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockResolveWebhookDestinationAllowed = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockPostPinnedWebhook = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const loggerInfo = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const loggerWarn = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const loggerError = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {

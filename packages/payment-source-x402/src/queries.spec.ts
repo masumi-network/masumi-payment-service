@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockPaymentAttemptFindMany = jest.fn() as jest.Mock<any>;
-const mockPaymentAttemptCount = jest.fn() as jest.Mock<any>;
-const mockSettlementFindMany = jest.fn() as jest.Mock<any>;
-const mockQueryRaw = jest.fn() as jest.Mock<any>;
+const mockPaymentAttemptFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockPaymentAttemptCount = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSettlementFindMany = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockQueryRaw = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	Prisma: {},

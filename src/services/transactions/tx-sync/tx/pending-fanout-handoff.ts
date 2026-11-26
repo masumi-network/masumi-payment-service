@@ -2,7 +2,6 @@ import { TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import type { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { isBoundFanoutOutputOrigin } from '@/lib/hydra/hydra/fanout-output-origin';
-import type { HydraFanoutChainObserver } from '@/lib/hydra/hydra/fanout-validation';
 
 export class PendingFanoutHandoffError extends Error {
 	constructor(readonly hydraHeadId: string) {
@@ -37,7 +36,7 @@ export async function deferSpendUntilFanoutHandoff(
 	if (head?.headIdentifier == null || head.LocalParticipant == null || head.RemoteParticipants.length !== 1)
 		throw new PendingFanoutHandoffError(hydraHeadId);
 	const isBound = await isBoundFanoutOutputOrigin({
-		observer: blockfrost as unknown as HydraFanoutChainObserver,
+		observer: blockfrost,
 		headId: head.headIdentifier,
 		participantVkeys: [head.LocalParticipant.cardanoVkey, head.RemoteParticipants[0].cardanoVkey],
 		producerTxHash: input.tx_hash,

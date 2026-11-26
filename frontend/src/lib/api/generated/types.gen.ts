@@ -3673,7 +3673,7 @@ export type TxSyncQuarantineEntry = {
      */
     nextRetryAt: Date;
     /**
-     * Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit
+     * Set once successfully applied or canonically confirmed rolled back. Resolved rows are deleted after TX_SYNC_QUARANTINE_RETENTION_DAYS (0 keeps them)
      */
     resolvedAt: Date | null;
     /**
@@ -15375,7 +15375,7 @@ export type GetHydraHeadL2ReservationsStalledReleaseResponses = {
                 /**
                  * Who released the reservation
                  */
-                releasedBy: 'input-proof' | 'operator';
+                releasedBy: 'input-proof' | 'operator' | 'unspent-inputs';
                 releasedAt: string;
                 /**
                  * An initial lock, or an action on an existing escrow

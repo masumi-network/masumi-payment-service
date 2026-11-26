@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockWalletUpdateMany = jest.fn<(input?: unknown) => Promise<{ count: number }>>();
-const mockQueryRaw = jest.fn() as jest.Mock<any>;
+const mockQueryRaw = jest.fn() as jest.Mock<(...args: any[]) => any>;
 const mockLoggerError = jest.fn();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({

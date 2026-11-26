@@ -402,6 +402,7 @@ export async function redeemHeadInvite(input: {
 	await assertRelationHasNoLiveHead({
 		network: wallet.network,
 		localHotWalletId: wallet.id,
+		paymentSourceId: wallet.paymentSourceId,
 		counterpartyWalletAddress: payload.issuerWalletAddress,
 	});
 	const node = await reserveNodeForExchange(

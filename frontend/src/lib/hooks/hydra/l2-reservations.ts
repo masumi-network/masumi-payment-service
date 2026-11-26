@@ -97,7 +97,7 @@ export type HydraStalledRelease = {
   /** Sent back on re-apply. The server refuses it if the row changed. */
   updatedAt: string;
   intendedTxHash: string;
-  releasedBy: 'input-proof' | 'operator';
+  releasedBy: 'input-proof' | 'operator' | 'unspent-inputs';
   releasedAt: string;
   kind: 'initial-lock' | 'action';
   purchaseRequestIds: string[];

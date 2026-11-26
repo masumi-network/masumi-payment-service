@@ -13,13 +13,14 @@
  * them waits for its operator to retry the same code, or for the bounded cleanup
  * below.
  */
-import { HydraHeadStatus, HydraInviteRole, HydraInviteStatus } from '@/generated/prisma/client';
+import { HydraInviteRole, HydraInviteStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from './nonce-log-ref';
 import { createHeadFromExchange } from './orchestrator';
 import { advanceRedemption } from './redemption';
-import { buildRedemptionPorts, toRedemptionState, type RedeemerRecord } from './redemption-ports';
+import { findPriorHeadBlocker } from '@/routes/api/hydra/head/prior-head-blocker';
+import { buildRedemptionPorts, pairRelationWhere, toRedemptionState, type RedeemerRecord } from './redemption-ports';
 
 /**
  * How long a record must sit untouched before the job takes it over. Long enough
@@ -101,21 +102,19 @@ async function failStaleUnconfirmed(now: number, outcome: ResumeOutcome): Promis
 	}
 }
 
-/** True while the pair still has a head that must finish before another can be created. */
+/**
+ * True while the pair cannot get a new head yet: a live head, or an earlier one
+ * that has not handed off. The database half of what head creation refuses on;
+ * the L1 half runs before a redemption is posted, and again in head creation.
+ */
 async function hasBlockingHead(record: RedeemerRecord): Promise<boolean> {
-	const head = await prisma.hydraHead.findFirst({
-		where: {
-			status: { not: HydraHeadStatus.Final },
-			retiredAt: null,
-			HydraRelation: {
-				network: record.network,
-				localHotWalletId: record.localHotWalletId,
-				RemoteWallet: { walletAddress: record.issuerWalletAddress },
-			},
-		},
-		select: { status: true },
+	const relation = pairRelationWhere({
+		network: record.network,
+		localHotWalletId: record.localHotWalletId,
+		paymentSourceId: record.LocalHotWallet.paymentSourceId,
+		counterpartyWalletAddress: record.issuerWalletAddress,
 	});
-	return head !== null;
+	return (await findPriorHeadBlocker(prisma, relation)) !== null;
 }
 
 export async function resumeHydraRedemptions(

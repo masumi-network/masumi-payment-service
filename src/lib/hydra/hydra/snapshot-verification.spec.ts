@@ -634,6 +634,159 @@ describe('Hydra 2.3 snapshot verification', () => {
 			),
 		).toBeNull();
 	});
+
+	// The shape of a real single-step fanout on preprod (head 7456e0d0… on
+	// 2026-10-27, fanout 5229d451…): the final snapshot signed one 10 tADA output
+	// in `utxo` and one 10 tADA deposit in `utxoToCommit`, and hydra-node 2.4.1
+	// reported both payouts plus its wallet's 29.55 tADA change as the last output
+	// of the same transaction. Rejecting that map left the head Final forever.
+	describe('the node wallet change in a single-step fanout map', () => {
+		const fanoutTxHash = '5229d451f65507895cae0661e26dcc6b8c42f7e35caaa6f4f0db3dc2b6fc1822';
+		const payout = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const change = serializeHydraSnapshotOutput({
+			...output({ lovelace: 29_550_911 }),
+			address: 'addr_test1vp32ftc0q5y9c3yhj9epuwpfaf5ct9c839dxqpqx7xpqvzqhghh65',
+		});
+		const snapshot = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[`${'e9'.repeat(32)}#0`, payout],
+				[`${'af'.repeat(32)}#0`, payout],
+			]),
+			outputMultiset: new Map([[payout, 2]]),
+			committedOutputs: new Map([[`${'af'.repeat(32)}#0`, payout]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const reference = (outputIndex: number, serializedOutput: string) => ({
+			txHash: fanoutTxHash,
+			outputIndex,
+			snapshotNumber: 2,
+			serializedOutput,
+		});
+
+		it('resolves the signed payouts and leaves the trailing change out', () => {
+			const resolved = resolveVerifiedHydraFanoutReferences(
+				snapshot,
+				new Map([
+					[`${fanoutTxHash}#0`, payout],
+					[`${fanoutTxHash}#1`, payout],
+					[`${fanoutTxHash}#2`, change],
+				]),
+			);
+
+			expect(resolved).toEqual([reference(0, payout), reference(1, payout)]);
+		});
+
+		it('refuses a surplus output that is not the last output of its transaction', () => {
+			expect(
+				resolveVerifiedHydraFanoutReferences(
+					snapshot,
+					new Map([
+						[`${fanoutTxHash}#0`, change],
+						[`${fanoutTxHash}#1`, payout],
+						[`${fanoutTxHash}#2`, payout],
+					]),
+				),
+			).toBeNull();
+		});
+
+		it('refuses more than one surplus output', () => {
+			expect(
+				resolveVerifiedHydraFanoutReferences(
+					snapshot,
+					new Map([
+						[`${fanoutTxHash}#0`, payout],
+						[`${fanoutTxHash}#1`, payout],
+						[`${fanoutTxHash}#2`, change],
+						[`${fanoutTxHash}#3`, change],
+					]),
+				),
+			).toBeNull();
+		});
+
+		it('still refuses a map that is missing a signed payout', () => {
+			const plain = { ...snapshot, committedOutputs: new Map<string, string>() };
+
+			expect(
+				resolveVerifiedHydraFanoutReferences(
+					plain,
+					new Map([
+						[`${fanoutTxHash}#0`, payout],
+						[`${fanoutTxHash}#1`, change],
+					]),
+				),
+			).toBeNull();
+		});
+
+		// After `adoptL1Binding`, a fanout over several steps reports the earlier
+		// steps' payouts at index 1 onwards (index 0 is the continuing head) and
+		// the terminal step's outputs from index 0, with its change last.
+		describe('over several L1 steps', () => {
+			const partialTxHash = '7a'.repeat(32);
+			const burnTxHash = '7b'.repeat(32);
+			const otherPayout = serializeHydraSnapshotOutput(output({ lovelace: 4_000_000 }));
+			const signed = (outputs: readonly string[]) => ({
+				headId: HEAD_ID,
+				number: 2,
+				version: 1,
+				outputs: new Map(outputs.map((value, index) => [`${'e9'.repeat(32)}#${index}`, value])),
+				outputMultiset: new Map(outputs.map((value) => [value, outputs.filter((other) => other === value).length])),
+				committedOutputs: new Map<string, string>(),
+				decommitOutputs: new Map<string, string>(),
+			});
+			const at = (txHash: string, outputIndex: number, serializedOutput: string) => ({
+				txHash,
+				outputIndex,
+				snapshotNumber: 2,
+				serializedOutput,
+			});
+
+			it('drops the terminal change even when a partial-step payout is byte-equal to it', () => {
+				// The node wallet was also paid in-head, the same value as its change.
+				const fanoutOutputs = new Map([
+					[`${partialTxHash}#1`, change],
+					[`${burnTxHash}#0`, otherPayout],
+					[`${burnTxHash}#1`, change],
+				]);
+				const snapshot = signed([change, otherPayout]);
+
+				expect(resolveVerifiedHydraFanoutReferences(snapshot, fanoutOutputs)).toEqual([
+					at(partialTxHash, 1, change),
+					at(burnTxHash, 0, otherPayout),
+				]);
+				expect(resolveVerifiedHydraFanoutReference(snapshot, fanoutOutputs, change)).toEqual(
+					at(partialTxHash, 1, change),
+				);
+			});
+
+			it('drops the change of a burn-only terminal step that distributed nothing', () => {
+				expect(
+					resolveVerifiedHydraFanoutReferences(
+						signed([payout, otherPayout]),
+						new Map([
+							[`${partialTxHash}#1`, payout],
+							[`${partialTxHash}#2`, otherPayout],
+							[`${burnTxHash}#0`, change],
+						]),
+					),
+				).toEqual([at(partialTxHash, 1, payout), at(partialTxHash, 2, otherPayout)]);
+			});
+
+			it('never drops a partial-step output as change', () => {
+				expect(
+					resolveVerifiedHydraFanoutReferences(
+						signed([payout]),
+						new Map([
+							[`${partialTxHash}#1`, payout],
+							[`${partialTxHash}#2`, change],
+						]),
+					),
+				).toBeNull();
+			});
+		});
+	});
 });
 
 // Recorded from two real hydra-node 2.4.1 nodes on preprod (see the fixture's

@@ -1,5 +1,6 @@
 import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
+import { cleanupRowsPastRetention, DATA_RETENTION_CLEANUP_INTERVAL_MS } from '@/services/data-retention';
 import {
 	checkLatestTransactions,
 	cleanupOrphanActionData,
@@ -37,6 +38,7 @@ import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup'
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { releaseStalledCloseAdmissions } from '@/services/hydra-close-admission';
 import { isHydraInUse } from '@/services/hydra-usage';
+import { isPaymentSourceV1InUse, isPaymentSourceV2InUse } from '@/services/payment-source-usage';
 import { runHydraHostPauseCycle } from '@/services/hydra-host/pause';
 import { logger } from '@masumi/payment-core/logger';
 
@@ -57,18 +59,22 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.BATCH_PAYMENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for batched payments',
 		finishMessage: 'Finished to check for batched payments',
+		// Not gated: a purchase must be batched with at least 57 s left before
+		// payByTime, so a cached "not in use" answer could cost it its last tick.
 		run: web3CardanoV1.batchLatestPaymentEntries,
 	},
 	{
 		initialDelayMs: 1000,
 		intervalMs: CONFIG.CHECK_REGISTRY_TRANSACTIONS_INTERVAL * 1000,
 		startMessage: 'Starting to check for registry transactions',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.checkRegistryTransactions,
 	},
 	{
 		initialDelayMs: 1500,
 		intervalMs: CONFIG.CHECK_REGISTRY_TRANSACTIONS_INTERVAL * 1000,
 		startMessage: 'Starting to check for inbox registry transactions',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.checkInboxAgentRegistrationTransactions,
 	},
 	{
@@ -76,6 +82,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_COLLECTION_INTERVAL * 1000,
 		startMessage: 'Starting to check for outstanding payments',
 		finishMessage: 'Finished to check for outstanding payments',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.collectOutstandingPayments,
 	},
 	{
@@ -83,6 +90,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_COLLECT_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for refunds',
 		finishMessage: 'Finished to check for refunds',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.collectRefund,
 	},
 	{
@@ -261,6 +269,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SET_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for timed out refunds',
 		finishMessage: 'Finished to check for timed out refunds',
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV1.requestRefunds,
 	},
 	{
@@ -268,6 +279,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_UNSET_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for timed out refunds',
 		finishMessage: 'Finished to check for timed out refunds',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.cancelRefunds,
 	},
 	{
@@ -275,6 +287,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 withdrawal authorizations',
 		finishMessage: 'Finished to check for V2 withdrawal authorizations',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.authorizeWithdrawals,
 	},
 	{
@@ -282,6 +295,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_AUTHORIZE_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check to authorize refunds',
 		finishMessage: 'Finished to check to authorize refunds',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.authorizeRefund,
 	},
 	{
@@ -289,6 +303,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for agent registration',
 		finishMessage: 'Finished to check for agent registration',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.registerAgent,
 	},
 	{
@@ -296,6 +311,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 agent registration',
 		finishMessage: 'Finished to check for V2 agent registration',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.registerAgent,
 	},
 	{
@@ -303,6 +319,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for inbox agent registration',
 		finishMessage: 'Finished to check for inbox agent registration',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.registerInboxAgent,
 	},
 	{
@@ -310,6 +327,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for agent deregistration',
 		finishMessage: 'Finished to check for agent deregistration',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.deRegisterAgent,
 	},
 	{
@@ -317,6 +335,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 agent deregistration',
 		finishMessage: 'Finished to check for V2 agent deregistration',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.deRegisterAgent,
 	},
 	{
@@ -324,6 +343,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for inbox agent deregistration',
 		finishMessage: 'Finished to check for inbox agent deregistration',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.deRegisterInboxAgent,
 	},
 	{
@@ -383,6 +403,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000,
 		startMessage: 'Starting to check for submit result',
 		finishMessage: 'Finished to check for submit result',
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV1.submitResult,
 	},
 	{
@@ -390,6 +413,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.AUTO_DECISION_INTERVAL * 1000,
 		startMessage: 'Starting automatic decision handler',
 		finishMessage: 'Finished automatic decision handler',
+		shouldRun: isPaymentSourceV1InUse,
 		run: web3CardanoV1.handleAutomaticDecisions,
 	},
 	{
@@ -397,6 +421,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.AUTO_DECISION_INTERVAL * 1000,
 		startMessage: 'Starting V2 automatic decision handler',
 		finishMessage: 'Finished V2 automatic decision handler',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.handleAutomaticDecisions,
 	},
 	{
@@ -404,18 +429,22 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.BATCH_PAYMENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 batched payments',
 		finishMessage: 'Finished to check for V2 batched payments',
+		// Not gated: a purchase must be batched with at least 57 s left before
+		// payByTime, so a cached "not in use" answer could cost it its last tick.
 		run: web3CardanoV2.batchLatestPaymentEntries,
 	},
 	{
 		initialDelayMs: 1300,
 		intervalMs: CONFIG.CHECK_REGISTRY_TRANSACTIONS_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 registry transactions',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.checkRegistryTransactions,
 	},
 	{
 		initialDelayMs: 1800,
 		intervalMs: CONFIG.CHECK_REGISTRY_TRANSACTIONS_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 inbox registry transactions',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.checkInboxAgentRegistrationTransactions,
 	},
 	{
@@ -423,6 +452,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_COLLECTION_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 outstanding payments',
 		finishMessage: 'Finished to check for V2 outstanding payments',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.collectOutstandingPayments,
 	},
 	{
@@ -430,6 +460,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_COLLECT_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 refunds',
 		finishMessage: 'Finished to check for V2 refunds',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.collectRefund,
 	},
 	{
@@ -437,6 +468,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SET_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 timed out refunds',
 		finishMessage: 'Finished to check for V2 timed out refunds',
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV2.requestRefunds,
 	},
 	{
@@ -444,6 +478,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_AUTHORIZE_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check to authorize V2 refunds',
 		finishMessage: 'Finished to check to authorize V2 refunds',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.authorizeRefund,
 	},
 	{
@@ -451,6 +486,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 inbox agent registration',
 		finishMessage: 'Finished to check for V2 inbox agent registration',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.registerInboxAgent,
 	},
 	{
@@ -458,6 +494,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 inbox agent deregistration',
 		finishMessage: 'Finished to check for V2 inbox agent deregistration',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.deRegisterInboxAgent,
 	},
 	{
@@ -471,6 +508,7 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 agent update',
 		finishMessage: 'Finished to check for V2 agent update',
+		shouldRun: isPaymentSourceV2InUse,
 		run: web3CardanoV2.updateAgent,
 	},
 	{
@@ -478,6 +516,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 submit result',
 		finishMessage: 'Finished to check for V2 submit result',
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV2.submitResult,
 	},
 	{
@@ -517,6 +558,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
+	},
+	{
+		initialDelayMs: 52000,
+		intervalMs: DATA_RETENTION_CLEANUP_INTERVAL_MS,
+		startMessage: 'Starting data retention cleanup',
+		finishMessage: 'Finished data retention cleanup',
+		run: cleanupRowsPastRetention,
 	},
 	{
 		// Daily-ish prune of PaymentActionData / PurchaseActionData rows

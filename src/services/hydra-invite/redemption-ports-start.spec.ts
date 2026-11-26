@@ -21,6 +21,7 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	HOST_LEASE_WAIT_MS: 10_000,
 	withHostPauseLease: mockWithPauseLease,
 }));
+jest.unstable_mockModule('@/routes/api/hydra/head/create-head', () => ({ findHeadReplacementBlocker: jest.fn() }));
 jest.unstable_mockModule('./exchange-client', () => ({ attemptRedemption: jest.fn() }));
 jest.unstable_mockModule('./redemption-store', () => ({
 	LIVE_REDEEMER_STATUSES: [],

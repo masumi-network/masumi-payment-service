@@ -29,6 +29,26 @@ function parseNumberEnv(name: string, rawValue: string | undefined, fallback: st
 	return parsed;
 }
 
+const DEFAULT_RETENTION_DAYS = 30;
+const MAX_RETENTION_DAYS = 36_500;
+
+// Whole days a cleanup job keeps finished rows before it deletes them. 0 keeps
+// all history. An empty value counts as unset. Digits only, so exponents and
+// long decimals cannot round to 0 or 1 inside Number().
+export function parseRetentionDaysEnv(name: string, rawValue: string | undefined): number | null {
+	const value = rawValue?.trim() || String(DEFAULT_RETENTION_DAYS);
+	if (!/^\d+$/.test(value)) {
+		throw new Error(`${name} must be a whole number of days (0 keeps all history)`);
+	}
+	const days = Number(value);
+	if (days === 0) return null;
+	// A fixed cap keeps every cutoff a valid Postgres timestamp, whatever the clock does.
+	if (days > MAX_RETENTION_DAYS) {
+		throw new Error(`${name} must be at most ${MAX_RETENTION_DAYS}; use 0 to keep all history`);
+	}
+	return days;
+}
+
 const batchPaymentInterval = parseNumberEnv('BATCH_PAYMENT_INTERVAL', process.env.BATCH_PAYMENT_INTERVAL, '30', 5);
 const checkTxInterval = parseNumberEnv('CHECK_TX_INTERVAL', process.env.CHECK_TX_INTERVAL, '20', 15);
 const checkCollectionInterval = parseNumberEnv(
@@ -330,6 +350,15 @@ export const CONFIG = {
 	ORPHAN_ACTION_CLEANUP_BATCH_SIZE: Math.max(
 		10,
 		parseNumberEnv('ORPHAN_ACTION_CLEANUP_BATCH_SIZE', process.env.ORPHAN_ACTION_CLEANUP_BATCH_SIZE, '500', 0),
+	),
+	// Retention in days for rows that only grow. null keeps all history.
+	WEBHOOK_DELIVERY_RETENTION_DAYS: parseRetentionDaysEnv(
+		'WEBHOOK_DELIVERY_RETENTION_DAYS',
+		process.env.WEBHOOK_DELIVERY_RETENTION_DAYS,
+	),
+	TX_SYNC_QUARANTINE_RETENTION_DAYS: parseRetentionDaysEnv(
+		'TX_SYNC_QUARANTINE_RETENTION_DAYS',
+		process.env.TX_SYNC_QUARANTINE_RETENTION_DAYS,
 	),
 };
 
