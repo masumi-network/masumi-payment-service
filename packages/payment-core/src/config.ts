@@ -32,12 +32,15 @@ function parseNumberEnv(name: string, rawValue: string | undefined, fallback: st
 const DEFAULT_RETENTION_DAYS = 30;
 
 // Days a cleanup job keeps finished rows before it deletes them. 0 keeps all
-// history. An empty value counts as unset. Below one day is rejected: tx-sync
-// rollback detection needs identifiers from inside the chain's rollback window.
+// history. An empty value counts as unset. Below one day is rejected, and so is
+// a value too large to turn into a cutoff date.
 export function parseRetentionDaysEnv(name: string, rawValue: string | undefined): number | null {
 	const days = parseNumberEnv(name, rawValue?.trim() || undefined, String(DEFAULT_RETENTION_DAYS), 0);
 	if (days === 0) return null;
 	if (days < 1) throw new Error(`${name} must be 0 (keep all history) or at least 1`);
+	if (Number.isNaN(new Date(Date.now() - days * 24 * 60 * 60 * 1000).getTime())) {
+		throw new Error(`${name} is too large; use 0 to keep all history`);
+	}
 	return days;
 }
 
@@ -351,10 +354,6 @@ export const CONFIG = {
 	TX_SYNC_QUARANTINE_RETENTION_DAYS: parseRetentionDaysEnv(
 		'TX_SYNC_QUARANTINE_RETENTION_DAYS',
 		process.env.TX_SYNC_QUARANTINE_RETENTION_DAYS,
-	),
-	PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS: parseRetentionDaysEnv(
-		'PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS',
-		process.env.PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS,
 	),
 };
 

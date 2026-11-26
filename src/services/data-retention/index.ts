@@ -6,6 +6,9 @@
 //     re-inserts missing snapshots, and the stored rows are the evidence that a
 //     redelivered snapshot does not contradict signed state.
 //   - Transaction: request history rows reference it.
+//   - PaymentSourceIdentifiers: rollback detection walks back to the newest
+//     stored identifier that is still on chain. A source that stops syncing
+//     while a rollback happens could resume with none left and miss rollbacks.
 
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -48,10 +51,5 @@ export async function cleanupRowsPastRetention(): Promise<void> {
 	// Only resolved rows. Unresolved rows are ordering barriers for tx-sync.
 	await deleteRowsPastRetention('TxSyncQuarantine', CONFIG.TX_SYNC_QUARANTINE_RETENTION_DAYS, (cutoff) =>
 		prisma.txSyncQuarantine.deleteMany({ where: { resolvedAt: { lt: cutoff } } }),
-	);
-	// Rollback detection only needs identifiers stored inside the chain's rollback
-	// window (hours), and createdAt is the time the identifier was stored.
-	await deleteRowsPastRetention('PaymentSourceIdentifiers', CONFIG.PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS, (cutoff) =>
-		prisma.paymentSourceIdentifiers.deleteMany({ where: { createdAt: { lt: cutoff } } }),
 	);
 }

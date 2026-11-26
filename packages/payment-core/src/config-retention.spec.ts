@@ -18,9 +18,10 @@ describe('parseRetentionDaysEnv', () => {
 		expect(parseRetentionDaysEnv('X', '1.5')).toBe(1.5);
 	});
 
-	it('rejects values that could delete rows inside the rollback window, or typos', () => {
+	it('rejects typos and values that cannot become a cutoff date', () => {
 		expect(() => parseRetentionDaysEnv('X', '0.5')).toThrow('X must be 0 (keep all history) or at least 1');
 		expect(() => parseRetentionDaysEnv('X', '-1')).toThrow('X must be at least 0');
 		expect(() => parseRetentionDaysEnv('X', '30d')).toThrow('X must be a valid number');
+		expect(() => parseRetentionDaysEnv('X', '1e12')).toThrow('X is too large; use 0 to keep all history');
 	});
 });

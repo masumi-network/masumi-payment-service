@@ -575,7 +575,7 @@ export async function markClaimedQuarantineNeedsOperator(claim: QuarantineClaim,
 	});
 }
 
-/** Marks a claimed quarantined tx as dealt with. Rows are kept for audit. */
+/** Marks a claimed quarantined tx as dealt with. Kept for TX_SYNC_QUARANTINE_RETENTION_DAYS. */
 export async function resolveQuarantinedTransaction(claim: QuarantineClaim, nowMs: number = Date.now()): Promise<void> {
 	await updateClaimedQuarantine(
 		claim,

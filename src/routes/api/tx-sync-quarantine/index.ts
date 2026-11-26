@@ -39,7 +39,9 @@ export const txSyncQuarantineEntrySchema = z
 		resolvedAt: z
 			.date()
 			.nullable()
-			.describe('Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit'),
+			.describe(
+				'Set once successfully applied or canonically confirmed rolled back. Resolved rows are deleted after TX_SYNC_QUARANTINE_RETENTION_DAYS (0 keeps them)',
+			),
 		needsOperator: z.boolean().describe('Retries stopped; a human needs to look at it'),
 		PaymentSource: z.object({
 			id: z.string(),

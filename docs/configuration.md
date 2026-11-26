@@ -48,7 +48,6 @@ If you run the service with Docker:
   - **WEBHOOK_CLEANUP_INTERVAL**: interval in seconds for deleting old webhook deliveries
   - **WEBHOOK_DELIVERY_RETENTION_DAYS**: days to keep finished (Success, Failed, Cancelled) webhook deliveries before cleanup deletes them. Set `0` to keep all history (default 30, otherwise minimum 1)
   - **TX_SYNC_QUARANTINE_RETENTION_DAYS**: days to keep resolved tx-sync quarantine rows. Unresolved rows are never deleted. Set `0` to keep all history (default 30, otherwise minimum 1)
-  - **PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS**: days to keep stored tx-sync identifiers. Rollback detection only needs the ones stored inside the chain's rollback window. Set `0` to keep all history (default 30, otherwise minimum 1)
   - **LOW_BALANCE_CHECK_INTERVAL**: interval in seconds for monitored wallet low-balance checks
   - **CHECK_HYDRA_TX_INTERVAL**: interval in seconds for the Hydra L2 passes and deposit reconciliation (minimum 5, default 10)
   - **HYDRA_ESCROW_RECONCILE_INTERVAL**: minimum seconds between live-snapshot passes of the Hydra L2 escrow-state reconcile per head, the safety net behind live in-head confirmations; replay catch-up and finalized heads still run every CHECK_HYDRA_TX_INTERVAL (minimum 5, default 60)
