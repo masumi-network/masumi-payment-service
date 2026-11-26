@@ -58,7 +58,8 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.BATCH_PAYMENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for batched payments',
 		finishMessage: 'Finished to check for batched payments',
-		shouldRun: isPaymentSourceV1InUse,
+		// Not gated: a purchase must be batched with at least 57 s left before
+		// payByTime, so a cached "not in use" answer could cost it its last tick.
 		run: web3CardanoV1.batchLatestPaymentEntries,
 	},
 	{
@@ -423,7 +424,8 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.BATCH_PAYMENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 batched payments',
 		finishMessage: 'Finished to check for V2 batched payments',
-		shouldRun: isPaymentSourceV2InUse,
+		// Not gated: a purchase must be batched with at least 57 s left before
+		// payByTime, so a cached "not in use" answer could cost it its last tick.
 		run: web3CardanoV2.batchLatestPaymentEntries,
 	},
 	{
