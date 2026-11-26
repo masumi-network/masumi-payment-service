@@ -177,7 +177,8 @@ export const deleteTxSyncQuarantineSchemaOutput = z.object({
  * for whatever that transaction would have changed. It exists for entries that
  * are genuinely irrelevant (a transaction belonging to another system, an entry
  * already repaired by hand). To acknowledge one without applying it, prefer
- * leaving it resolved by the reconciler so the audit trail survives.
+ * leaving it resolved by the reconciler so the audit trail survives until
+ * TX_SYNC_QUARANTINE_RETENTION_DAYS ends (0 keeps it indefinitely).
  */
 export const deleteTxSyncQuarantineDelete = adminAuthenticatedEndpointFactory.build({
 	method: 'delete',
