@@ -12,17 +12,17 @@ describe('parseRetentionDaysEnv', () => {
 		expect(parseRetentionDaysEnv('X', '0')).toBeNull();
 	});
 
-	it('accepts whole and fractional days from 1 up', () => {
+	it('accepts whole days from 1 up', () => {
 		expect(parseRetentionDaysEnv('X', '1')).toBe(1);
-		expect(parseRetentionDaysEnv('X', '90')).toBe(90);
-		expect(parseRetentionDaysEnv('X', '1.5')).toBe(1.5);
+		expect(parseRetentionDaysEnv('X', ' 90 ')).toBe(90);
+		expect(parseRetentionDaysEnv('X', '00')).toBeNull();
 	});
 
 	it('rejects typos and values that cannot become a cutoff date', () => {
-		expect(() => parseRetentionDaysEnv('X', '0.5')).toThrow('X must be 0 (keep all history) or at least 1');
-		expect(() => parseRetentionDaysEnv('X', '-1')).toThrow('X must be at least 0');
-		expect(() => parseRetentionDaysEnv('X', '30d')).toThrow('X must be a valid number');
-		expect(() => parseRetentionDaysEnv('X', '1e12')).toThrow('X is too large; use 0 to keep all history');
-		expect(() => parseRetentionDaysEnv('X', '10000000')).toThrow('X is too large; use 0 to keep all history');
+		// 1e-324 and the long decimal round to 0 and 1 inside Number().
+		for (const value of ['0.5', '1.5', '-1', '30d', '1e12', '1e-324', '0.99999999999999999']) {
+			expect(() => parseRetentionDaysEnv('X', value)).toThrow('X must be a whole number of days (0 keeps all history)');
+		}
+		expect(() => parseRetentionDaysEnv('X', '10000000')).toThrow('X must be at most 36500; use 0 to keep all history');
 	});
 });

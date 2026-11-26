@@ -30,17 +30,21 @@ function parseNumberEnv(name: string, rawValue: string | undefined, fallback: st
 }
 
 const DEFAULT_RETENTION_DAYS = 30;
+const MAX_RETENTION_DAYS = 36_500;
 
-// Days a cleanup job keeps finished rows before it deletes them. 0 keeps all
-// history. An empty value counts as unset. Below one day is rejected, and so is
-// a value too large to turn into a cutoff date.
+// Whole days a cleanup job keeps finished rows before it deletes them. 0 keeps
+// all history. An empty value counts as unset. Digits only, so exponents and
+// long decimals cannot round to 0 or 1 inside Number().
 export function parseRetentionDaysEnv(name: string, rawValue: string | undefined): number | null {
-	const days = parseNumberEnv(name, rawValue?.trim() || undefined, String(DEFAULT_RETENTION_DAYS), 0);
+	const value = rawValue?.trim() || String(DEFAULT_RETENTION_DAYS);
+	if (!/^\d+$/.test(value)) {
+		throw new Error(`${name} must be a whole number of days (0 keeps all history)`);
+	}
+	const days = Number(value);
 	if (days === 0) return null;
-	if (days < 1) throw new Error(`${name} must be 0 (keep all history) or at least 1`);
-	// NaN (an invalid Date) fails this check too. Postgres cannot store year 0 or earlier.
-	if (!(new Date(Date.now() - days * 24 * 60 * 60 * 1000).getUTCFullYear() >= 1)) {
-		throw new Error(`${name} is too large; use 0 to keep all history`);
+	// A fixed cap keeps every cutoff a valid Postgres timestamp, whatever the clock does.
+	if (days > MAX_RETENTION_DAYS) {
+		throw new Error(`${name} must be at most ${MAX_RETENTION_DAYS}; use 0 to keep all history`);
 	}
 	return days;
 }
