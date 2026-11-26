@@ -268,7 +268,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SET_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for timed out refunds',
 		finishMessage: 'Finished to check for timed out refunds',
-		shouldRun: isPaymentSourceV1InUse,
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV1.requestRefunds,
 	},
 	{
@@ -400,7 +402,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000,
 		startMessage: 'Starting to check for submit result',
 		finishMessage: 'Finished to check for submit result',
-		shouldRun: isPaymentSourceV1InUse,
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV1.submitResult,
 	},
 	{
@@ -463,7 +467,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SET_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 timed out refunds',
 		finishMessage: 'Finished to check for V2 timed out refunds',
-		shouldRun: isPaymentSourceV2InUse,
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV2.requestRefunds,
 	},
 	{
@@ -509,7 +515,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 submit result',
 		finishMessage: 'Finished to check for V2 submit result',
-		shouldRun: isPaymentSourceV2InUse,
+		// Not gated: deadline-bound (a cutoff before submitResultTime or unlockTime), so a
+		// cached "not in use" answer could cost a request its last tick. The lock helper's
+		// existence check already keeps an idle tick to one query.
 		run: web3CardanoV2.submitResult,
 	},
 	{
