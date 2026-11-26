@@ -62,10 +62,11 @@ export async function lockAndQueryPayments({
 		type: HotWalletType.Selling,
 	};
 	// The one request filter, shared by the gate and the per-wallet lock so the
-	// two cannot drift apart. `cooldownCutoff` is per payment source in the lock.
+	// two cannot drift apart. `cooldownCutoff` is per payment source in the lock;
+	// the gate passes undefined because it has no single source to take it from.
 	const buildRequestWhere = (
 		smartContractWallet: Prisma.HotWalletWhereInput,
-		cooldownCutoff: number,
+		cooldownCutoff: number | undefined,
 	): Prisma.PaymentRequestWhereInput => ({
 		...(excludeRequestIds !== undefined && excludeRequestIds.length > 0 ? { id: { notIn: excludeRequestIds } } : {}),
 		NextAction: {
@@ -78,7 +79,7 @@ export async function lockAndQueryPayments({
 		SmartContractWallet: smartContractWallet,
 		onChainState: onChainState,
 		//we only want to lock the payment if the cooldown time has passed
-		sellerCoolDownTime: { lt: cooldownCutoff },
+		sellerCoolDownTime: cooldownCutoff === undefined ? undefined : { lt: cooldownCutoff },
 		resultHash: resultHash,
 		// Optional OR group — only included when caller supplies
 		// `orFilters`. Each entry is fully ANDed against the
@@ -92,10 +93,10 @@ export async function lockAndQueryPayments({
 	// Step 0: one cheap existence check. Most ticks find nothing, and without
 	// this an idle tick still opens one Serializable transaction per unlocked
 	// wallet. The filter is a superset of the per-wallet one (any eligible
-	// wallet, cooldown relaxed to "now", which `cooldownTime >= 0` makes
-	// looser), so a miss here proves the lock below would find nothing.
+	// wallet, no cooldown condition), so a miss here proves the lock below
+	// would find nothing.
 	const candidate = await prisma.paymentRequest.findFirst({
-		where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }, Date.now()),
+		where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }, undefined),
 		select: { id: true },
 	});
 	if (candidate == null) return [];

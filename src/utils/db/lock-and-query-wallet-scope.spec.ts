@@ -153,6 +153,18 @@ describe('lock-and-query helpers wallet scoping', () => {
 		expect(mockTransaction).not.toHaveBeenCalled();
 	});
 
+	it('leaves cooldown out of the existence check, so it never rejects a row the lock would take', async () => {
+		// The lock compares against now - cooldownTime per source. A gate using
+		// "now" rejected rows at an equal millisecond and with a negative cooldown.
+		gateMocks.forEach((gate) => gate.mockResolvedValue(null));
+
+		await lockAndQueryPayments({ paymentStatus: PaymentAction.SubmitResultRequested, maxBatchSize: 10 });
+		await lockAndQueryPurchases({ purchasingAction: PurchasingAction.FundsLockingRequested, maxBatchSize: 10 });
+
+		expect(mockPaymentRequestFindFirst.mock.calls[0][0].where.sellerCoolDownTime).toBeUndefined();
+		expect(mockPurchaseRequestFindFirst.mock.calls[0][0].where.buyerCoolDownTime).toBeUndefined();
+	});
+
 	it('returns one payment batch per locked selling wallet', async () => {
 		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['selling-a', 'selling-b'])]);
 		mockPaymentRequestFindMany.mockImplementation(

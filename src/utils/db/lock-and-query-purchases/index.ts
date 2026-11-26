@@ -60,13 +60,14 @@ export async function lockAndQueryPurchases({
 		type: HotWalletType.Purchasing,
 	};
 	// The one request filter, shared by the gate and the per-wallet lock so the
-	// two cannot drift apart. `cooldownCutoff` is per payment source in the lock.
+	// two cannot drift apart. `cooldownCutoff` is per payment source in the lock;
+	// the gate passes undefined because it has no single source to take it from.
 	const buildRequestWhere = (
 		smartContractWallet: Prisma.HotWalletWhereInput,
-		cooldownCutoff: number,
+		cooldownCutoff: number | undefined,
 	): Prisma.PurchaseRequestWhereInput => ({
 		...(excludeRequestIds !== undefined && excludeRequestIds.length > 0 ? { id: { notIn: excludeRequestIds } } : {}),
-		buyerCoolDownTime: { lt: cooldownCutoff },
+		buyerCoolDownTime: cooldownCutoff === undefined ? undefined : { lt: cooldownCutoff },
 		submitResultTime: submitResultTime,
 		unlockTime: unlockTime,
 		NextAction: {
@@ -90,7 +91,7 @@ export async function lockAndQueryPurchases({
 		// filter is a superset of the per-wallet one, so a miss proves the lock
 		// below would find nothing.
 		const candidate = await prisma.purchaseRequest.findFirst({
-			where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }, Date.now()),
+			where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }, undefined),
 			select: { id: true },
 		});
 		if (candidate == null) return [];
