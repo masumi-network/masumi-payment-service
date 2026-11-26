@@ -38,7 +38,8 @@ export function parseRetentionDaysEnv(name: string, rawValue: string | undefined
 	const days = parseNumberEnv(name, rawValue?.trim() || undefined, String(DEFAULT_RETENTION_DAYS), 0);
 	if (days === 0) return null;
 	if (days < 1) throw new Error(`${name} must be 0 (keep all history) or at least 1`);
-	if (Number.isNaN(new Date(Date.now() - days * 24 * 60 * 60 * 1000).getTime())) {
+	// NaN (an invalid Date) fails this check too. Postgres cannot store year 0 or earlier.
+	if (!(new Date(Date.now() - days * 24 * 60 * 60 * 1000).getUTCFullYear() >= 1)) {
 		throw new Error(`${name} is too large; use 0 to keep all history`);
 	}
 	return days;

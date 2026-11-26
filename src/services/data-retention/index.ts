@@ -18,9 +18,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const DATA_RETENTION_CLEANUP_INTERVAL_MS = DAY_MS;
 
-/** Rows older than the returned date may go. null keeps all history. */
+/** Rows older than the returned date may go. null, 0 or below keeps all history. */
 export function retentionCutoff(days: number | null, nowMs = Date.now()): Date | null {
-	return days == null ? null : new Date(nowMs - days * DAY_MS);
+	return days == null || !(days > 0) ? null : new Date(nowMs - days * DAY_MS);
 }
 
 export async function deleteRowsPastRetention(

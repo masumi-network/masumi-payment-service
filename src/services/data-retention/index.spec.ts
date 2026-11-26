@@ -17,6 +17,7 @@ describe('data retention', () => {
 	it('never deletes when retention keeps all history', async () => {
 		const deleteOlderThan = jest.fn(async () => ({ count: 1 }));
 		await deleteRowsPastRetention('T', null, deleteOlderThan);
+		await deleteRowsPastRetention('T', 0, deleteOlderThan);
 		expect(deleteOlderThan).not.toHaveBeenCalled();
 	});
 

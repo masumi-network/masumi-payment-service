@@ -23,5 +23,6 @@ describe('parseRetentionDaysEnv', () => {
 		expect(() => parseRetentionDaysEnv('X', '-1')).toThrow('X must be at least 0');
 		expect(() => parseRetentionDaysEnv('X', '30d')).toThrow('X must be a valid number');
 		expect(() => parseRetentionDaysEnv('X', '1e12')).toThrow('X is too large; use 0 to keep all history');
+		expect(() => parseRetentionDaysEnv('X', '10000000')).toThrow('X is too large; use 0 to keep all history');
 	});
 });

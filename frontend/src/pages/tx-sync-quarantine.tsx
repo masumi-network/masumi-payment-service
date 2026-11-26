@@ -53,7 +53,8 @@ const EMPTY_COPY: Record<QuarantineStatus, { title: string; description: string 
   },
   Resolved: {
     title: 'No resolved entries',
-    description: 'Entries that were applied or discarded are kept here for audit.',
+    description:
+      'Entries that were applied or discarded stay here until the configured retention period ends.',
   },
   All: {
     title: 'The quarantine queue is empty',
