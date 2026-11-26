@@ -3673,7 +3673,7 @@ export type TxSyncQuarantineEntry = {
      */
     nextRetryAt: Date;
     /**
-     * Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit
+     * Set once successfully applied or canonically confirmed rolled back. Resolved rows are deleted after TX_SYNC_QUARANTINE_RETENTION_DAYS (0 keeps them)
      */
     resolvedAt: Date | null;
     /**

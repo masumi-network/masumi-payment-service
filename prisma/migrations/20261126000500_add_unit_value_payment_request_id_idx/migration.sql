@@ -1,0 +1,20 @@
+-- Foreign key: RequestedFunds includes on payments join on it.
+--
+-- This file must stay ONE statement: Prisma runs a migration inside a
+-- transaction unless the whole file is a single CONCURRENTLY statement, and
+-- both CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY are rejected
+-- inside a transaction block.
+--
+-- IF NOT EXISTS is deliberately absent. A failed concurrent build leaves an
+-- invalid index of this name behind, and IF NOT EXISTS would then skip it by
+-- name and report success for ever while queries never use it. Without the
+-- clause a retry fails loudly instead. Recovery:
+--   DROP INDEX CONCURRENTLY "UnitValue_paymentRequestId_idx";  -- outside a transaction
+-- then mark this migration rolled back, or every later deploy stops at P3009:
+--   pnpm exec prisma migrate resolve --config prisma/prisma.config.ts --rolled-back 20261126000500_add_unit_value_payment_request_id_idx
+-- and deploy again (docs/deployment.md, "When a migration deploy fails").
+-- Confirm with:
+--   SELECT indisvalid FROM pg_index i
+--     JOIN pg_class c ON c.oid = i.indexrelid
+--    WHERE c.relname = 'UnitValue_paymentRequestId_idx';
+CREATE INDEX CONCURRENTLY "UnitValue_paymentRequestId_idx" ON "UnitValue"("paymentRequestId");

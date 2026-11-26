@@ -46,6 +46,8 @@ If you run the service with Docker:
   - **AUTO_DECISION_INTERVAL**: interval in seconds for automatic decision handling
   - **WEBHOOK_DELIVERY_INTERVAL**: interval in seconds for processing queued webhook deliveries
   - **WEBHOOK_CLEANUP_INTERVAL**: interval in seconds for deleting old webhook deliveries
+  - **WEBHOOK_DELIVERY_RETENTION_DAYS**: days after creation before cleanup deletes a finished (Success, Failed, Cancelled) webhook delivery. The cleanup job skips Pending and Retrying deliveries. Set `0` to keep all history (whole days up to 36500, default 30)
+  - **TX_SYNC_QUARANTINE_RETENTION_DAYS**: days after resolution before cleanup deletes a resolved tx-sync quarantine row. The cleanup job skips unresolved rows. Set `0` to keep all history (whole days up to 36500, default 30)
   - **LOW_BALANCE_CHECK_INTERVAL**: interval in seconds for monitored wallet low-balance checks
   - **CHECK_HYDRA_TX_INTERVAL**: interval in seconds for the Hydra L2 passes and deposit reconciliation (minimum 5, default 10)
   - **HYDRA_ESCROW_RECONCILE_INTERVAL**: minimum seconds between live-snapshot passes of the Hydra L2 escrow-state reconcile per head, the safety net behind live in-head confirmations; replay catch-up and finalized heads still run every CHECK_HYDRA_TX_INTERVAL (minimum 5, default 60)
@@ -54,9 +56,9 @@ If you run the service with Docker:
 
 The seed script reads **network-specific** Blockfrost keys — there is no generic `BLOCKFROST_API_KEY` variable.
 
-| Network | Required for seed | Variable |
-| ------- | ----------------- | -------- |
-| Preprod | Yes (default install path) | **BLOCKFROST_API_KEY_PREPROD** |
+| Network | Required for seed                                | Variable                       |
+| ------- | ------------------------------------------------ | ------------------------------ |
+| Preprod | Yes (default install path)                       | **BLOCKFROST_API_KEY_PREPROD** |
 | Mainnet | Only when mainnet payment sources are configured | **BLOCKFROST_API_KEY_MAINNET** |
 
 Obtain free API keys at [https://blockfrost.io/](https://blockfrost.io/) for the network you are using.

@@ -5,6 +5,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { toPrismaInputJsonValue } from '@/utils/json-value';
 import { logger } from '@masumi/payment-core/logger';
 import { CONFIG } from '@masumi/payment-core/config';
+import { deleteRowsPastRetention } from '@/services/data-retention';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
 import { isSourceScopedHydraEvent } from './hydra-source';
@@ -206,17 +207,15 @@ class WebhookQueueService {
 	}
 
 	/**
-	 * Clean up old webhook deliveries
+	 * Delete finished deliveries past WEBHOOK_DELIVERY_RETENTION_DAYS. Pending and
+	 * Retrying rows stay until they finish.
 	 */
 	async cleanupOldDeliveries(): Promise<void> {
-		const cutoffDate = new Date();
-		cutoffDate.setDate(cutoffDate.getDate() - 30); // Delete deliveries older than 30 days
-
-		try {
-			const result = await prisma.webhookDelivery.deleteMany({
+		await deleteRowsPastRetention('WebhookDelivery', CONFIG.WEBHOOK_DELIVERY_RETENTION_DAYS, (cutoff) =>
+			prisma.webhookDelivery.deleteMany({
 				where: {
 					createdAt: {
-						lt: cutoffDate,
+						lt: cutoff,
 					},
 					status: {
 						in: [
@@ -226,19 +225,8 @@ class WebhookQueueService {
 						],
 					},
 				},
-			});
-
-			if (result.count > 0) {
-				logger.info('Cleaned up old webhook deliveries', {
-					deleted_count: result.count,
-					cutoff_date: cutoffDate.toISOString(),
-				});
-			}
-		} catch (error) {
-			logger.error('Failed to clean up old webhook deliveries', {
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-		}
+			}),
+		);
 	}
 }
 

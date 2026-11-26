@@ -49,26 +49,68 @@ export async function lockAndQueryPayments({
 	/// is exactly as eligible as it was.
 	excludeRequestIds?: string[] | undefined;
 }) {
+	const paymentSourceWhere: Prisma.PaymentSourceWhereInput = {
+		syncInProgress: false,
+		deletedAt: null,
+		disablePaymentAt: null,
+		paymentSourceType,
+	};
+	const hotWalletWhere: Prisma.HotWalletWhereInput = {
+		PendingTransaction: { is: null },
+		lockedAt: null,
+		deletedAt: null,
+		type: HotWalletType.Selling,
+	};
+	// The one request filter, shared by the gate and the per-wallet lock so the
+	// two cannot drift apart. `cooldownCutoff` is per payment source in the lock;
+	// the gate passes undefined because it has no single source to take it from.
+	const buildRequestWhere = (
+		smartContractWallet: Prisma.HotWalletWhereInput,
+		cooldownCutoff: number | undefined,
+	): Prisma.PaymentRequestWhereInput => ({
+		...(excludeRequestIds !== undefined && excludeRequestIds.length > 0 ? { id: { notIn: excludeRequestIds } } : {}),
+		NextAction: {
+			requestedAction: paymentStatus,
+			errorType: null,
+			resultHash: requestedResultHash,
+		},
+		submitResultTime: submitResultTime,
+		unlockTime: unlockTime,
+		SmartContractWallet: smartContractWallet,
+		onChainState: onChainState,
+		//we only want to lock the payment if the cooldown time has passed
+		sellerCoolDownTime: cooldownCutoff === undefined ? undefined : { lt: cooldownCutoff },
+		resultHash: resultHash,
+		// Optional OR group — only included when caller supplies
+		// `orFilters`. Each entry is fully ANDed against the
+		// outer predicates, so callers can supply per-variant
+		// onChainState / time-window constraints that differ
+		// across an `OR` axis.
+		...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
+		...(layer ? { layer } : {}),
+	});
+
+	// Step 0: one cheap existence check. Most ticks find nothing, and without
+	// this an idle tick still opens one Serializable transaction per unlocked
+	// wallet. The filter is a superset of the per-wallet one (any eligible
+	// wallet, no cooldown condition), so a miss here proves the lock below
+	// would find nothing.
+	const candidate = await prisma.paymentRequest.findFirst({
+		where: buildRequestWhere({ ...hotWalletWhere, PaymentSource: paymentSourceWhere }, undefined),
+		select: { id: true },
+	});
+	if (candidate == null) return [];
+
 	// Step 1: read the candidate payment sources + their unlocked hot wallets
 	// outside any transaction. This is a read-only snapshot used purely to
 	// fan out per-wallet locking transactions below. The per-wallet
 	// transactions take row locks at Serializable isolation, so the actual
 	// concurrency-safety guarantees live there — not in this read.
 	const paymentSources = await prisma.paymentSource.findMany({
-		where: {
-			syncInProgress: false,
-			deletedAt: null,
-			disablePaymentAt: null,
-			paymentSourceType,
-		},
+		where: paymentSourceWhere,
 		include: {
 			HotWallets: {
-				where: {
-					PendingTransaction: { is: null },
-					lockedAt: null,
-					deletedAt: null,
-					type: HotWalletType.Selling,
-				},
+				where: hotWalletWhere,
 			},
 			AdminWallets: true,
 			FeeReceiverNetworkWallet: true,
@@ -103,35 +145,15 @@ export async function lockAndQueryPayments({
 							prisma.$transaction(
 								async (prisma) => {
 									const potentialPaymentRequests = await prisma.paymentRequest.findMany({
-										where: {
-											...(excludeRequestIds !== undefined && excludeRequestIds.length > 0
-												? { id: { notIn: excludeRequestIds } }
-												: {}),
-											NextAction: {
-												requestedAction: paymentStatus,
-												errorType: null,
-												resultHash: requestedResultHash,
-											},
-											submitResultTime: submitResultTime,
-											unlockTime: unlockTime,
-											SmartContractWallet: {
+										where: buildRequestWhere(
+											{
 												id: hotWallet.id,
 												PendingTransaction: { is: null },
 												lockedAt: null,
 												deletedAt: null,
 											},
-											onChainState: onChainState,
-											//we only want to lock the payment if the cooldown time has passed
-											sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
-											resultHash: resultHash,
-											// Optional OR group — only included when caller supplies
-											// `orFilters`. Each entry is fully ANDed against the
-											// outer predicates, so callers can supply per-variant
-											// onChainState / time-window constraints that differ
-											// across an `OR` axis.
-											...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
-											...(layer ? { layer } : {}),
-										},
+											Date.now() - minCooldownTime,
+										),
 										include: {
 											NextAction: true,
 											CurrentTransaction: true,

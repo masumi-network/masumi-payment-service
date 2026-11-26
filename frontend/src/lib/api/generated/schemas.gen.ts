@@ -7594,7 +7594,7 @@ export const TxSyncQuarantineEntrySchema = {
             type: 'string',
             nullable: true,
             format: 'date-time',
-            description: 'Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit'
+            description: 'Set once successfully applied or canonically confirmed rolled back. Resolved rows are deleted after TX_SYNC_QUARANTINE_RETENTION_DAYS (0 keeps them)'
         },
         needsOperator: {
             type: 'boolean',

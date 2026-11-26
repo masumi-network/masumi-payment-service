@@ -105,6 +105,15 @@ model UnitValue {
   // relation and makes otherwise unrelated purchases serialize against each other.
   @@index([apiKeyId])
   @@index([apiKeyId, unit])
+  // Every RequestedFunds / PaidFunds / withdrawn-funds include and every pricing
+  // load joins on one of these foreign keys.
+  @@index([agentFixedPricingId])
+  @@index([paymentRequestId])
+  @@index([purchaseRequestId])
+  @@index([buyerWithdrawnPaymentRequestId])
+  @@index([buyerWithdrawnPurchaseRequestId])
+  @@index([sellerWithdrawnPaymentRequestId])
+  @@index([sellerWithdrawnPurchaseRequestId])
 }
 
 model HotWallet {
@@ -306,6 +315,8 @@ model Transaction {
   @@index([txHash])
   @@index([layer])
   @@index([hydraHeadId])
+  // The Hydra pending-transaction poll filters L2 rows by status.
+  @@index([layer, status])
 }
 
 model SwapTransaction {
@@ -480,6 +491,10 @@ model RegistryRequest {
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
   @@index([requestedById])
+  // Registry sync filters by source and state, the lock by wallet, failure handling by tx.
+  @@index([paymentSourceId, state])
+  @@index([smartContractWalletId])
+  @@index([currentTransactionId])
 }
 
 /// A2A (MIP-002) endpoint descriptor, split out of RegistryRequest rather than
@@ -821,6 +836,10 @@ model InboxAgentRegistrationRequest {
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
   @@index([requestedById])
+  // Registry sync filters by source and state, the lock by wallet, failure handling by tx.
+  @@index([paymentSourceId, state])
+  @@index([smartContractWalletId])
+  @@index([currentTransactionId])
 }
 
 model ExampleOutput {
@@ -955,6 +974,8 @@ model PaymentRequest {
   @@index([unresolvedHydraTerminalTxHash])
   @@index([hydraFanoutHandoffHeadId])
   @@index([layer])
+  // Per-wallet lock queries and wallet-scoped lists filter on the contract wallet.
+  @@index([smartContractWalletId, createdAt])
 }
 
 model PaymentActionData {
@@ -971,6 +992,9 @@ model PaymentActionData {
   PaymentRequestCurrent      PaymentRequest?   @relation("NextAction")
   paymentRequestHistoryId    String?
   PaymentRequestHistory      PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
+
+  // ActionHistory includes and history lookups join on this foreign key.
+  @@index([paymentRequestHistoryId])
 }
 
 model PurchaseRequest {
@@ -1077,6 +1101,8 @@ model PurchaseRequest {
   @@index([unresolvedHydraTerminalTxHash])
   @@index([hydraFanoutHandoffHeadId])
   @@index([layer])
+  // Per-wallet lock queries and wallet-scoped lists filter on the contract wallet.
+  @@index([smartContractWalletId, createdAt])
 }
 
 model PurchaseActionData {
@@ -1092,6 +1118,9 @@ model PurchaseActionData {
   PurchaseRequestCurrent     PurchaseRequest?   @relation("NextAction")
   purchaseRequestHistoryId   String?
   PurchaseRequestHistory     PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
+
+  // ActionHistory includes and history lookups join on this foreign key.
+  @@index([purchaseRequestHistoryId])
 }
 
 model PaymentSourceIdentifiers {
@@ -1606,6 +1635,11 @@ model WebhookDelivery {
   errorMessage String?
   deliveredAt  DateTime?
   durationMs   Int?
+
+  // The delivery queue polls by status and nextRetryAt; cleanup deletes by status and age.
+  @@index([status, nextRetryAt])
+  @@index([status, createdAt])
+  @@index([webhookEndpointId])
 }
 
 enum WebhookEventType {
@@ -2275,7 +2309,7 @@ model TxSyncQuarantine {
   /// Retries are due when now() >= nextRetryAt. Backs off with attempts.
   nextRetryAt              DateTime               @default(now())
   /// Set once successfully processed or independently confirmed rolled back.
-  /// Rows are retained for audit.
+  /// Resolved rows are kept for TX_SYNC_QUARANTINE_RETENTION_DAYS (0 keeps all).
   resolvedAt               DateTime?
   /// Terminal failures (e.g. a deterministic parse error) stop being retried
   /// and must be looked at by an operator.
