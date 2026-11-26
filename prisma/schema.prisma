@@ -2309,7 +2309,7 @@ model TxSyncQuarantine {
   /// Retries are due when now() >= nextRetryAt. Backs off with attempts.
   nextRetryAt              DateTime               @default(now())
   /// Set once successfully processed or independently confirmed rolled back.
-  /// Rows are retained for audit.
+  /// Resolved rows are kept for TX_SYNC_QUARANTINE_RETENTION_DAYS (0 keeps all).
   resolvedAt               DateTime?
   /// Terminal failures (e.g. a deterministic parse error) stop being retried
   /// and must be looked at by an operator.

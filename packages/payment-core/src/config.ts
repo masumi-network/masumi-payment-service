@@ -29,6 +29,18 @@ function parseNumberEnv(name: string, rawValue: string | undefined, fallback: st
 	return parsed;
 }
 
+const DEFAULT_RETENTION_DAYS = 30;
+
+// Days a cleanup job keeps finished rows before it deletes them. 0 keeps all
+// history. An empty value counts as unset. Below one day is rejected: tx-sync
+// rollback detection needs identifiers from inside the chain's rollback window.
+export function parseRetentionDaysEnv(name: string, rawValue: string | undefined): number | null {
+	const days = parseNumberEnv(name, rawValue?.trim() || undefined, String(DEFAULT_RETENTION_DAYS), 0);
+	if (days === 0) return null;
+	if (days < 1) throw new Error(`${name} must be 0 (keep all history) or at least 1`);
+	return days;
+}
+
 const batchPaymentInterval = parseNumberEnv('BATCH_PAYMENT_INTERVAL', process.env.BATCH_PAYMENT_INTERVAL, '30', 5);
 const checkTxInterval = parseNumberEnv('CHECK_TX_INTERVAL', process.env.CHECK_TX_INTERVAL, '20', 15);
 const checkCollectionInterval = parseNumberEnv(
@@ -330,6 +342,19 @@ export const CONFIG = {
 	ORPHAN_ACTION_CLEANUP_BATCH_SIZE: Math.max(
 		10,
 		parseNumberEnv('ORPHAN_ACTION_CLEANUP_BATCH_SIZE', process.env.ORPHAN_ACTION_CLEANUP_BATCH_SIZE, '500', 0),
+	),
+	// Retention in days for rows that only grow. null keeps all history.
+	WEBHOOK_DELIVERY_RETENTION_DAYS: parseRetentionDaysEnv(
+		'WEBHOOK_DELIVERY_RETENTION_DAYS',
+		process.env.WEBHOOK_DELIVERY_RETENTION_DAYS,
+	),
+	TX_SYNC_QUARANTINE_RETENTION_DAYS: parseRetentionDaysEnv(
+		'TX_SYNC_QUARANTINE_RETENTION_DAYS',
+		process.env.TX_SYNC_QUARANTINE_RETENTION_DAYS,
+	),
+	PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS: parseRetentionDaysEnv(
+		'PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS',
+		process.env.PAYMENT_SOURCE_IDENTIFIER_RETENTION_DAYS,
 	),
 };
 

@@ -1,5 +1,6 @@
 import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
+import { cleanupRowsPastRetention, DATA_RETENTION_CLEANUP_INTERVAL_MS } from '@/services/data-retention';
 import {
 	checkLatestTransactions,
 	cleanupOrphanActionData,
@@ -557,6 +558,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
+	},
+	{
+		initialDelayMs: 52000,
+		intervalMs: DATA_RETENTION_CLEANUP_INTERVAL_MS,
+		startMessage: 'Starting data retention cleanup',
+		finishMessage: 'Finished data retention cleanup',
+		run: cleanupRowsPastRetention,
 	},
 	{
 		// Daily-ish prune of PaymentActionData / PurchaseActionData rows
