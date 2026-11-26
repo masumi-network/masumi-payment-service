@@ -21,7 +21,7 @@ describe('isPaymentSourceTypeInUse', () => {
 		resetPaymentSourceUsageCache();
 		mockFindFirst.mockReset();
 		now = 1_000_000;
-		jest.spyOn(Date, 'now').mockImplementation(() => now);
+		jest.spyOn(performance, 'now').mockImplementation(() => now);
 	});
 
 	afterEach(() => {
@@ -60,5 +60,29 @@ describe('isPaymentSourceTypeInUse', () => {
 		expect(await isPaymentSourceTypeInUse(V1)).toBe(true);
 		expect(await isPaymentSourceTypeInUse(V2)).toBe(false);
 		expect(mockFindFirst).toHaveBeenCalledWith({ where: { paymentSourceType: V1 }, select: { id: true } });
+	});
+
+	it('does not let an older miss override a newer hit during the first source creation', async () => {
+		let resolveOlder: (value: null) => void = () => {};
+		mockFindFirst.mockImplementationOnce(() => new Promise((resolve) => (resolveOlder = resolve)));
+		mockFindFirst.mockResolvedValueOnce({ id: 'source-1' });
+
+		const older = isPaymentSourceTypeInUse(V2);
+		expect(await isPaymentSourceTypeInUse(V2)).toBe(true);
+		resolveOlder(null);
+
+		expect(await older).toBe(true);
+		expect(await isPaymentSourceTypeInUse(V2)).toBe(true);
+	});
+
+	it('measures the cache on a monotonic clock, so a wall-clock step back does not extend a miss', async () => {
+		const wallClock = jest.spyOn(Date, 'now').mockReturnValue(10_000_000);
+		mockFindFirst.mockResolvedValue(null);
+		expect(await isPaymentSourceTypeInUse(V1)).toBe(false);
+
+		wallClock.mockReturnValue(10_000_000 - 3_600_000);
+		now += 31_000;
+		mockFindFirst.mockResolvedValue({ id: 'source-1' });
+		expect(await isPaymentSourceTypeInUse(V1)).toBe(true);
 	});
 });

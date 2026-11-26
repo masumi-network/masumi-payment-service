@@ -31,11 +31,14 @@ export function resetPaymentSourceUsageCache(): void {
 export async function isPaymentSourceTypeInUse(paymentSourceType: PaymentSourceType): Promise<boolean> {
 	if (inUse.has(paymentSourceType)) return true;
 	const checkedAt = cachedNotInUseAt.get(paymentSourceType);
-	if (checkedAt !== undefined && Date.now() - checkedAt < USAGE_CACHE_MS) return false;
+	// Monotonic clock: a wall-clock step back must not stretch the cached miss.
+	if (checkedAt !== undefined && performance.now() - checkedAt < USAGE_CACHE_MS) return false;
 
 	const source = await prisma.paymentSource.findFirst({ where: { paymentSourceType }, select: { id: true } });
+	// A concurrent call may have seen the first source while this one waited.
+	if (inUse.has(paymentSourceType)) return true;
 	if (source === null) {
-		cachedNotInUseAt.set(paymentSourceType, Date.now());
+		cachedNotInUseAt.set(paymentSourceType, performance.now());
 		return false;
 	}
 	inUse.add(paymentSourceType);
