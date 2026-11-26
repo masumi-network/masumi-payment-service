@@ -165,6 +165,18 @@ describe('lock-and-query helpers wallet scoping', () => {
 		expect(mockPurchaseRequestFindFirst.mock.calls[0][0].where.buyerCoolDownTime).toBeUndefined();
 	});
 
+	it("still enforces each source's cooldown in the per-wallet lock query", async () => {
+		const clock = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+		mockPaymentSourceFindMany.mockResolvedValue([{ ...buildPaymentSource(['wallet-a']), cooldownTime: 60_000 }]);
+
+		await lockAndQueryPayments({ paymentStatus: PaymentAction.SubmitResultRequested, maxBatchSize: 10 });
+		await lockAndQueryPurchases({ purchasingAction: PurchasingAction.FundsLockingRequested, maxBatchSize: 10 });
+
+		expect(mockPaymentRequestFindMany.mock.calls[0][0].where.sellerCoolDownTime).toEqual({ lt: 940_000 });
+		expect(mockPurchaseRequestFindMany.mock.calls[0][0].where.buyerCoolDownTime).toEqual({ lt: 940_000 });
+		clock.mockRestore();
+	});
+
 	it('returns one payment batch per locked selling wallet', async () => {
 		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['selling-a', 'selling-b'])]);
 		mockPaymentRequestFindMany.mockImplementation(
